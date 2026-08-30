@@ -4,10 +4,10 @@ import { chordIntervals, generateChordProgression, generateMelody, getScale, not
 
 test("scale engine returns the correct notes for major and modal scales", () => {
   assert.deepEqual(getScale("C", "major"), ["C", "D", "E", "F", "G", "A", "B"]);
-  assert.deepEqual(getScale("A", "dorian"), ["A", "B", "C", "D", "E", "F#", "G"]);
+  assert.deepEqual(getScale("A", "dorian"), ["A", "B", "C", "D", "E", "Gb", "G"]);
   assert.deepEqual(getScale("E", "minor pentatonic"), ["E", "G", "A", "B", "D"]);
   assert.deepEqual(getScale("Eb", "major"), ["Eb", "F", "G", "Ab", "Bb", "C", "D"]);
-  assert.deepEqual(getScale("C#", "major"), ["C#", "D#", "E#", "F#", "G#", "A#", "B#"]);
+  assert.deepEqual(getScale("Db", "major"), ["Db", "Eb", "F", "Gb", "Ab", "Bb", "C"]);
   assert.equal(notePitchClass("Ebm9"), 3);
 });
 

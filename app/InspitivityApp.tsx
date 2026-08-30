@@ -10,14 +10,15 @@ type Project = { id: string; name: string; bpm: number; meter: string; key: stri
 type Screen = "home" | "projects" | "project" | "chords" | "melody" | "metronome" | "settings";
 type ChordDraft = { id: string; name: string; beats: number };
 
-const ROOTS: Root[] = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
+const ROOTS: Root[] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 const MODES: Mode[] = ["major", "minor", "dorian", "phrygian", "lydian", "mixolydian", "harmonic minor", "minor pentatonic"];
 const COLORS = ["mint", "violet", "amber", "blue", "coral"];
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clampBpm = (bpm: number) => Math.max(30, Math.min(260, Number.isFinite(bpm) ? Math.round(bpm) : 120));
 const titleMode = (mode: Mode) => mode.replace(/\b\w/g, letter => letter.toUpperCase());
+const normalizeAccidentals = (value: string) => value.replace(/C#/g, "Db").replace(/D#/g, "Eb").replace(/F#/g, "Gb").replace(/G#/g, "Ab").replace(/A#/g, "Bb");
 const projectHarmony = (project?: Project): { root: Root; mode: Mode } => {
-  const [savedRoot = "C", ...savedMode] = (project?.key ?? "C major").replace(/^D#\b/, "Eb").split(" ");
+  const [savedRoot = "C", ...savedMode] = normalizeAccidentals(project?.key ?? "C major").split(" ");
   const root = ROOTS.includes(savedRoot as Root) ? savedRoot as Root : "C";
   const mode = savedMode.join(" ").toLowerCase() as Mode;
   return { root, mode: MODES.includes(mode) ? mode : "major" };
@@ -52,7 +53,7 @@ function useProjects() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
     const hydrate = window.setTimeout(() => {
-      try { const saved = localStorage.getItem("inspitivity-projects"); if (saved) setProjects((JSON.parse(saved) as Project[]).map(project => ({ ...project, key: project.key.replace(/^D#\b/, "Eb") }))); } catch { /* keep starter data */ }
+      try { const saved = localStorage.getItem("inspitivity-projects"); if (saved) setProjects((JSON.parse(saved) as Project[]).map(project => ({ ...project, key: normalizeAccidentals(project.key), sections: project.sections.map(section => ({ ...section, ideas: section.ideas.map(idea => ({ ...idea, detail: normalizeAccidentals(idea.detail), data: idea.data?.map(normalizeAccidentals) })) })) }))); } catch { /* keep starter data */ }
       setReady(true);
     }, 0);
     return () => window.clearTimeout(hydrate);

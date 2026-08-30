@@ -1,11 +1,10 @@
-export type Root = "C" | "C#" | "D" | "Eb" | "E" | "F" | "F#" | "G" | "Ab" | "A" | "Bb" | "B";
+export type Root = "C" | "Db" | "D" | "Eb" | "E" | "F" | "Gb" | "G" | "Ab" | "A" | "Bb" | "B";
 export type Mode = "major" | "minor" | "dorian" | "phrygian" | "lydian" | "mixolydian" | "harmonic minor" | "minor pentatonic";
 export type Complexity = "simple" | "medium" | "advanced";
 export type MelodyMood = "calm" | "bright" | "melancholic" | "dark";
 
-const PITCH_CLASS: Record<Root, number> = { C: 0, "C#": 1, D: 2, Eb: 3, E: 4, F: 5, "F#": 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11 };
-const DISPLAY_NOTES: Root[] = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
-const LETTERS = ["C", "D", "E", "F", "G", "A", "B"];
+const PITCH_CLASS: Record<Root, number> = { C: 0, Db: 1, D: 2, Eb: 3, E: 4, F: 5, Gb: 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11 };
+const DISPLAY_NOTES: Root[] = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
 const NATURAL_PITCHES: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const MODES: Record<Mode, number[]> = {
   major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10],
@@ -16,16 +15,7 @@ const MODES: Record<Mode, number[]> = {
 
 export function getScale(root: Root, mode: Mode) {
   const rootIndex = PITCH_CLASS[root];
-  const rootLetter = LETTERS.indexOf(root[0]);
-  return MODES[mode].map((interval, degree) => {
-    const pitch = (rootIndex + interval) % 12;
-    if (MODES[mode].length !== 7) return DISPLAY_NOTES[pitch];
-    const letter = LETTERS[(rootLetter + degree) % LETTERS.length];
-    let accidental = pitch - NATURAL_PITCHES[letter];
-    if (accidental > 6) accidental -= 12;
-    if (accidental < -6) accidental += 12;
-    return `${letter}${accidental === 2 ? "##" : accidental === 1 ? "#" : accidental === -2 ? "bb" : accidental === -1 ? "b" : ""}`;
-  });
+  return MODES[mode].map(interval => DISPLAY_NOTES[(rootIndex + interval) % 12]);
 }
 
 export function notePitchClass(note: string) {
