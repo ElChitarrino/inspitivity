@@ -52,6 +52,14 @@ test("project tempo and key are shared by every musical tool", () => {
   assert.match(source, /<ProjectContext project=\{project\} update=\{updateProject\}/);
 });
 
+test("chords and melodies can enable a project-tempo background metronome", () => {
+  assert.match(source, /function useWorkspaceMetronome/);
+  assert.match(source, /Activate background metronome/);
+  assert.match(source, /Deactivate background metronome/);
+  assert.match(source, /toolMetronomeActive/);
+  assert.match(source, /metronomeEnabled=\{toolMetronomeEnabled\}/);
+});
+
 test("chord progressions support whole-note playback and direct editing", () => {
   assert.match(source, /defaultBeats = 4/);
   assert.match(source, /aria-label=\{`Chord \$\{index \+ 1\}`\}/);
