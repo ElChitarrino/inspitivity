@@ -5,8 +5,8 @@ import test from "node:test";
 
 const source = await readFile(resolve(process.cwd(), "app/InspitivityApp.tsx"), "utf8");
 
-test("the product surface retains all five planned workflows", () => {
-  for (const feature of ["Projects", "Quick Record", "Chord Progression", "Melody Generator", "Metronome"]) assert.match(source, new RegExp(feature));
+test("the product surface retains all six planned workflows", () => {
+  for (const feature of ["Projects", "Quick Record", "Chord Progression", "Melody Generator", "Drum Loop Generator", "Metronome"]) assert.match(source, new RegExp(feature));
 });
 
 test("projects and audio are stored locally without requiring an account", () => {
@@ -63,12 +63,13 @@ test("arrangement playback controls switch to a pause state while an idea is pla
   assert.match(source, /const stopIdea/);
 });
 
-test("an arrangement can play its section harmony, melody, and pulse as one sketch", () => {
+test("an arrangement can play its section harmony, melody, and saved drum loop as one sketch", () => {
   assert.match(source, /Play song/);
   assert.match(source, /function playArrangement|const playArrangement/);
   assert.match(source, /generateChordProgression/);
   assert.match(source, /generateMelody/);
-  assert.match(source, /localBeat % beatsPerBar === 0/);
+  assert.match(source, /const savedDrums = section\.ideas\.find\(idea => idea\.type === "drums"\)/);
+  assert.match(source, /playDrumLoop\(engine, drums, offset, section\.bars, beatsPerBar, beat\)/);
 });
 
 test("arrangement playback highlights its active section and opens section-specific music drafts", () => {
@@ -122,4 +123,13 @@ test("the progression editor explains each chord's harmonic role", () => {
   assert.match(source, /tonic \/ root/);
   assert.match(source, /className="chord-role"/);
   assert.match(source, /Harmonic role:/);
+});
+
+test("drum loops are section-aware, editable, and restricted to the five-piece kit", () => {
+  assert.match(source, /function DrumTool/);
+  assert.match(source, /DRUM_INSTRUMENTS\.map/);
+  assert.match(source, /kick, snare, hi-hat, crash, and ride/);
+  assert.match(source, /openSectionTool\(section\.id, "drums"\)/);
+  assert.match(source, /decodeDrumIdea/);
+  assert.match(source, /Loop drum loop/);
 });

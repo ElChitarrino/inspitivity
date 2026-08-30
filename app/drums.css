@@ -1,0 +1,12 @@
+.tool-grid{grid-template-columns:repeat(5,1fr)}
+.coral-button{background:var(--coral)}
+.coral-listen{color:var(--coral);border-color:#714147;background:#341f22}
+.coral-wave .loop-button.active{background:var(--coral);border-color:var(--coral);box-shadow:0 0 18px color-mix(in srgb,var(--coral) 30%,transparent)}
+.drum-sequencer{margin:23px 0 12px;border:1px solid #303431;border-radius:13px;padding:12px;background:#151817;overflow:auto}
+.drum-row{display:grid;grid-template-columns:60px repeat(16,minmax(14px,1fr));gap:4px;align-items:center;min-width:400px;margin:5px 0}
+.drum-row b{text-transform:capitalize;color:#bfc6c1;font-size:10px}
+.drum-row button{height:22px;border:1px solid #363b38;border-radius:5px;background:#101311}
+.drum-row button:nth-of-type(4n+1){border-color:#4a504c}
+.drum-row button.active{background:var(--coral);border-color:#ff9a9e;box-shadow:0 0 10px color-mix(in srgb,var(--coral) 48%,transparent)}
+@media(max-width:1040px){.tool-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:620px){.tool-grid{grid-template-columns:1fr}.drum-row{grid-template-columns:55px repeat(16,minmax(13px,1fr));min-width:340px}}
