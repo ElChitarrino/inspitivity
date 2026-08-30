@@ -68,11 +68,11 @@ test("project tempo and key are shared by every musical tool", () => {
   assert.match(source, /<ProjectContext project=\{project\} update=\{updateProject\}/);
 });
 
-test("chords and melodies can enable a project-tempo background metronome", () => {
-  assert.match(source, /function useWorkspaceMetronome/);
-  assert.match(source, /Activate background metronome/);
-  assert.match(source, /Deactivate background metronome/);
-  assert.match(source, /toolMetronomeActive/);
+test("chords and melodies can add a synchronized project-tempo click while listening", () => {
+  assert.match(source, /function scheduleClickTrack/);
+  assert.match(source, /Enable click during listening/);
+  assert.match(source, /scheduleClickTrack\(engine, startBeat, beatSeconds, project\.meter\)/);
+  assert.doesNotMatch(source, /useWorkspaceMetronome/);
   assert.match(source, /metronomeEnabled=\{toolMetronomeEnabled\}/);
 });
 

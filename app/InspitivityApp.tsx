@@ -110,28 +110,12 @@ function useAudioEngine() {
   }, []);
 }
 
-function useWorkspaceMetronome(enabled: boolean, bpm: number, meter: string, engine: ReturnType<typeof useAudioEngine>) {
-  const timer = useRef<number | null>(null);
-  useEffect(() => {
-    if (!enabled) { engine.stopAll(); return; }
-    const ctx = engine.get();
-    void ctx.resume().catch(() => undefined);
-    let next = ctx.currentTime;
-    let step = 0;
-    const beatsPerBar = Number(meter.split("/")[0]) || 4;
-    const schedule = () => {
-      const audio = engine.get();
-      while (next < audio.currentTime + .12) {
-        const accented = step % beatsPerBar === 0;
-        engine.tone(accented ? 88 : 80, Math.max(0, next - audio.currentTime), .04, accented ? .11 : .055);
-        next += subdivisionDurationSeconds(bpm, 1);
-        step++;
-      }
-      timer.current = window.setTimeout(schedule, 30);
-    };
-    schedule();
-    return () => { if (timer.current) window.clearTimeout(timer.current); timer.current = null; engine.stopAll(); };
-  }, [enabled, bpm, meter, engine]);
+function scheduleClickTrack(engine: ReturnType<typeof useAudioEngine>, beats: number, beatSeconds: number, meter: string) {
+  const beatsPerBar = Number(meter.split("/")[0]) || 4;
+  for (let beat = 0; beat < beats; beat++) {
+    const accented = beat % beatsPerBar === 0;
+    engine.tone(accented ? 88 : 80, beat * beatSeconds, .04, accented ? .11 : .055);
+  }
 }
 
 function useLoopTransport(playOnce: () => void, durationMs: number, stopAudio: () => void) {
@@ -163,10 +147,7 @@ export default function InspitivityApp() {
   const [editingIdea, setEditingIdea] = useState<Idea | null>(null);
   const [draftSectionId, setDraftSectionId] = useState<string | null>(null);
   const [toolMetronomeEnabled, setToolMetronomeEnabled] = useState(false);
-  const toolMetronomeEngine = useAudioEngine();
   const selected = projects.find(p => p.id === selectedId) ?? projects[0];
-  const toolMetronomeActive = toolMetronomeEnabled && (screen === "chords" || screen === "melody");
-  useWorkspaceMetronome(toolMetronomeActive, selected?.bpm ?? 120, selected?.meter ?? "4/4", toolMetronomeEngine);
 
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2400); };
   const openProject = (id: string) => { setSelectedId(id); setScreen("project"); };
@@ -241,14 +222,14 @@ function ToolHeader({ title, subtitle, back, go, active }: { title: string; subt
 function ProjectContext({ project, update, onHarmonyChange, metronomeEnabled, toggleMetronome }: { project: Project; update: (fn: (p: Project) => Project) => void; onHarmonyChange?: (root: Root, mode: Mode) => void; metronomeEnabled?: boolean; toggleMetronome?: () => void }) {
   const { root, mode } = projectHarmony(project);
   const changeHarmony = (nextRoot: Root, nextMode: Mode) => { update(p => ({ ...p, key: formatProjectKey(nextRoot, nextMode) })); onHarmonyChange?.(nextRoot, nextMode); };
-  return <section className="project-context" aria-label="Project music settings"><div className="project-context-title"><span>Project settings</span><b>{project.name}</b></div><label className="key-highlight"><span>Key</span><select aria-label="Project root key" value={root} onChange={event => changeHarmony(event.target.value as Root, mode)}>{ROOTS.map(note => <option key={note}>{note}</option>)}</select><select aria-label="Project mode" value={mode} onChange={event => changeHarmony(root, event.target.value as Mode)}>{MODES.map(option => <option key={option}>{option}</option>)}</select></label><label className="global-tempo"><span>Tempo</span><input aria-label="Project tempo" type="number" min="30" max="260" value={project.bpm} onChange={event => update(p => ({ ...p, bpm: clampBpm(Number(event.target.value)) }))} /><b>BPM</b></label>{toggleMetronome && <button className={`context-metronome ${metronomeEnabled ? "active" : ""}`} onClick={toggleMetronome} aria-label={metronomeEnabled ? "Deactivate background metronome" : "Activate background metronome"} aria-pressed={metronomeEnabled}>{metronomeEnabled ? "■ Click" : "▶ Click"}</button>}</section>;
+  return <section className="project-context" aria-label="Project music settings"><div className="project-context-title"><span>Project settings</span><b>{project.name}</b></div><label className="key-highlight"><span>Key</span><select aria-label="Project root key" value={root} onChange={event => changeHarmony(event.target.value as Root, mode)}>{ROOTS.map(note => <option key={note}>{note}</option>)}</select><select aria-label="Project mode" value={mode} onChange={event => changeHarmony(root, event.target.value as Mode)}>{MODES.map(option => <option key={option}>{option}</option>)}</select></label><label className="global-tempo"><span>Tempo</span><input aria-label="Project tempo" type="number" min="30" max="260" value={project.bpm} onChange={event => update(p => ({ ...p, bpm: clampBpm(Number(event.target.value)) }))} /><b>BPM</b></label>{toggleMetronome && <button className={`context-metronome ${metronomeEnabled ? "active" : ""}`} onClick={toggleMetronome} aria-label={metronomeEnabled ? "Disable click during listening" : "Enable click during listening"} aria-pressed={metronomeEnabled} title="Adds a click when you listen">♩ Click{metronomeEnabled ? " on" : ""}</button>}</section>;
 }
 
 function ChordTool({ idea, project, section, sectionIndex, updateProject, back, save, go, metronomeEnabled, toggleMetronome }: { idea?: Idea; project: Project; section?: SongSection; sectionIndex: number; updateProject: (fn: (p: Project) => Project) => void; back: () => void; save: (t: Idea["type"], n: string, d: string, data?: string[]) => void; go: (s: Screen) => void; metronomeEnabled: boolean; toggleMetronome: () => void }) {
   const { root, mode } = projectHarmony(project); const initialCount = idea?.data?.length || section?.bars || 4; const initialSeed = sectionIndex >= 0 ? sectionIndex + 1 : 1; const [count, setCount] = useState(initialCount); const [defaultBeats, setDefaultBeats] = useState(4); const [lengthVariation, setLengthVariation] = useState(0); const [complexity, setComplexity] = useState<Complexity>("medium"); const [seed, setSeed] = useState(initialSeed); const [chords, setChords] = useState<ChordDraft[]>(() => idea ? decodeChordDrafts(idea) : makeChordDrafts(root, mode, initialCount, "medium", initialSeed)); const engine = useAudioEngine();
   const regenerate = (nextRoot = root, nextMode = mode) => { const nextSeed = seed + 1; setSeed(nextSeed); setChords(makeChordDrafts(nextRoot, nextMode, count, complexity, nextSeed, defaultBeats, lengthVariation)); };
   const totalBeats = chords.reduce((sum, chord) => sum + chord.beats, 0); const beatSeconds = beatDurationSeconds(project.bpm);
-  const play = useCallback(() => { let startBeat = 0; chords.forEach(chord => { const pitch = notePitchClass(chord.name); if (pitch !== null) chordIntervals(chord.name).forEach(interval => engine.tone(48 + pitch + interval, startBeat * beatSeconds, chord.beats * beatSeconds * .92, .035)); startBeat += chord.beats; }); }, [chords, beatSeconds, engine]);
+  const play = useCallback(() => { let startBeat = 0; chords.forEach(chord => { const pitch = notePitchClass(chord.name); if (pitch !== null) chordIntervals(chord.name).forEach(interval => engine.tone(48 + pitch + interval, startBeat * beatSeconds, chord.beats * beatSeconds * .92, .035)); startBeat += chord.beats; }); if (metronomeEnabled) scheduleClickTrack(engine, startBeat, beatSeconds, project.meter); }, [chords, beatSeconds, engine, metronomeEnabled, project.meter]);
   const transport = useLoopTransport(play, progressionLoopDurationMs(totalBeats, project.bpm), engine.stopAll);
   const updateChord = (id: string, changes: Partial<ChordDraft>) => setChords(items => items.map(chord => chord.id === id ? { ...chord, ...changes } : chord));
   return <><ToolHeader title="Chord Progression" subtitle="Generate and shape harmonies in whole notes" back={back} go={go} active="chords" /><ProjectContext project={project} update={updateProject} onHarmonyChange={(nextRoot, nextMode) => regenerate(nextRoot, nextMode)} metronomeEnabled={metronomeEnabled} toggleMetronome={toggleMetronome} />{section && <p className="destination-name">Editing {section.name} · {section.bars} bars</p>}<div className="tool-layout"><section className="control-panel"><ControlTitle n="1" title="Number of chords" /><label className="range-control"><span>{count} chords</span><input aria-label="Number of chords" type="range" min="2" max="12" step="1" value={count} onChange={event => setCount(Number(event.target.value))} /></label><ControlTitle n="2" title="Default chord length" /><label className="range-control"><span>{defaultBeats} beats {defaultBeats === 4 ? "· whole note" : ""}</span><input aria-label="Default chord length" type="range" min="1" max="8" step="1" value={defaultBeats} onChange={event => setDefaultBeats(Number(event.target.value))} /></label><ControlTitle n="3" title="Length variation" /><label className="range-control"><span>{lengthVariation === 0 ? "Uniform" : `${lengthVariation}% variation`}</span><input aria-label="Chord length variation" type="range" min="0" max="100" step="5" value={lengthVariation} onChange={event => setLengthVariation(Number(event.target.value))} /></label><ControlTitle n="4" title="Complexity" /><Segment options={["simple", "medium", "advanced"]} value={complexity} set={v => setComplexity(v as Complexity)} /><p className="control-note">Each generated chord uses the selected default duration; variation introduces longer and shorter holds. You can still edit every chord directly.</p><button className="primary-button wide" onClick={() => regenerate()}>Generate progression <span>↻</span></button></section>
@@ -259,7 +240,7 @@ function MelodyTool({ idea, project, section, sectionIndex, updateProject, back,
   const { root, mode } = projectHarmony(project); const targetNotes = section ? Math.max(8, Math.floor(section.bars * (Number(project.meter.split("/")[0]) || 4) * 1.5)) : undefined; const initialSeed = sectionIndex >= 0 ? sectionIndex + 11 : 7; const [mood, setMood] = useState<MelodyMood>("calm"); const [density, setDensity] = useState(section ? .55 : .6); const [seed, setSeed] = useState(initialSeed); const [savedMelody, setSavedMelody] = useState(() => idea ? decodeMelodyIdea(idea) : null); const engine = useAudioEngine();
   const generatedMelody = useMemo(() => generateMelody({ root, mode, notes: targetNotes, density, mood, seed }), [root, mode, targetNotes, density, mood, seed]); const melody = savedMelody ?? generatedMelody;
   const bpm = project.bpm; const beatSeconds = beatDurationSeconds(bpm);
-  const play = useCallback(() => melody.forEach(n => engine.tone(n.pitch, n.start * beatSeconds, n.duration * beatSeconds * .9, .055)), [melody, beatSeconds, engine]);
+  const play = useCallback(() => { melody.forEach(n => engine.tone(n.pitch, n.start * beatSeconds, n.duration * beatSeconds * .9, .055)); if (metronomeEnabled) scheduleClickTrack(engine, Math.max(1, Math.ceil(Math.max(...melody.map(note => note.start + note.duration)))), beatSeconds, project.meter); }, [melody, beatSeconds, engine, metronomeEnabled, project.meter]);
   const transport = useLoopTransport(play, melodyLoopDurationMs(melody, bpm), engine.stopAll);
   const changeNote = (index: number, delta: number) => setSavedMelody(current => { const next = [...(current ?? generatedMelody)]; const note = next[index]; const pitch = Math.max(36, Math.min(96, note.pitch + delta)); next[index] = { ...note, pitch, note: `${note.note.replace(/-?\d+$/, "")}${Math.floor(pitch / 12) - 1}` }; return next; });
   const moods: Array<[MelodyMood, string]> = [["calm", "≈"], ["bright", "☼"], ["melancholic", "☂"], ["dark", "◔"]];
