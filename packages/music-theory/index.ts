@@ -36,6 +36,30 @@ export function notePitchClass(note: string) {
   return (pitch + 12) % 12;
 }
 
+export function chordIntervals(symbol: string) {
+  const normalized = symbol.replace(/\s/g, "");
+  if (/dim7|°7/.test(normalized)) return [0, 3, 6, 9];
+  if (/dim|°/.test(normalized)) return [0, 3, 6];
+  if (/mMaj9/.test(normalized)) return [0, 3, 7, 11, 14];
+  if (/mMaj7/.test(normalized)) return [0, 3, 7, 11];
+  if (/maj13/.test(normalized)) return [0, 4, 7, 11, 14, 21];
+  if (/maj11/.test(normalized)) return [0, 4, 7, 11, 14, 17];
+  if (/maj9/.test(normalized)) return [0, 4, 7, 11, 14];
+  if (/maj7/.test(normalized)) return [0, 4, 7, 11];
+  if (/m13/.test(normalized)) return [0, 3, 7, 10, 14, 21];
+  if (/m11/.test(normalized)) return [0, 3, 7, 10, 14, 17];
+  if (/m9/.test(normalized)) return [0, 3, 7, 10, 14];
+  if (/m7/.test(normalized)) return [0, 3, 7, 10];
+  if (/sus2/.test(normalized)) return [0, 2, 7];
+  if (/sus4|sus/.test(normalized)) return [0, 5, 7];
+  if (/13/.test(normalized)) return [0, 4, 7, 10, 14, 21];
+  if (/11/.test(normalized)) return [0, 4, 7, 10, 14, 17];
+  if (/9/.test(normalized)) return [0, 4, 7, 10, 14];
+  if (/7/.test(normalized)) return [0, 4, 7, 10];
+  if (/m(?!aj)/.test(normalized)) return [0, 3, 7];
+  return [0, 4, 7];
+}
+
 const PATTERNS = [[0, 3, 6, 0], [0, 5, 3, 4], [0, 6, 3, 0], [0, 2, 5, 3], [0, 4, 5, 3]];
 
 export function generateChordProgression({ root, mode, bars, complexity, seed = Date.now() }: { root: Root; mode: Mode; bars: number; complexity: Complexity; seed?: number }) {

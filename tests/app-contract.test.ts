@@ -36,7 +36,7 @@ test("project tempo and key are shared by every musical tool", () => {
 });
 
 test("chord progressions support whole-note playback and direct editing", () => {
-  assert.match(source, /beats: 4/);
+  assert.match(source, /defaultBeats = 4/);
   assert.match(source, /aria-label=\{`Chord \$\{index \+ 1\}`\}/);
   assert.match(source, /Add chord/);
   assert.match(source, /Remove chord/);

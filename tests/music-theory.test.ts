@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { generateChordProgression, generateMelody, getScale, notePitchClass, type MelodyMood, type Mode, type Root } from "../packages/music-theory/index.js";
+import { chordIntervals, generateChordProgression, generateMelody, getScale, notePitchClass, type MelodyMood, type Mode, type Root } from "../packages/music-theory/index.js";
 
 test("scale engine returns the correct notes for major and modal scales", () => {
   assert.deepEqual(getScale("C", "major"), ["C", "D", "E", "F", "G", "A", "B"]);
@@ -9,6 +9,12 @@ test("scale engine returns the correct notes for major and modal scales", () => 
   assert.deepEqual(getScale("Eb", "major"), ["Eb", "F", "G", "Ab", "Bb", "C", "D"]);
   assert.deepEqual(getScale("C#", "major"), ["C#", "D#", "E#", "F#", "G#", "A#", "B#"]);
   assert.equal(notePitchClass("Ebm9"), 3);
+});
+
+test("extended chord voicings include every named chord quality", () => {
+  assert.deepEqual(chordIntervals("Em9"), [0, 3, 7, 10, 14]);
+  assert.deepEqual(chordIntervals("Emaj9"), [0, 4, 7, 11, 14]);
+  assert.deepEqual(chordIntervals("C#dim7"), [0, 3, 6, 9]);
 });
 
 test("chord generation respects length, scale, seed, and complexity", () => {
