@@ -11,6 +11,7 @@ test("tempo and subdivision timing are musically correct", () => {
 
 test("progression and melody loop boundaries match their musical duration", () => {
   assert.equal(progressionLoopDurationMs(4, 120), 2000);
+  assert.equal(progressionLoopDurationMs(16, 120), 8000, "four whole-note chords last sixteen beats");
   assert.equal(melodyLoopDurationMs([{ start: 0, duration: .5 }, { start: 3.5, duration: .5 }], 120), 2000);
   assert.equal(melodyLoopDurationMs([], 120), 0);
 });

@@ -1,9 +1,12 @@
-export type Root = "C" | "C#" | "D" | "D#" | "E" | "F" | "F#" | "G" | "G#" | "A" | "A#" | "B";
+export type Root = "C" | "C#" | "D" | "Eb" | "E" | "F" | "F#" | "G" | "Ab" | "A" | "Bb" | "B";
 export type Mode = "major" | "minor" | "dorian" | "phrygian" | "lydian" | "mixolydian" | "harmonic minor" | "minor pentatonic";
 export type Complexity = "simple" | "medium" | "advanced";
 export type MelodyMood = "calm" | "bright" | "melancholic" | "dark";
 
-const NOTES: Root[] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const PITCH_CLASS: Record<Root, number> = { C: 0, "C#": 1, D: 2, Eb: 3, E: 4, F: 5, "F#": 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11 };
+const DISPLAY_NOTES: Root[] = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
+const LETTERS = ["C", "D", "E", "F", "G", "A", "B"];
+const NATURAL_PITCHES: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const MODES: Record<Mode, number[]> = {
   major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10],
   dorian: [0, 2, 3, 5, 7, 9, 10], phrygian: [0, 1, 3, 5, 7, 8, 10],
@@ -12,8 +15,25 @@ const MODES: Record<Mode, number[]> = {
 };
 
 export function getScale(root: Root, mode: Mode) {
-  const rootIndex = NOTES.indexOf(root);
-  return MODES[mode].map((interval) => NOTES[(rootIndex + interval) % 12]);
+  const rootIndex = PITCH_CLASS[root];
+  const rootLetter = LETTERS.indexOf(root[0]);
+  return MODES[mode].map((interval, degree) => {
+    const pitch = (rootIndex + interval) % 12;
+    if (MODES[mode].length !== 7) return DISPLAY_NOTES[pitch];
+    const letter = LETTERS[(rootLetter + degree) % LETTERS.length];
+    let accidental = pitch - NATURAL_PITCHES[letter];
+    if (accidental > 6) accidental -= 12;
+    if (accidental < -6) accidental += 12;
+    return `${letter}${accidental === 2 ? "##" : accidental === 1 ? "#" : accidental === -2 ? "bb" : accidental === -1 ? "b" : ""}`;
+  });
+}
+
+export function notePitchClass(note: string) {
+  const match = note.match(/^([A-G])([#b]{0,2})/);
+  if (!match) return null;
+  let pitch = NATURAL_PITCHES[match[1]];
+  for (const accidental of match[2]) pitch += accidental === "#" ? 1 : -1;
+  return (pitch + 12) % 12;
 }
 
 const PATTERNS = [[0, 3, 6, 0], [0, 5, 3, 4], [0, 6, 3, 0], [0, 2, 5, 3], [0, 4, 5, 3]];
@@ -29,7 +49,7 @@ export function generateChordProgression({ root, mode, bars, complexity, seed = 
     let quality = fifth === 6 ? "dim" : third === 3 ? "m" : "";
     if (degree === 0 && minorLike) quality = "m";
     const extension = complexity === "simple" ? "" : complexity === "medium" ? (quality === "" ? "maj7" : quality === "m" ? "7" : "7") : (quality === "" ? "maj9" : quality === "m" ? "9" : "7");
-    return { name: `${scale[degree]}${quality}${extension}`, degree, roman: romanNumeral(degree, quality), pitch: NOTES.indexOf(scale[degree]) };
+    return { name: `${scale[degree]}${quality}${extension}`, degree, roman: romanNumeral(degree, quality), pitch: notePitchClass(scale[degree]) ?? 0 };
   });
 }
 
@@ -65,7 +85,7 @@ function reflect(value: number, max: number) {
 
 export function generateMelody({ root, mode, notes = 16, range = [3, 5], density = .6, mood = "calm", seed = Date.now() }: { root: Root; mode: Mode; notes?: number; range?: [number, number]; density?: number; mood?: MelodyMood; seed?: number }) {
   const scale = getScale(root, mode);
-  const scalePitchClasses = new Set(scale.map(note => NOTES.indexOf(note)));
+  const scalePitchClasses = new Set(scale.map(note => notePitchClass(note)));
   const availablePitches: number[] = [];
   for (let octave = range[0]; octave <= range[1]; octave++) {
     for (let pitchClass = 0; pitchClass < 12; pitchClass++) if (scalePitchClasses.has(pitchClass)) availablePitches.push(12 * (octave + 1) + pitchClass);
@@ -74,7 +94,7 @@ export function generateMelody({ root, mode, notes = 16, range = [3, 5], density
 
   const random = seededRandom(seed);
   const profile = MOOD_PROFILES[mood];
-  const rootPitchClass = NOTES.indexOf(root);
+  const rootPitchClass = PITCH_CLASS[root];
   const middle = Math.floor(availablePitches.length / 2);
   const rootIndexes = availablePitches.map((pitch, index) => ({ pitch, index })).filter(item => item.pitch % 12 === rootPitchClass);
   let scaleIndex = rootIndexes.sort((a, b) => Math.abs(a.index - middle) - Math.abs(b.index - middle))[0]?.index ?? middle;
@@ -106,7 +126,8 @@ export function generateMelody({ root, mode, notes = 16, range = [3, 5], density
     const pitch = availablePitches[scaleIndex];
     const pitchClass = pitch % 12;
     const octave = Math.floor(pitch / 12) - 1;
-    result.push({ pitch, note: `${NOTES[pitchClass]}${octave}`, start, duration, velocity: position === 0 ? .92 : .66 + random() * .16 });
+    const scaleName = scale.find(note => notePitchClass(note) === pitchClass) ?? DISPLAY_NOTES[pitchClass];
+    result.push({ pitch, note: `${scaleName}${octave}`, start, duration, velocity: position === 0 ? .92 : .66 + random() * .16 });
     start += step;
   }
 

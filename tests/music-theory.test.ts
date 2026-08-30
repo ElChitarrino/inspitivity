@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { generateChordProgression, generateMelody, getScale, type MelodyMood, type Mode, type Root } from "../packages/music-theory/index.js";
+import { generateChordProgression, generateMelody, getScale, notePitchClass, type MelodyMood, type Mode, type Root } from "../packages/music-theory/index.js";
 
 test("scale engine returns the correct notes for major and modal scales", () => {
   assert.deepEqual(getScale("C", "major"), ["C", "D", "E", "F", "G", "A", "B"]);
   assert.deepEqual(getScale("A", "dorian"), ["A", "B", "C", "D", "E", "F#", "G"]);
   assert.deepEqual(getScale("E", "minor pentatonic"), ["E", "G", "A", "B", "D"]);
+  assert.deepEqual(getScale("Eb", "major"), ["Eb", "F", "G", "Ab", "Bb", "C", "D"]);
+  assert.deepEqual(getScale("C#", "major"), ["C#", "D#", "E#", "F#", "G#", "A#", "B#"]);
+  assert.equal(notePitchClass("Ebm9"), 3);
 });
 
 test("chord generation respects length, scale, seed, and complexity", () => {
@@ -22,7 +25,7 @@ test("melodies are deterministic for a seed and valid for their requested scale 
   const options = { root: "E" as Root, mode: "dorian" as Mode, range: [3, 5] as [number, number], mood: "calm" as MelodyMood, density: .6, seed: 42 };
   const first = generateMelody(options);
   const second = generateMelody(options);
-  const pitchClasses = new Set(getScale("E", "dorian").map(note => ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"].indexOf(note)));
+  const pitchClasses = new Set(getScale("E", "dorian").map(note => notePitchClass(note)));
   assert.deepEqual(first, second);
   assert.equal(first.length, 16);
   assert.ok(first.every(note => note.pitch >= 48 && note.pitch <= 83));
