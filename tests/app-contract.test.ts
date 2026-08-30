@@ -92,6 +92,11 @@ test("the metronome supports 9/8 projects", () => {
   assert.match(source, /options=\{\["4\/4", "3\/4", "6\/8", "9\/8", "5\/4", "7\/8"\]\}/);
 });
 
+test("the app gives chords, melody, and drums distinct accessible visual identities", () => {
+  assert.match(source, /className=\{`app-shell \$\{screen\}-screen`\}/);
+  assert.match(source, /ToolButton tone="blue" icon="♯" title="Chord Progression"/);
+});
+
 test("both generators expose accessible play and loop controls", () => {
   assert.match(source, /Loop progression/);
   assert.match(source, /Loop melody/);

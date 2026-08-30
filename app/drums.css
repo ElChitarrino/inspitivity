@@ -9,5 +9,22 @@
 .drum-row button:nth-of-type(4n+1){border-color:#4a504c}
 .drum-row button.active{background:var(--coral);border-color:#ff9a9e;box-shadow:0 0 10px color-mix(in srgb,var(--coral) 48%,transparent)}
 .section-play{border-color:#3c8d73!important;color:var(--mint)!important}.section-play.playing{background:#1b4135!important}
+.app-shell{background:radial-gradient(circle at 86% -8%,color-mix(in srgb,var(--mint) 12%,transparent),transparent 33%)}
+body{background:radial-gradient(circle at 78% -5%,#3d3510 0,transparent 30%),#050505;color:var(--ink)}
+button,input,select,textarea{color-scheme:dark}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #fffdf6;outline-offset:3px;box-shadow:0 0 0 6px #050505,0 0 0 8px var(--mint)}
+.primary-button{background:var(--mint);color:#121000}.secondary-button,.project-card,.new-project-card,.tool-grid>button,.create-choices>button,.projects-list>button,.section-card{background:#111;border-color:#54534d}.tool-grid>button:hover,.create-choices>button:hover,.project-card:hover,.new-project-card:hover{border-color:var(--mint);box-shadow:0 10px 28px color-mix(in srgb,var(--mint) 11%,transparent)}
+.topbar h1,.section-heading h3,.result-heading h2,.hero-card h2{color:#fffdf6}.eyebrow,.section-heading>button{color:var(--mint)}
+.hero-card{background:linear-gradient(130deg,#16130a,#0d0d0c 72%);border-color:#75631a}.hero-card:after{border-color:#a88a18;box-shadow:0 0 90px #3c3108}.hero-card .wave-mark i{background:var(--mint)}
+.bottom-nav{background:rgba(10,10,9,.95);border-color:#5a584e}.bottom-nav .active{color:var(--mint)}.bottom-nav .create{background:var(--mint);color:#171300}
+.tool-tabs{background:#0b0b0a;border-color:#4c4b45}.tool-tabs button.active{background:#352d0d;color:#fff4bc}.tool-icon.mint{background:#382f0e;color:#ffd84d}.tool-icon.blue{background:#132946;color:#83b8ff}.tool-icon.violet{background:#2c1e45;color:#c1a0ff}.tool-icon.coral{background:#42191d;color:#ff9097}.tool-icon.amber{background:#3b300d;color:#ffe274}
+.chords-screen{--mint:#75adff;--mint-dark:#244e81;background:radial-gradient(circle at 88% 0,#132b4b 0,transparent 36%)}
+.melody-screen{--mint:#b48aff;--mint-dark:#51368a;background:radial-gradient(circle at 88% 0,#2c1b47 0,transparent 36%)}
+.drums-screen{--mint:#ff7179;--mint-dark:#84343b;background:radial-gradient(circle at 88% 0,#4b171c 0,transparent 36%)}
+.chords-screen .control-panel,.chords-screen .result-panel{background:linear-gradient(145deg,#101823,#0b0d10);border-color:#31577f}.melody-screen .control-panel,.melody-screen .result-panel{background:linear-gradient(145deg,#1a1026,#0d0b11);border-color:#65468e}.drums-screen .control-panel,.drums-screen .result-panel{background:linear-gradient(145deg,#251012,#0f0b0c);border-color:#8a3c42}
+.chords-screen .tool-tabs button.active{background:#17365c;color:#dbeaff}.melody-screen .tool-tabs button.active{background:#392451;color:#f0e7ff}.drums-screen .tool-tabs button.active{background:#571e24;color:#ffe5e6}
+.chords-screen .primary-button{background:#75adff;color:#061626}.melody-screen .primary-button{background:#b48aff;color:#1a0d2d}.drums-screen .primary-button{background:#ff7179;color:#2b080b}.chords-screen .secondary-button{border-color:#436f9e}.melody-screen .secondary-button{border-color:#7956a5}.drums-screen .secondary-button{border-color:#9b4a50}
+.chords-screen .chord-editor article,.chords-screen .playback-bar{background:#101721;border-color:#31577f}.melody-screen .piano-roll,.melody-screen .playback-bar{border-color:#65468e;background-color:#130e1b}.drums-screen .drum-sequencer,.drums-screen .playback-bar{border-color:#8a3c42;background:#160d0e}.drums-screen .drum-row button{border-color:#65343a;background:#130a0b}.drums-screen .drum-row button.active{background:var(--coral);border-color:#ffc0c4}
+.metronome-screen .metronome-card{background:radial-gradient(circle at 50% 20%,#3d3310,transparent 45%),#11100c;border-color:#75631a}.metronome-screen .tempo-dial span,.metronome-screen .beat-lights i.active{color:#ffd84d;background:#ffd84d;box-shadow:0 0 18px #ffd84d}.metronome-screen .metronome-play{background:#ffd84d;color:#171300}.metronome-screen .metronome-play.playing{background:#fffdf6;color:#111}
 @media(max-width:1040px){.tool-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:620px){.tool-grid{grid-template-columns:1fr}.drum-row{grid-template-columns:55px repeat(16,minmax(13px,1fr));min-width:340px}}
