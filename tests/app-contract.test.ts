@@ -22,6 +22,15 @@ test("arrangements expose section creation, ordering, and idea saving", () => {
   assert.match(source, /Save idea/);
 });
 
+test("arrangement ideas reopen their saved notes, harmony, or melody for editing", () => {
+  assert.match(source, /idea-edit-icon/);
+  assert.match(source, /Edit \$\{idea\.name\}/);
+  assert.match(source, /decodeChordDrafts/);
+  assert.match(source, /decodeMelodyIdea/);
+  assert.match(source, /Update note/);
+  assert.match(source, /Update melody/);
+});
+
 test("an arrangement can play its section harmony, melody, and pulse as one sketch", () => {
   assert.match(source, /Play song/);
   assert.match(source, /function playArrangement|const playArrangement/);
