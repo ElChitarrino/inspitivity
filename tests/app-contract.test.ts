@@ -81,6 +81,17 @@ test("arrangement playback highlights its active section and opens section-speci
   assert.match(source, /Editing \{section\.name\}/);
 });
 
+test("each arrangement section can be auditioned with its saved or generated sketch", () => {
+  assert.match(source, /const playSection/);
+  assert.match(source, /playSection\(section, index\)/);
+  assert.match(source, /aria-label=\{arrangementPlaying && activeSectionIndex === index \? `Stop \$\{section\.name\}` : `Play \$\{section\.name\}`\}/);
+  assert.match(source, /playDrumLoop\(engine, drums, 0, section\.bars, beatsPerBar, beat\)/);
+});
+
+test("the metronome supports 9/8 projects", () => {
+  assert.match(source, /options=\{\["4\/4", "3\/4", "6\/8", "9\/8", "5\/4", "7\/8"\]\}/);
+});
+
 test("both generators expose accessible play and loop controls", () => {
   assert.match(source, /Loop progression/);
   assert.match(source, /Loop melody/);

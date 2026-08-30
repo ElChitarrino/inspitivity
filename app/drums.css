@@ -8,5 +8,6 @@
 .drum-row button{height:22px;border:1px solid #363b38;border-radius:5px;background:#101311}
 .drum-row button:nth-of-type(4n+1){border-color:#4a504c}
 .drum-row button.active{background:var(--coral);border-color:#ff9a9e;box-shadow:0 0 10px color-mix(in srgb,var(--coral) 48%,transparent)}
+.section-play{border-color:#3c8d73!important;color:var(--mint)!important}.section-play.playing{background:#1b4135!important}
 @media(max-width:1040px){.tool-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:620px){.tool-grid{grid-template-columns:1fr}.drum-row{grid-template-columns:55px repeat(16,minmax(13px,1fr));min-width:340px}}
