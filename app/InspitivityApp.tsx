@@ -115,9 +115,23 @@ function useAudioEngine() {
       volume.gain.setValueAtTime(gain, ctx.currentTime + start); volume.gain.exponentialRampToValueAtTime(.0001, ctx.currentTime + start + duration);
       oscillator.connect(volume).connect(ctx.destination); active.current.add(oscillator); oscillator.onended = () => active.current.delete(oscillator); oscillator.start(ctx.currentTime + start); oscillator.stop(ctx.currentTime + start + duration);
     };
+    const createNoiseSample = (ctx: AudioContext, duration: number, decay: number) => {
+      const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * duration), ctx.sampleRate); const data = buffer.getChannelData(0);
+      for (let index = 0; index < data.length; index++) data[index] = (Math.random() * 2 - 1) * Math.exp(-index / (ctx.sampleRate * decay));
+      return buffer;
+    };
+    const cymbalNoise = (start: number, duration: number, gain: number, cutoff: number, decay: number) => {
+      const ctx = get(); const source = ctx.createBufferSource(); const filter = ctx.createBiquadFilter(); const volume = ctx.createGain(); const when = ctx.currentTime + start;
+      source.buffer = createNoiseSample(ctx, duration, decay); filter.type = "highpass"; filter.frequency.setValueAtTime(cutoff, when); volume.gain.setValueAtTime(gain, when); volume.gain.exponentialRampToValueAtTime(.0001, when + duration);
+      source.connect(filter).connect(volume).connect(ctx.destination); active.current.add(source); source.onended = () => active.current.delete(source); source.start(when); source.stop(when + duration);
+    };
     const drum = (instrument: DrumInstrument, start = 0, velocity = 1) => {
-      const kit: Record<DrumInstrument, [number, number, number]> = { kick: [36, .14, .12], snare: [50, .09, .075], hihat: [94, .035, .028], crash: [88, .24, .04], ride: [78, .12, .035] };
-      const [midi, duration, gain] = kit[instrument]; tone(midi, start, duration, gain * velocity);
+      const ctx = get(); const when = ctx.currentTime + start;
+      if (instrument === "kick") { const oscillator = ctx.createOscillator(); const volume = ctx.createGain(); oscillator.type = "sine"; oscillator.frequency.setValueAtTime(150, when); oscillator.frequency.exponentialRampToValueAtTime(43, when + .13); volume.gain.setValueAtTime(.18 * velocity, when); volume.gain.exponentialRampToValueAtTime(.0001, when + .18); oscillator.connect(volume).connect(ctx.destination); active.current.add(oscillator); oscillator.onended = () => active.current.delete(oscillator); oscillator.start(when); oscillator.stop(when + .19); return; }
+      if (instrument === "snare") { cymbalNoise(start, .19, .12 * velocity, 1200, .055); tone(178, start, .07, .025 * velocity); return; }
+      if (instrument === "hihat") { cymbalNoise(start, .13, .085 * velocity, 6800, .022); return; }
+      if (instrument === "crash") { cymbalNoise(start, .95, .12 * velocity, 2500, .32); return; }
+      cymbalNoise(start, .52, .075 * velocity, 4200, .16); tone(82, start, .17, .014 * velocity);
     };
     const stopAll = () => { active.current.forEach(source => { try { source.stop(); } catch { /* already stopped */ } }); active.current.clear(); };
     return { tone, drum, get, stopAll };

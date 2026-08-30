@@ -133,3 +133,12 @@ test("drum loops are section-aware, editable, and restricted to the five-piece k
   assert.match(source, /decodeDrumIdea/);
   assert.match(source, /Loop drum loop/);
 });
+
+test("drum playback uses percussion voices, including a cymbal-like hi-hat", () => {
+  assert.match(source, /const createNoiseSample/);
+  assert.match(source, /const cymbalNoise/);
+  assert.match(source, /instrument === "hihat"/);
+  assert.match(source, /6800/);
+  assert.match(source, /instrument === "crash"/);
+  assert.match(source, /cymbalNoise\(start, \.52/);
+});
