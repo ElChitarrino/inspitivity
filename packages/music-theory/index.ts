@@ -1,6 +1,7 @@
 export type Root = "C" | "C#" | "D" | "D#" | "E" | "F" | "F#" | "G" | "G#" | "A" | "A#" | "B";
 export type Mode = "major" | "minor" | "dorian" | "phrygian" | "lydian" | "mixolydian" | "harmonic minor" | "minor pentatonic";
 export type Complexity = "simple" | "medium" | "advanced";
+export type MelodyMood = "calm" | "bright" | "melancholic" | "dark";
 
 const NOTES: Root[] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const MODES: Record<Mode, number[]> = {
@@ -37,15 +38,84 @@ function romanNumeral(degree: number, quality: string) {
   return quality ? romans[degree].toLowerCase() + (quality === "dim" ? "°" : "") : romans[degree];
 }
 
-export function generateMelody({ root, mode, notes = 12, range = [3, 5], density = .6, seed = Date.now() }: { root: Root; mode: Mode; notes?: number; range?: [number, number]; density?: number; seed?: number }) {
+const MOOD_PROFILES: Record<MelodyMood, { upward: number; leap: number; repeat: number; syncopation: number }> = {
+  calm: { upward: .5, leap: .06, repeat: .26, syncopation: .08 },
+  bright: { upward: .68, leap: .22, repeat: .1, syncopation: .3 },
+  melancholic: { upward: .34, leap: .1, repeat: .18, syncopation: .16 },
+  dark: { upward: .42, leap: .3, repeat: .08, syncopation: .4 },
+};
+
+function seededRandom(seed: number) {
+  let value = (Math.abs(Math.trunc(seed)) || 1) >>> 0;
+  return () => {
+    value += 0x6d2b79f5;
+    let result = value;
+    result = Math.imul(result ^ (result >>> 15), result | 1);
+    result ^= result + Math.imul(result ^ (result >>> 7), result | 61);
+    return ((result ^ (result >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function reflect(value: number, max: number) {
+  if (max <= 0) return 0;
+  let reflected = value;
+  while (reflected < 0 || reflected > max) reflected = reflected < 0 ? -reflected : max - (reflected - max);
+  return reflected;
+}
+
+export function generateMelody({ root, mode, notes = 16, range = [3, 5], density = .6, mood = "calm", seed = Date.now() }: { root: Root; mode: Mode; notes?: number; range?: [number, number]; density?: number; mood?: MelodyMood; seed?: number }) {
   const scale = getScale(root, mode);
-  let degree = Math.abs(seed) % scale.length;
-  return Array.from({ length: notes }, (_, index) => {
-    const movement = ((seed + index * 17) % 5) - 2;
-    degree = Math.max(0, Math.min(scale.length - 1, degree + movement));
-    const octave = range[0] + Math.floor((degree / Math.max(1, scale.length - 1)) * (range[1] - range[0]));
-    const duration = ((seed + index * 7) % 10) / 10 < density ? .5 : 1;
-    const pitchClass = NOTES.indexOf(scale[degree]);
-    return { pitch: 12 * (octave + 1) + pitchClass, note: `${scale[degree]}${octave}`, start: index * .5, duration, velocity: index % 4 === 0 ? .9 : .7 };
-  });
+  const scalePitchClasses = new Set(scale.map(note => NOTES.indexOf(note)));
+  const availablePitches: number[] = [];
+  for (let octave = range[0]; octave <= range[1]; octave++) {
+    for (let pitchClass = 0; pitchClass < 12; pitchClass++) if (scalePitchClasses.has(pitchClass)) availablePitches.push(12 * (octave + 1) + pitchClass);
+  }
+  if (!availablePitches.length || notes <= 0) return [];
+
+  const random = seededRandom(seed);
+  const profile = MOOD_PROFILES[mood];
+  const rootPitchClass = NOTES.indexOf(root);
+  const middle = Math.floor(availablePitches.length / 2);
+  const rootIndexes = availablePitches.map((pitch, index) => ({ pitch, index })).filter(item => item.pitch % 12 === rootPitchClass);
+  let scaleIndex = rootIndexes.sort((a, b) => Math.abs(a.index - middle) - Math.abs(b.index - middle))[0]?.index ?? middle;
+
+  const nextMovement = () => {
+    if (random() < profile.repeat) return 0;
+    const direction = random() < profile.upward ? 1 : -1;
+    const distance = random() < profile.leap ? 3 + Math.floor(random() * 2) : 1 + (random() < .28 ? 1 : 0);
+    return direction * distance;
+  };
+  const motifA = [0, nextMovement(), nextMovement(), nextMovement()];
+  const motifB = [nextMovement(), -motifA[1] || nextMovement(), nextMovement(), -motifA[3] || nextMovement()];
+  const result: Array<{ pitch: number; note: string; start: number; duration: number; velocity: number }> = [];
+  let start = 0;
+
+  for (let index = 0; index < notes; index++) {
+    const phrase = Math.floor(index / 4) % 4;
+    const position = index % 4;
+    let movement = phrase === 2 ? motifB[position] : motifA[position];
+    if (phrase === 1 && position === 2) movement += random() < .5 ? -1 : 1;
+    if (phrase === 3 && position === 1) movement += random() < .5 ? -1 : 1;
+    scaleIndex = reflect(scaleIndex + movement, availablePitches.length - 1);
+
+    const normalizedDensity = Math.max(0, Math.min(1, density));
+    const shortChance = .18 + normalizedDensity * .68;
+    let step = random() < shortChance ? .5 : 1;
+    if (random() < profile.syncopation * normalizedDensity) step = .25;
+    const duration = step * (random() < .18 ? .55 : .9);
+    const pitch = availablePitches[scaleIndex];
+    const pitchClass = pitch % 12;
+    const octave = Math.floor(pitch / 12) - 1;
+    result.push({ pitch, note: `${NOTES[pitchClass]}${octave}`, start, duration, velocity: position === 0 ? .92 : .66 + random() * .16 });
+    start += step;
+  }
+
+  const finalRoot = rootIndexes.sort((a, b) => Math.abs(a.pitch - result[result.length - 1].pitch) - Math.abs(b.pitch - result[result.length - 1].pitch))[0];
+  if (finalRoot) {
+    const last = result[result.length - 1];
+    last.pitch = finalRoot.pitch;
+    last.note = `${root}${Math.floor(finalRoot.pitch / 12) - 1}`;
+    last.duration = Math.max(last.duration, 1);
+  }
+  return result;
 }
