@@ -147,11 +147,13 @@ export default function InspitivityApp() {
   const [toast, setToast] = useState("");
   const [editingIdea, setEditingIdea] = useState<Idea | null>(null);
   const [draftSectionId, setDraftSectionId] = useState<string | null>(null);
+  const [returnToArrangement, setReturnToArrangement] = useState(false);
   const [toolMetronomeEnabled, setToolMetronomeEnabled] = useState(false);
   const selected = projects.find(p => p.id === selectedId) ?? projects[0];
 
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2400); };
-  const openProject = (id: string) => { setSelectedId(id); setScreen("project"); };
+  const navigate = (next: Screen) => { if (next !== "chords" && next !== "melody") setReturnToArrangement(false); setScreen(next); };
+  const openProject = (id: string) => { setSelectedId(id); navigate("project"); };
   const createProject = (name: string, bpm: number, key: string) => {
     const project: Project = { id: uid(), name, bpm, meter: "4/4", key, updated: Date.now(), sections: [{ id: uid(), name: "Verse", bars: 8, color: "mint", ideas: [] }, { id: uid(), name: "Chorus", bars: 8, color: "violet", ideas: [] }] };
     setProjects(p => [project, ...p]); setSelectedId(project.id); setModal(null); setScreen("project");
@@ -164,21 +166,25 @@ export default function InspitivityApp() {
     updateSelected(project => ({ ...project, sections: project.sections.map(section => section.id === destination.id ? { ...section, ideas: [...section.ideas, { id: uid(), type, name, detail, data }] } : section) }));
     notify(`Saved to ${selected.name} · ${destination.name}`); setDraftSectionId(null);
   };
-  const openSectionTool = (sectionId: string, tool: "chords" | "melody") => { setEditingIdea(null); setDraftSectionId(sectionId); setScreen(tool); };
+  const openSectionTool = (sectionId: string, tool: "chords" | "melody") => { setEditingIdea(null); setDraftSectionId(sectionId); setReturnToArrangement(true); setScreen(tool); };
+  const backFromMusicTool = () => { const destination = returnToArrangement ? "project" : "home"; setEditingIdea(null); setDraftSectionId(null); setReturnToArrangement(false); setScreen(destination); };
+  const editArrangementIdea = (sectionId: string, idea: Idea) => {
+    if (idea.type === "chords" || idea.type === "melody") { setDraftSectionId(sectionId); setEditingIdea(idea); setReturnToArrangement(true); setScreen(idea.type); }
+  };
   const draftSection = selected?.sections.find(section => section.id === draftSectionId);
   const draftSectionIndex = draftSection && selected ? selected.sections.findIndex(section => section.id === draftSection.id) : -1;
 
   return <main className="app-shell">
-    {screen === "home" && <Home projects={projects} openProject={openProject} go={setScreen} create={() => setModal("create")} record={() => setModal("record")} />}
+    {screen === "home" && <Home projects={projects} openProject={openProject} go={navigate} create={() => setModal("create")} record={() => setModal("record")} />}
     {screen === "projects" && <Projects projects={projects} openProject={openProject} create={() => setModal("project")} />}
-    {screen === "project" && selected && <ProjectView project={selected} update={updateSelected} back={() => setScreen("projects")} record={() => setModal("record")} openSectionTool={openSectionTool} editIdea={(sectionId, idea) => { if (idea.type === "chords" || idea.type === "melody") { setDraftSectionId(sectionId); setEditingIdea(idea); setScreen(idea.type); } }} />}
-    {screen === "chords" && selected && <ChordTool key={`${editingIdea?.id ?? "new-chords"}-${draftSectionId ?? "default"}`} idea={editingIdea?.type === "chords" ? editingIdea : undefined} project={selected} section={draftSection} sectionIndex={draftSectionIndex} updateProject={updateSelected} back={() => setScreen("home")} save={saveIdea} go={setScreen} metronomeEnabled={toolMetronomeEnabled} toggleMetronome={() => setToolMetronomeEnabled(enabled => !enabled)} />}
-    {screen === "melody" && selected && <MelodyTool key={`${editingIdea?.id ?? "new-melody"}-${draftSectionId ?? "default"}`} idea={editingIdea?.type === "melody" ? editingIdea : undefined} project={selected} section={draftSection} sectionIndex={draftSectionIndex} updateProject={updateSelected} back={() => setScreen("home")} save={saveIdea} go={setScreen} metronomeEnabled={toolMetronomeEnabled} toggleMetronome={() => setToolMetronomeEnabled(enabled => !enabled)} />}
-    {screen === "metronome" && selected && <Metronome project={selected} updateProject={updateSelected} back={() => setScreen("home")} go={setScreen} />}
+    {screen === "project" && selected && <ProjectView project={selected} update={updateSelected} back={() => navigate("projects")} record={() => setModal("record")} openSectionTool={openSectionTool} editIdea={editArrangementIdea} />}
+    {screen === "chords" && selected && <ChordTool key={`${editingIdea?.id ?? "new-chords"}-${draftSectionId ?? "default"}`} idea={editingIdea?.type === "chords" ? editingIdea : undefined} project={selected} section={draftSection} sectionIndex={draftSectionIndex} updateProject={updateSelected} back={backFromMusicTool} save={saveIdea} go={navigate} metronomeEnabled={toolMetronomeEnabled} toggleMetronome={() => setToolMetronomeEnabled(enabled => !enabled)} />}
+    {screen === "melody" && selected && <MelodyTool key={`${editingIdea?.id ?? "new-melody"}-${draftSectionId ?? "default"}`} idea={editingIdea?.type === "melody" ? editingIdea : undefined} project={selected} section={draftSection} sectionIndex={draftSectionIndex} updateProject={updateSelected} back={backFromMusicTool} save={saveIdea} go={navigate} metronomeEnabled={toolMetronomeEnabled} toggleMetronome={() => setToolMetronomeEnabled(enabled => !enabled)} />}
+    {screen === "metronome" && selected && <Metronome project={selected} updateProject={updateSelected} back={() => navigate("home")} go={navigate} />}
     {screen === "settings" && <Settings projects={projects} backUp={() => { const blob = new Blob([JSON.stringify(projects, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "inspitivity-backup.json"; a.click(); notify("Local backup downloaded"); }} />}
-    <BottomNav screen={screen} go={setScreen} create={() => setModal("create")} />
+    <BottomNav screen={screen} go={navigate} create={() => setModal("create")} />
     {modal === "project" && <ProjectModal close={() => setModal(null)} submit={createProject} />}
-    {modal === "create" && <CreateModal close={() => setModal(null)} choose={(action) => { setModal(null); if (action === "project") setModal("project"); else if (action === "record") setModal("record"); else setScreen(action); }} />}
+    {modal === "create" && <CreateModal close={() => setModal(null)} choose={(action) => { setModal(null); if (action === "project") setModal("project"); else if (action === "record") setModal("record"); else navigate(action); }} />}
     {modal === "record" && selected && <RecorderModal project={selected} close={() => setModal(null)} attach={(sectionId, idea) => { updateSelected(p => ({ ...p, sections: p.sections.map(s => s.id === sectionId ? { ...s, ideas: [...s.ideas, idea] } : s) })); notify("Recording saved locally"); }} />}
     {toast && <div className="toast"><span>✓</span>{toast}</div>}
   </main>;

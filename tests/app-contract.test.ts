@@ -40,6 +40,15 @@ test("arrangement cards themselves reopen their saved editor and sections expose
   assert.match(source, /⌁ Melody/);
 });
 
+test("music tools return to the arrangement when they were opened from a project section", () => {
+  assert.match(source, /const \[returnToArrangement, setReturnToArrangement\] = useState\(false\)/);
+  assert.match(source, /const backFromMusicTool/);
+  assert.match(source, /const destination = returnToArrangement \? "project" : "home"/);
+  assert.match(source, /setScreen\(destination\)/);
+  assert.match(source, /setReturnToArrangement\(true\); setScreen\(tool\)/);
+  assert.match(source, /back=\{backFromMusicTool\}/);
+});
+
 test("arrangement sections and ideas can be removed", () => {
   assert.match(source, /const removeSection/);
   assert.match(source, /const removeIdea/);
