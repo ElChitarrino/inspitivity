@@ -46,6 +46,15 @@ test("an arrangement can play its section harmony, melody, and pulse as one sket
   assert.match(source, /localBeat % beatsPerBar === 0/);
 });
 
+test("arrangement playback highlights its active section and opens section-specific music drafts", () => {
+  assert.match(source, /activeSectionIndex/);
+  assert.match(source, /setActiveSectionIndex\(sectionIndex\)/);
+  assert.match(source, /section-builders/);
+  assert.match(source, /openSectionTool\(section\.id, "chords"\)/);
+  assert.match(source, /openSectionTool\(section\.id, "melody"\)/);
+  assert.match(source, /Editing \{section\.name\}/);
+});
+
 test("both generators expose accessible play and loop controls", () => {
   assert.match(source, /Loop progression/);
   assert.match(source, /Loop melody/);
