@@ -22,6 +22,14 @@ test("arrangements expose section creation, ordering, and idea saving", () => {
   assert.match(source, /Save idea/);
 });
 
+test("an arrangement can play its section harmony, melody, and pulse as one sketch", () => {
+  assert.match(source, /Play song/);
+  assert.match(source, /function playArrangement|const playArrangement/);
+  assert.match(source, /generateChordProgression/);
+  assert.match(source, /generateMelody/);
+  assert.match(source, /localBeat % beatsPerBar === 0/);
+});
+
 test("both generators expose accessible play and loop controls", () => {
   assert.match(source, /Loop progression/);
   assert.match(source, /Loop melody/);
