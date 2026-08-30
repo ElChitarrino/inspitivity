@@ -116,3 +116,10 @@ test("chord progressions support whole-note playback and direct editing", () => 
   assert.match(source, /Remove chord/);
   assert.doesNotMatch(source, /Audio-clock scheduling keeps every click tight/);
 });
+
+test("the progression editor explains each chord's harmonic role", () => {
+  assert.match(source, /const chordRole/);
+  assert.match(source, /tonic \/ root/);
+  assert.match(source, /className="chord-role"/);
+  assert.match(source, /Harmonic role:/);
+});
