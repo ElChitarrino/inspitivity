@@ -31,6 +31,15 @@ test("arrangement ideas reopen their saved notes, harmony, or melody for editing
   assert.match(source, /Update melody/);
 });
 
+test("arrangement cards themselves reopen their saved editor and sections expose entry controls", () => {
+  assert.match(source, /const openIdea/);
+  assert.match(source, /className="idea-card"/);
+  assert.match(source, /onClick=\{\(\) => openIdea\(section\.id, idea\)\}/);
+  assert.match(source, /section-header-actions/);
+  assert.match(source, /♯ Chords/);
+  assert.match(source, /⌁ Melody/);
+});
+
 test("arrangement playback controls switch to a pause state while an idea is playing", () => {
   assert.match(source, /playingIdeaId/);
   assert.match(source, /Pause \$\{idea\.name\}/);
