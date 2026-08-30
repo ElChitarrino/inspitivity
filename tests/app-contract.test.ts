@@ -40,6 +40,13 @@ test("arrangement cards themselves reopen their saved editor and sections expose
   assert.match(source, /⌁ Melody/);
 });
 
+test("arrangement sections and ideas can be removed", () => {
+  assert.match(source, /const removeSection/);
+  assert.match(source, /const removeIdea/);
+  assert.match(source, /aria-label=\{`Remove \$\{section\.name\}`\}/);
+  assert.match(source, /aria-label=\{`Remove \$\{idea\.name\}`\}/);
+});
+
 test("arrangement playback controls switch to a pause state while an idea is playing", () => {
   assert.match(source, /playingIdeaId/);
   assert.match(source, /Pause \$\{idea\.name\}/);
@@ -83,6 +90,14 @@ test("chords and melodies can add a synchronized project-tempo click while liste
   assert.match(source, /scheduleClickTrack\(engine, startBeat, beatSeconds, project\.meter\)/);
   assert.doesNotMatch(source, /useWorkspaceMetronome/);
   assert.match(source, /metronomeEnabled=\{toolMetronomeEnabled\}/);
+});
+
+test("melody notes preserve the phrase while pitch and duration are edited by drag", () => {
+  assert.match(source, /const beginNoteDrag/);
+  assert.match(source, /const dragNote/);
+  assert.match(source, /action: "pitch" \| "duration"/);
+  assert.match(source, /Drag notes up\/down for pitch/);
+  assert.match(source, /note\.duration\.toFixed/);
 });
 
 test("chord progressions support whole-note playback and direct editing", () => {
