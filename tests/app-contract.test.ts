@@ -31,6 +31,13 @@ test("arrangement ideas reopen their saved notes, harmony, or melody for editing
   assert.match(source, /Update melody/);
 });
 
+test("arrangement playback controls switch to a pause state while an idea is playing", () => {
+  assert.match(source, /playingIdeaId/);
+  assert.match(source, /Pause \$\{idea\.name\}/);
+  assert.match(source, /aria-pressed=\{playingIdeaId === idea\.id\}/);
+  assert.match(source, /const stopIdea/);
+});
+
 test("an arrangement can play its section harmony, melody, and pulse as one sketch", () => {
   assert.match(source, /Play song/);
   assert.match(source, /function playArrangement|const playArrangement/);
