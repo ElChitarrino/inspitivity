@@ -164,6 +164,14 @@ test("melody notes preserve the phrase while pitch and duration are edited by dr
   assert.match(source, /note\.duration\.toFixed/);
 });
 
+test("the melody generator lets writers choose exactly how many notes to generate", () => {
+  assert.match(source, /const \[noteCount, setNoteCount\] = useState\(Math\.min\(30, defaultNoteCount\)\)/);
+  assert.match(source, /aria-label="Number of melody notes"/);
+  assert.match(source, /min="0"/);
+  assert.match(source, /max="30"/);
+  assert.match(source, /generateMelody\(\{ root, mode, notes: noteCount/);
+});
+
 test("chord progressions support whole-note playback and direct editing", () => {
   assert.match(source, /defaultBeats = 4/);
   assert.match(source, /aria-label=\{`Chord \$\{index \+ 1\}`\}/);

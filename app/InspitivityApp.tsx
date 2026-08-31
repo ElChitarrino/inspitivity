@@ -2436,17 +2436,18 @@ function MelodyTool({
   toggleMetronome: () => void;
 }) {
   const { root, mode } = projectHarmony(project);
-  const targetNotes = section
+  const defaultNoteCount = section
     ? Math.max(
         8,
         Math.floor(
           section.bars * (Number(project.meter.split("/")[0]) || 4) * 1.5,
         ),
       )
-    : undefined;
+    : 16;
   const initialSeed = sectionIndex >= 0 ? sectionIndex + 11 : 7;
   const [mood, setMood] = useState<MelodyMood>("calm");
   const [density, setDensity] = useState(section ? 0.55 : 0.6);
+  const [noteCount, setNoteCount] = useState(Math.min(30, defaultNoteCount));
   const [seed, setSeed] = useState(initialSeed);
   const [savedMelody, setSavedMelody] = useState(() =>
     idea ? decodeMelodyIdea(idea) : null,
@@ -2454,8 +2455,8 @@ function MelodyTool({
   const engine = useAudioEngine();
   const generatedMelody = useMemo(
     () =>
-      generateMelody({ root, mode, notes: targetNotes, density, mood, seed }),
-    [root, mode, targetNotes, density, mood, seed],
+      generateMelody({ root, mode, notes: noteCount, density, mood, seed }),
+    [root, mode, noteCount, density, mood, seed],
   );
   const melody = savedMelody ?? generatedMelody;
   const bpm = project.bpm;
@@ -2639,7 +2640,23 @@ function MelodyTool({
               setDensity(Number(e.target.value));
             }}
           />
-          <ControlTitle n="3" title="Motif development" />
+          <ControlTitle n="3" title="Number of notes" />
+          <label className="range-control">
+            <span>{noteCount} notes</span>
+            <input
+              aria-label="Number of melody notes"
+              type="range"
+              min="0"
+              max="30"
+              step="1"
+              value={noteCount}
+              onChange={(event) => {
+                setSavedMelody(null);
+                setNoteCount(Number(event.target.value));
+              }}
+            />
+          </label>
+          <ControlTitle n="4" title="Motif development" />
           <div className="motif-actions" aria-label="Transform this motif">
             {(
               [
