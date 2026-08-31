@@ -3,10 +3,21 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 
-const source = await readFile(resolve(process.cwd(), "app/InspitivityApp.tsx"), "utf8");
+const source = await readFile(
+  resolve(process.cwd(), "app/InspitivityApp.tsx"),
+  "utf8",
+);
 
 test("the product surface retains all six planned workflows", () => {
-  for (const feature of ["Projects", "Quick Record", "Chord Progression", "Melody Generator", "Drum Loop Generator", "Metronome"]) assert.match(source, new RegExp(feature));
+  for (const feature of [
+    "Projects",
+    "Quick Record",
+    "Chord Progression",
+    "Melody Generator",
+    "Drum Loop Generator",
+    "Metronome",
+  ])
+    assert.match(source, new RegExp(feature));
 });
 
 test("projects and audio are stored locally without requiring an account", () => {
@@ -41,11 +52,17 @@ test("arrangement cards themselves reopen their saved editor and sections expose
 });
 
 test("music tools return to the arrangement when they were opened from a project section", () => {
-  assert.match(source, /const \[returnToArrangement, setReturnToArrangement\] = useState\(false\)/);
+  assert.match(
+    source,
+    /const \[returnToArrangement, setReturnToArrangement\] = useState\(false\)/,
+  );
   assert.match(source, /const backFromMusicTool/);
-  assert.match(source, /const destination = returnToArrangement \? "project" : "home"/);
+  assert.match(
+    source,
+    /const destination = returnToArrangement \? "project" : "home"/,
+  );
   assert.match(source, /setScreen\(destination\)/);
-  assert.match(source, /setReturnToArrangement\(true\); setScreen\(tool\)/);
+  assert.match(source, /setReturnToArrangement\(true\);\s*setScreen\(tool\)/);
   assert.match(source, /back=\{backFromMusicTool\}/);
 });
 
@@ -68,8 +85,14 @@ test("an arrangement can play its section harmony, melody, and saved drum loop a
   assert.match(source, /function playArrangement|const playArrangement/);
   assert.match(source, /generateChordProgression/);
   assert.match(source, /generateMelody/);
-  assert.match(source, /const savedDrums = section\.ideas\.find\(idea => idea\.type === "drums"\)/);
-  assert.match(source, /playDrumLoop\(engine, drums, offset, section\.bars, beatsPerBar, beat\)/);
+  assert.match(
+    source,
+    /const savedDrums = section\.ideas\.find\(\(idea\) => idea\.type === "drums"\)/,
+  );
+  assert.match(
+    source,
+    /playDrumsForMeterMap\(engine, drums, offset, section, project\.meter, beat\)/,
+  );
 });
 
 test("arrangement playback highlights its active section and opens section-specific music drafts", () => {
@@ -84,17 +107,26 @@ test("arrangement playback highlights its active section and opens section-speci
 test("each arrangement section can be auditioned with its saved or generated sketch", () => {
   assert.match(source, /const playSection/);
   assert.match(source, /playSection\(section, index\)/);
-  assert.match(source, /aria-label=\{arrangementPlaying && activeSectionIndex === index \? `Stop \$\{section\.name\}` : `Play \$\{section\.name\}`\}/);
-  assert.match(source, /playDrumLoop\(engine, drums, 0, section\.bars, beatsPerBar, beat\)/);
+  assert.match(
+    source,
+    /arrangementPlaying && activeSectionIndex === index\s*\? `Stop \$\{section\.name\}`\s*: `Play \$\{section\.name\}`/,
+  );
+  assert.match(
+    source,
+    /playDrumsForMeterMap\(engine, drums, 0, section, project\.meter, beat\)/,
+  );
 });
 
 test("the metronome supports 9/8 projects", () => {
-  assert.match(source, /options=\{\["4\/4", "3\/4", "6\/8", "9\/8", "5\/4", "7\/8"\]\}/);
+  assert.match(
+    source,
+    /options=\{\["4\/4", "3\/4", "6\/8", "9\/8", "5\/4", "7\/8"\]\}/,
+  );
 });
 
 test("the app gives chords, melody, and drums distinct accessible visual identities", () => {
   assert.match(source, /className=\{`app-shell \$\{screen\}-screen`\}/);
-  assert.match(source, /ToolButton tone="blue" icon="♯" title="Chord Progression"/);
+  assert.match(source, /tone="blue"\s*icon="♯"\s*title="Chord Progression"/);
 });
 
 test("both generators expose accessible play and loop controls", () => {
@@ -107,13 +139,19 @@ test("project tempo and key are shared by every musical tool", () => {
   assert.match(source, /function ProjectContext/);
   assert.match(source, /bpm: clampBpm/);
   assert.match(source, /key: formatProjectKey/);
-  assert.match(source, /<ProjectContext project=\{project\} update=\{updateProject\}/);
+  assert.match(
+    source,
+    /<ProjectContext project=\{project\} update=\{updateProject\}/,
+  );
 });
 
 test("chords and melodies can add a synchronized project-tempo click while listening", () => {
   assert.match(source, /function scheduleClickTrack/);
   assert.match(source, /Enable click during listening/);
-  assert.match(source, /scheduleClickTrack\(engine, startBeat, beatSeconds, project\.meter\)/);
+  assert.match(
+    source,
+    /scheduleClickTrack\(engine, startBeat, beatSeconds, project\.meter\)/,
+  );
   assert.doesNotMatch(source, /useWorkspaceMetronome/);
   assert.match(source, /metronomeEnabled=\{toolMetronomeEnabled\}/);
 });
@@ -150,11 +188,30 @@ test("drum loops are section-aware, editable, and restricted to the five-piece k
   assert.match(source, /Loop drum loop/);
 });
 
+test("progressive workflows include meter maps, riff polymeters, transformations, tension, and transitions", () => {
+  for (const feature of [
+    "meter-map",
+    "Prog Riff Lab",
+    "Polymeter cycle",
+    "Motif development",
+    "Tension map",
+    "Transition Builder",
+    "Progressive harmony colour",
+  ])
+    assert.match(source, new RegExp(feature));
+  assert.match(source, /openSectionTool\(section\.id, "riff"\)/);
+  assert.match(source, /openSectionTool\(section\.id, "transition"\)/);
+  assert.match(
+    source,
+    /"steady",\s*"syncopated",\s*"driving",\s*"djent",\s*"odd meter",\s*"linear"/,
+  );
+});
+
 test("drum playback uses percussion voices, including a cymbal-like hi-hat", () => {
   assert.match(source, /const createNoiseSample/);
   assert.match(source, /const cymbalNoise/);
   assert.match(source, /instrument === "hihat"/);
   assert.match(source, /6800/);
   assert.match(source, /instrument === "crash"/);
-  assert.match(source, /cymbalNoise\(start, \.52/);
+  assert.match(source, /cymbalNoise\(start, 0\.52/);
 });
