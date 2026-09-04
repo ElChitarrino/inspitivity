@@ -135,6 +135,15 @@ test("both generators expose accessible play and loop controls", () => {
   assert.match(source, /aria-pressed=\{transport\.mode === "loop"\}/);
 });
 
+test("songwriting tools offer varied synth voices and MIDI export", () => {
+  assert.match(source, /warm pad/);
+  assert.match(source, /analog pulse/);
+  assert.match(source, /Export chords as MIDI/);
+  assert.match(source, /Export melody as MIDI/);
+  assert.match(source, /Export pattern as MIDI/);
+  assert.match(source, /Export drums as MIDI/);
+});
+
 test("project tempo and key are shared by every musical tool", () => {
   assert.match(source, /function ProjectContext/);
   assert.match(source, /bpm: clampBpm/);
@@ -196,15 +205,15 @@ test("drum loops are section-aware, editable, and restricted to the five-piece k
   assert.match(source, /Loop drum loop/);
 });
 
-test("progressive workflows include meter maps, riff polymeters, transformations, tension, and transitions", () => {
+test("progressive workflows include meter maps, synth patterns, transformations, tension, and transitions", () => {
   for (const feature of [
     "meter-map",
-    "Prog Riff Lab",
-    "Polymeter cycle",
+    "Synth Pattern",
+    "Pattern length",
     "Motif development",
     "Tension map",
     "Transition Builder",
-    "Progressive harmony colour",
+    "Harmony colour",
   ])
     assert.match(source, new RegExp(feature));
   assert.match(source, /openSectionTool\(section\.id, "riff"\)/);

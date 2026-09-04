@@ -21,6 +21,7 @@ export type TransitionStyle =
   | "pivot chord"
   | "pedal point"
   | "riff mutation";
+export type PatternMotion = "anchor" | "rise" | "fall" | "orbit";
 export type RiffEvent = {
   pitch: number;
   start: number;
@@ -79,6 +80,8 @@ export function generateProgRiff({
   grouping = "3+3+2",
   density = 0.72,
   seed = 1,
+  startOffset = 0.5,
+  motion = "orbit",
 }: {
   root: Root;
   mode: Mode;
@@ -87,57 +90,60 @@ export function generateProgRiff({
   grouping?: string;
   density?: number;
   seed?: number;
+  startOffset?: number;
+  motion?: PatternMotion;
 }): RiffEvent[] {
   const scale = getScale(root, mode);
   const random = randomFrom(seed);
-  const rootPitch = 36 + (notePitchClass(root) ?? 0);
-  const pulses = grouping.split("+").map(Number).filter(Boolean);
-  const steps = Math.max(8, Math.round(beats * 4));
-  const cycleSteps = Math.max(2, Math.min(11, Math.round(cycle))) * 2;
+  const basePitch = 48 + (notePitchClass(root) ?? 0);
+  const pulses = grouping.split("+").map(Number).filter((value) => value > 0);
+  const cycleUnits = Math.max(3, Math.min(14, Math.round(cycle))) * 2;
+  const totalUnits = Math.max(4, Math.round(beats * 2));
+  const offsetUnits = Math.max(0, Math.round(startOffset * 2));
+  const degreeShapes: Record<PatternMotion, number[]> = {
+    anchor: [4, 4, 2, 4],
+    rise: [2, 3, 4, 5],
+    fall: [5, 4, 3, 2],
+    orbit: [4, 2, 5, 3],
+  };
+  const shape = degreeShapes[motion];
   const events: RiffEvent[] = [];
-  for (let step = 0; step < steps; step++) {
-    const isCycleAccent = step % cycleSteps === 0;
-    const groupedAccent =
-      pulses.length > 0 &&
-      pulses.reduce((sum, length) => sum + length, 0) > 0 &&
-      (() => {
-        let cursor = 0;
-        const slot =
-          (step / 2) % pulses.reduce((sum, length) => sum + length, 0);
-        for (const length of pulses) {
-          if (slot === cursor) return true;
-          cursor += length;
-        }
-        return false;
-      })();
-    const chance =
-      isCycleAccent || groupedAccent
-        ? 0.96
-        : Math.max(0.15, Math.min(0.92, density * 0.58));
-    if (random() < chance) {
-      const interval = isCycleAccent
-        ? 0
-        : [0, 0, 7, 12, 3, 5][Math.floor(random() * 6)];
-      const scaleShift =
-        random() < 0.17
-          ? (notePitchClass(scale[Math.floor(random() * scale.length)]) ?? 0) -
-            (notePitchClass(root) ?? 0)
-          : interval;
-      events.push({
-        pitch: rootPitch + scaleShift,
-        start: step / 4,
-        duration: isCycleAccent ? 0.42 : random() < 0.25 ? 0.22 : 0.34,
-        accent: isCycleAccent || !!groupedAccent,
-        muted: !isCycleAccent && random() < 0.62,
-      });
-    }
+  const onsets: number[] = [];
+  let groupCursor = offsetUnits;
+  let groupIndex = 0;
+  while (groupCursor < totalUnits) {
+    onsets.push(groupCursor);
+    groupCursor += pulses[groupIndex % Math.max(1, pulses.length)] ?? 2;
+    groupIndex++;
+  }
+  for (let index = 0; index < onsets.length; index++) {
+    const unit = onsets[index];
+    const cyclePosition = unit % cycleUnits;
+    const phrasePosition = index % shape.length;
+    const keep = phrasePosition === 0 || random() < Math.max(0.45, density);
+    if (!keep) continue;
+    let degree = shape[phrasePosition] % scale.length;
+    // One restrained turnaround variation prevents a long loop feeling pasted.
+    if (index > 0 && index % 8 === 7)
+      degree = Math.max(0, Math.min(scale.length - 1, degree + (seed % 2 ? -1 : 1)));
+    const pitchClass = notePitchClass(scale[degree]) ?? notePitchClass(root) ?? 0;
+    const pitch = basePitch + ((pitchClass - (notePitchClass(root) ?? 0) + 12) % 12);
+    const nextUnit = onsets[index + 1] ?? Math.min(totalUnits, unit + 2);
+    const available = Math.max(0.25, (nextUnit - unit) / 2);
+    events.push({
+      pitch,
+      start: unit / 2,
+      duration: Math.min(0.72, available * 0.72),
+      accent: phrasePosition === 0 || cyclePosition === offsetUnits,
+      muted: false,
+    });
   }
   return events.length
     ? events
     : [
         {
-          pitch: rootPitch,
-          start: 0,
+          pitch: basePitch + 7,
+          start: Math.min(startOffset, Math.max(0, beats - 0.5)),
           duration: 0.4,
           accent: true,
           muted: false,

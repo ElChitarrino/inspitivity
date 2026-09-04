@@ -29,8 +29,8 @@ test("chord generation respects length, scale, seed, and complexity", () => {
 
 test("chord progressions use varied openings and expose each chord's scale degree", () => {
   const openings = new Set(Array.from({ length: 12 }, (_, seed) => generateChordProgression({ root: "C", mode: "major", bars: 4, complexity: "medium", seed })[0].roman));
-  assert.ok(openings.size >= 5, `expected varied opening roles, received ${[...openings].join(", ")}`);
-  assert.ok(Array.from({ length: 12 }, (_, seed) => generateChordProgression({ root: "C", mode: "major", bars: 4, complexity: "medium", seed })[0].roman).some(roman => roman !== "I"));
+  assert.ok(openings.size >= 4, `expected a curated set of opening roles, received ${[...openings].join(", ")}`);
+  assert.ok(Array.from({ length: 12 }, (_, seed) => generateChordProgression({ root: "C", mode: "major", bars: 4, complexity: "medium", seed })[0].roman).every(roman => roman !== "I"));
 });
 
 test("melodies are deterministic for a seed and valid for their requested scale and range", () => {

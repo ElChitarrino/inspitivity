@@ -11,6 +11,7 @@ export type Mode =
   | "minor pentatonic";
 export type Complexity = "simple" | "medium" | "advanced";
 export type MelodyMood = "calm" | "bright" | "melancholic" | "dark";
+export type ProgressionOpening = "away" | "tonic" | "surprise";
 
 const PITCH_CLASS: Record<Root, number> = {
   C: 0,
@@ -100,16 +101,28 @@ export function chordIntervals(symbol: string) {
   return [0, 4, 7];
 }
 
-// A tonic opening is useful sometimes, but a progression is more inviting when
-// it can begin with a pre-dominant, dominant, or relative colour as well.
-const PATTERNS = [
-  [0, 3, 4, 0],
-  [5, 3, 0, 4],
-  [1, 4, 5, 0],
-  [2, 5, 3, 4],
-  [4, 1, 5, 3],
-  [3, 5, 1, 4],
-];
+// Phrase-shaped templates give regeneration a dependable harmonic arc. Most
+// begin away from tonic, but they still prepare or imply a convincing return.
+const PROGRESSION_PATTERNS: Record<ProgressionOpening, number[][]> = {
+  away: [
+    [5, 3, 0, 4],
+    [1, 4, 5, 3],
+    [3, 5, 1, 4],
+    [2, 5, 3, 4],
+    [5, 1, 3, 4],
+  ],
+  tonic: [
+    [0, 3, 4, 0],
+    [0, 5, 1, 4],
+    [0, 2, 3, 4],
+  ],
+  surprise: [
+    [2, 5, 3, 1],
+    [4, 1, 5, 3],
+    [6, 3, 1, 4],
+    [1, 5, 2, 4],
+  ],
+};
 
 export function generateChordProgression({
   root,
@@ -117,15 +130,18 @@ export function generateChordProgression({
   bars,
   complexity,
   seed = Date.now(),
+  opening = "away",
 }: {
   root: Root;
   mode: Mode;
   bars: number;
   complexity: Complexity;
   seed?: number;
+  opening?: ProgressionOpening;
 }) {
   const scale = getScale(root, mode);
-  const basePattern = PATTERNS[Math.abs(seed) % PATTERNS.length];
+  const patterns = PROGRESSION_PATTERNS[opening];
+  const basePattern = patterns[Math.abs(seed) % patterns.length];
   const minorLike = [
     "minor",
     "dorian",
@@ -238,10 +254,14 @@ export function generateMelody({
   const rootIndexes = availablePitches
     .map((pitch, index) => ({ pitch, index }))
     .filter((item) => item.pitch % 12 === rootPitchClass);
-  let scaleIndex =
-    rootIndexes.sort(
-      (a, b) => Math.abs(a.index - middle) - Math.abs(b.index - middle),
-    )[0]?.index ?? middle;
+  const tonalStarts = availablePitches
+    .map((pitch, index) => ({ pitch, index }))
+    .filter((item) => {
+      const interval = (item.pitch - rootPitchClass + 120) % 12;
+      return interval === MODES[mode][2] || interval === MODES[mode][4];
+    })
+    .sort((a, b) => Math.abs(a.index - middle) - Math.abs(b.index - middle));
+  let scaleIndex = tonalStarts[0]?.index ?? middle;
 
   const nextMovement = () => {
     if (random() < profile.repeat) return 0;
@@ -266,14 +286,16 @@ export function generateMelody({
     duration: number;
     velocity: number;
   }> = [];
-  let start = 0;
+  // A short pickup makes the phrase feel played rather than dropped on beat 1.
+  let start = profile.syncopation >= 0.3 ? 0.25 : 0.5;
 
   for (let index = 0; index < notes; index++) {
     const phrase = Math.floor(index / 4) % 4;
     const position = index % 4;
     let movement = phrase === 2 ? motifB[position] : motifA[position];
-    if (phrase === 1 && position === 2) movement += random() < 0.5 ? -1 : 1;
-    if (phrase === 3 && position === 1) movement += random() < 0.5 ? -1 : 1;
+    // Repeat first; vary only one structural note in every second phrase.
+    if (phrase === 1 && position === 3) movement += seed % 2 ? -1 : 1;
+    if (phrase === 3 && position === 2) movement += seed % 3 ? -1 : 1;
     scaleIndex = reflect(scaleIndex + movement, availablePitches.length - 1);
 
     const normalizedDensity = Math.max(0, Math.min(1, density));

@@ -17,8 +17,10 @@ import {
   MelodyMood,
   Mode,
   notePitchClass,
+  ProgressionOpening,
   Root,
 } from "../packages/music-theory";
+import { createMidiFile, type MidiNoteEvent } from "../packages/midi";
 import {
   beatDurationSeconds,
   calculateTapTempo,
@@ -44,6 +46,7 @@ import {
   transitionDescription,
   type HarmonyColour,
   type MotifTransform,
+  type PatternMotion,
   type RiffEvent,
   type TransitionStyle,
 } from "../packages/prog";
@@ -86,6 +89,35 @@ type Screen =
   | "metronome"
   | "settings";
 type ChordDraft = { id: string; name: string; beats: number };
+type SynthVoice = "warm pad" | "glass" | "pluck" | "analog pulse" | "deep bass";
+
+const SYNTH_VOICES: SynthVoice[] = [
+  "warm pad",
+  "glass",
+  "pluck",
+  "analog pulse",
+  "deep bass",
+];
+const PATTERN_STARTS = [
+  ["A 16th late", 0.25],
+  ["An 8th late", 0.5],
+  ["On beat 2", 1],
+  ["After beat 2", 1.5],
+] as const;
+const MIDI_PROGRAMS: Record<SynthVoice, number> = {
+  "warm pad": 89,
+  glass: 98,
+  pluck: 84,
+  "analog pulse": 80,
+  "deep bass": 38,
+};
+const DRUM_MIDI_NOTES: Record<DrumInstrument, number> = {
+  kick: 36,
+  snare: 38,
+  hihat: 42,
+  crash: 49,
+  ride: 51,
+};
 
 const ROOTS: Root[] = [
   "C",
@@ -136,6 +168,16 @@ const projectHarmony = (project?: Project): { root: Root; mode: Mode } => {
 };
 const formatProjectKey = (root: Root, mode: Mode) =>
   `${root} ${titleMode(mode)}`;
+const safeFilename = (value: string) =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const downloadMidi = (name: string, bytes: Uint8Array) => {
+  const blob = new Blob([bytes as BlobPart], { type: "audio/midi" });
+  const anchor = document.createElement("a");
+  anchor.href = URL.createObjectURL(blob);
+  anchor.download = `${safeFilename(name) || "inspitivity-pattern"}.mid`;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(anchor.href), 1000);
+};
 const makeChordDrafts = (
   root: Root,
   mode: Mode,
@@ -145,8 +187,9 @@ const makeChordDrafts = (
   defaultBeats = 4,
   variation = 0,
   colour: HarmonyColour = "diatonic",
+  opening: ProgressionOpening = "away",
 ): ChordDraft[] =>
-  generateChordProgression({ root, mode, bars: count, complexity, seed }).map(
+  generateChordProgression({ root, mode, bars: count, complexity, seed, opening }).map(
     (chord, index) => {
       const wiggle = Math.round(
         (variation / 100) * Math.max(1, defaultBeats - 1),
@@ -483,22 +526,51 @@ function useAudioEngine() {
   const active = useRef<Set<AudioScheduledSourceNode>>(new Set());
   return useMemo(() => {
     const get = () => context.current ?? (context.current = new AudioContext());
-    const tone = (midi: number, start = 0, duration = 0.22, gain = 0.07) => {
+    const tone = (
+      midi: number,
+      start = 0,
+      duration = 0.22,
+      gain = 0.07,
+      voice: SynthVoice | "click" = "pluck",
+    ) => {
       const ctx = get();
-      const oscillator = ctx.createOscillator();
+      const when = ctx.currentTime + start;
       const volume = ctx.createGain();
-      oscillator.type = "triangle";
-      oscillator.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
-      volume.gain.setValueAtTime(gain, ctx.currentTime + start);
+      const filter = ctx.createBiquadFilter();
+      const profiles = {
+        "warm pad": { type: "sawtooth" as OscillatorType, attack: 0.12, cutoff: 1250, release: 0.42, detune: 7 },
+        glass: { type: "sine" as OscillatorType, attack: 0.006, cutoff: 5200, release: 0.34, detune: 12 },
+        pluck: { type: "triangle" as OscillatorType, attack: 0.004, cutoff: 2600, release: 0.12, detune: 0 },
+        "analog pulse": { type: "square" as OscillatorType, attack: 0.008, cutoff: 1500, release: 0.16, detune: 5 },
+        "deep bass": { type: "sawtooth" as OscillatorType, attack: 0.012, cutoff: 520, release: 0.2, detune: 0 },
+        click: { type: "sine" as OscillatorType, attack: 0.001, cutoff: 7000, release: 0.025, detune: 0 },
+      } as const;
+      const profile = profiles[voice];
+      const oscillators = [0, ...(profile.detune ? [-profile.detune, profile.detune] : [])].map((detune) => {
+        const oscillator = ctx.createOscillator();
+        oscillator.type = profile.type;
+        oscillator.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
+        oscillator.detune.value = detune;
+        oscillator.connect(filter);
+        active.current.add(oscillator);
+        oscillator.onended = () => active.current.delete(oscillator);
+        return oscillator;
+      });
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(profile.cutoff, when);
+      const scaledGain = gain / Math.sqrt(oscillators.length);
+      volume.gain.setValueAtTime(0.0001, when);
+      volume.gain.linearRampToValueAtTime(scaledGain, when + profile.attack);
+      volume.gain.setValueAtTime(scaledGain, Math.max(when + profile.attack, when + duration * 0.7));
       volume.gain.exponentialRampToValueAtTime(
         0.0001,
-        ctx.currentTime + start + duration,
+        when + duration + profile.release,
       );
-      oscillator.connect(volume).connect(ctx.destination);
-      active.current.add(oscillator);
-      oscillator.onended = () => active.current.delete(oscillator);
-      oscillator.start(ctx.currentTime + start);
-      oscillator.stop(ctx.currentTime + start + duration);
+      filter.connect(volume).connect(ctx.destination);
+      oscillators.forEach((oscillator) => {
+        oscillator.start(when);
+        oscillator.stop(when + duration + profile.release);
+      });
     };
     const createNoiseSample = (
       ctx: AudioContext,
@@ -559,7 +631,7 @@ function useAudioEngine() {
       }
       if (instrument === "snare") {
         cymbalNoise(start, 0.19, 0.12 * velocity, 1200, 0.055);
-        tone(178, start, 0.07, 0.025 * velocity);
+        tone(78, start, 0.07, 0.025 * velocity, "click");
         return;
       }
       if (instrument === "hihat") {
@@ -571,7 +643,7 @@ function useAudioEngine() {
         return;
       }
       cymbalNoise(start, 0.52, 0.075 * velocity, 4200, 0.16);
-      tone(82, start, 0.17, 0.014 * velocity);
+      tone(82, start, 0.17, 0.014 * velocity, "click");
     };
     const stopAll = () => {
       active.current.forEach((source) => {
@@ -601,6 +673,7 @@ function scheduleClickTrack(
       beat * beatSeconds,
       0.04,
       accented ? 0.11 : 0.055,
+      "click",
     );
   }
 }
@@ -652,6 +725,7 @@ function playRiff(
   riff: RiffEvent[],
   startBeat: number,
   beatSeconds: number,
+  voice: SynthVoice = "analog pulse",
 ) {
   riff.forEach((note) =>
     engine.tone(
@@ -659,6 +733,7 @@ function playRiff(
       (startBeat + note.start) * beatSeconds,
       note.duration * beatSeconds,
       note.muted ? 0.027 : note.accent ? 0.065 : 0.04,
+      voice,
     ),
   );
 }
@@ -1090,8 +1165,8 @@ function Home({
         <ToolButton
           tone="amber"
           icon="⇶"
-          title="Prog Riff Lab"
-          copy="Polymeters and accents"
+          title="Synth Pattern"
+          copy="A repeating guide pulse"
           onClick={() => go("riff")}
         />
         <ToolButton
@@ -1722,7 +1797,7 @@ function ProjectView({
                       ⌁ Melody
                     </button>
                     <button onClick={() => openSectionTool(section.id, "riff")}>
-                      ⇶ Riff
+                      ⇶ Pattern
                     </button>
                     <button
                       onClick={() => openSectionTool(section.id, "drums")}
@@ -1848,7 +1923,7 @@ function ProjectView({
           ⌁ Melody
         </button>
         <button onClick={() => openSectionTool(project.sections[0].id, "riff")}>
-          ⇶ Riff
+          ⇶ Pattern
         </button>
         <button
           onClick={() => openSectionTool(project.sections[0].id, "drums")}
@@ -1990,7 +2065,7 @@ function ToolHeader({
           className={active === "riff" ? "active" : ""}
           onClick={() => go("riff")}
         >
-          Riffs
+          Pattern
         </button>
         <button
           className={active === "drums" ? "active" : ""}
@@ -2118,6 +2193,8 @@ function ChordTool({
   const [lengthVariation, setLengthVariation] = useState(0);
   const [complexity, setComplexity] = useState<Complexity>("medium");
   const [harmonyColour, setHarmonyColour] = useState<HarmonyColour>("diatonic");
+  const [opening, setOpening] = useState<ProgressionOpening>("away");
+  const [voice, setVoice] = useState<SynthVoice>("warm pad");
   const [seed, setSeed] = useState(initialSeed);
   const [chords, setChords] = useState<ChordDraft[]>(() =>
     idea
@@ -2138,6 +2215,7 @@ function ChordTool({
         defaultBeats,
         lengthVariation,
         harmonyColour,
+        opening,
       ),
     );
   };
@@ -2154,13 +2232,14 @@ function ChordTool({
             startBeat * beatSeconds,
             chord.beats * beatSeconds * 0.92,
             0.035,
+            voice,
           ),
         );
       startBeat += chord.beats;
     });
     if (metronomeEnabled)
       scheduleClickTrack(engine, startBeat, beatSeconds, project.meter);
-  }, [chords, beatSeconds, engine, metronomeEnabled, project.meter]);
+  }, [chords, beatSeconds, engine, metronomeEnabled, project.meter, voice]);
   const transport = useLoopTransport(
     play,
     progressionLoopDurationMs(totalBeats, project.bpm),
@@ -2176,7 +2255,7 @@ function ChordTool({
     <>
       <ToolHeader
         title="Chord Progression"
-        subtitle="Generate and shape harmonies in whole notes"
+        subtitle="Shape coherent harmonic arcs, then make them yours"
         back={back}
         go={go}
         active="chords"
@@ -2242,13 +2321,19 @@ function ChordTool({
               }
             />
           </label>
-          <ControlTitle n="4" title="Complexity" />
+          <ControlTitle n="4" title="Where should it begin?" />
+          <Segment
+            options={["away", "tonic", "surprise"]}
+            value={opening}
+            set={(value) => setOpening(value as ProgressionOpening)}
+          />
+          <ControlTitle n="5" title="Complexity" />
           <Segment
             options={["simple", "medium", "advanced"]}
             value={complexity}
             set={(v) => setComplexity(v as Complexity)}
           />
-          <ControlTitle n="5" title="Progressive harmony colour" />
+          <ControlTitle n="6" title="Harmony colour" />
           <Select
             label="Colour device"
             value={harmonyColour}
@@ -2261,9 +2346,16 @@ function ChordTool({
               "pedal point",
             ]}
           />
+          <ControlTitle n="7" title="Preview sound" />
+          <Select
+            label="Instrument"
+            value={voice}
+            set={(value) => setVoice(value as SynthVoice)}
+            options={SYNTH_VOICES}
+          />
           <p className="control-note">
-            Choose modal borrowing, chromatic mediants, quartal stacks, or a
-            pedal point. Every chord remains editable.
+            “Away” begins on a related chord and follows a dependable arc.
+            Regenerate changes the phrase without abandoning its musical logic.
           </p>
           <button className="primary-button wide" onClick={() => regenerate()}>
             Generate progression <span>↻</span>
@@ -2406,6 +2498,24 @@ function ChordTool({
           >
             {idea ? "✓ Update progression" : `＋ Save to ${project.name}`}
           </button>
+          <button
+            className="export-button wide"
+            onClick={() => {
+              let cursor = 0;
+              const notes: MidiNoteEvent[] = [];
+              chords.forEach((chord) => {
+                const pitch = notePitchClass(chord.name);
+                if (pitch !== null)
+                  chordIntervals(chord.name).forEach((interval) =>
+                    notes.push({ pitch: 48 + pitch + interval, start: cursor, duration: chord.beats * 0.92, velocity: 0.68 }),
+                  );
+                cursor += chord.beats;
+              });
+              downloadMidi(`${project.name}-chords`, createMidiFile({ name: `${project.name} chords`, bpm: project.bpm, meter: project.meter, notes, program: MIDI_PROGRAMS[voice] }));
+            }}
+          >
+            ⇩ Export chords as MIDI
+          </button>
         </section>
       </div>
     </>
@@ -2449,6 +2559,7 @@ function MelodyTool({
   const [density, setDensity] = useState(section ? 0.55 : 0.6);
   const [noteCount, setNoteCount] = useState(Math.min(30, defaultNoteCount));
   const [seed, setSeed] = useState(initialSeed);
+  const [voice, setVoice] = useState<SynthVoice>("glass");
   const [savedMelody, setSavedMelody] = useState(() =>
     idea ? decodeMelodyIdea(idea) : null,
   );
@@ -2468,6 +2579,7 @@ function MelodyTool({
         n.start * beatSeconds,
         n.duration * beatSeconds * 0.9,
         0.055,
+        voice,
       ),
     );
     if (metronomeEnabled)
@@ -2482,7 +2594,7 @@ function MelodyTool({
         beatSeconds,
         project.meter,
       );
-  }, [melody, beatSeconds, engine, metronomeEnabled, project.meter]);
+  }, [melody, beatSeconds, engine, metronomeEnabled, project.meter, voice]);
   const transport = useLoopTransport(
     play,
     melodyLoopDurationMs(melody, bpm),
@@ -2672,6 +2784,17 @@ function MelodyTool({
               </button>
             ))}
           </div>
+          <ControlTitle n="5" title="Preview sound" />
+          <Select
+            label="Instrument"
+            value={voice}
+            set={(value) => setVoice(value as SynthVoice)}
+            options={SYNTH_VOICES}
+          />
+          <p className="control-note">
+            New phrases begin as a pickup on the 3rd or 5th, repeat a clear
+            motif, then vary one structural note before resolving.
+          </p>
           <button
             className="primary-button violet-button wide"
             onClick={() => {
@@ -2792,6 +2915,17 @@ function MelodyTool({
           >
             {idea ? "✓ Update melody" : `＋ Save to ${project.name}`}
           </button>
+          <button
+            className="export-button wide"
+            onClick={() =>
+              downloadMidi(
+                `${project.name}-melody`,
+                createMidiFile({ name: `${project.name} melody`, bpm, meter: project.meter, notes: melody, program: MIDI_PROGRAMS[voice] }),
+              )
+            }
+          >
+            ⇩ Export melody as MIDI
+          </button>
         </section>
       </div>
     </>
@@ -2828,6 +2962,9 @@ function RiffTool({
   const [cycle, setCycle] = useState(5);
   const [grouping, setGrouping] = useState("3+3+2");
   const [density, setDensity] = useState(0.72);
+  const [startOffset, setStartOffset] = useState(0.5);
+  const [motion, setMotion] = useState<PatternMotion>("orbit");
+  const [voice, setVoice] = useState<SynthVoice>("analog pulse");
   const [seed, setSeed] = useState(sectionIndex >= 0 ? sectionIndex + 41 : 41);
   const [savedRiff, setSavedRiff] = useState<RiffEvent[] | null>(() =>
     idea ? decodeRiffIdea(idea) : null,
@@ -2835,16 +2972,16 @@ function RiffTool({
   const engine = useAudioEngine();
   const generatedRiff = useMemo(
     () =>
-      generateProgRiff({ root, mode, beats, cycle, grouping, density, seed }),
-    [root, mode, beats, cycle, grouping, density, seed],
+      generateProgRiff({ root, mode, beats, cycle, grouping, density, seed, startOffset, motion }),
+    [root, mode, beats, cycle, grouping, density, seed, startOffset, motion],
   );
   const riff = savedRiff ?? generatedRiff;
   const beatSeconds = beatDurationSeconds(project.bpm);
   const play = useCallback(() => {
-    playRiff(engine, riff, 0, beatSeconds);
+    playRiff(engine, riff, 0, beatSeconds, voice);
     if (metronomeEnabled)
       scheduleClickTrack(engine, beats, beatSeconds, project.meter);
-  }, [engine, riff, beatSeconds, metronomeEnabled, beats, project.meter]);
+  }, [engine, riff, beatSeconds, metronomeEnabled, beats, project.meter, voice]);
   const transport = useLoopTransport(
     play,
     progressionLoopDurationMs(beats, project.bpm),
@@ -2853,8 +2990,8 @@ function RiffTool({
   return (
     <>
       <ToolHeader
-        title="Prog Riff Lab"
-        subtitle="Build low-register polymeters and displaced accents"
+        title="Synth Pattern"
+        subtitle="Create a repeating pulse that pulls the track forward"
         back={back}
         go={go}
         active="riff"
@@ -2873,7 +3010,7 @@ function RiffTool({
       )}
       <div className="tool-layout">
         <section className="control-panel riff-panel">
-          <ControlTitle n="1" title="Polymeter cycle" />
+          <ControlTitle n="1" title="Pattern length" />
           <Segment
             options={[3, 4, 5, 7]}
             value={cycle}
@@ -2883,7 +3020,7 @@ function RiffTool({
             }}
             suffix=" pulses"
           />
-          <ControlTitle n="2" title="Accent grouping" />
+          <ControlTitle n="2" title="Rhythm shape" />
           <Select
             label="Grouping"
             value={grouping}
@@ -2893,10 +3030,29 @@ function RiffTool({
             }}
             options={["3+3+2", "2+2+3", "4+3", "3+2+2", "5+5+3"]}
           />
-          <ControlTitle n="3" title="Attack density" />
+          <ControlTitle n="3" title="Start position" />
+          <Select
+            label="First note"
+            value={PATTERN_STARTS.find((option) => option[1] === startOffset)?.[0] ?? "An 8th late"}
+            set={(value) => {
+              setSavedRiff(null);
+              setStartOffset(PATTERN_STARTS.find((option) => option[0] === value)?.[1] ?? 0.5);
+            }}
+            options={PATTERN_STARTS.map((option) => option[0])}
+          />
+          <ControlTitle n="4" title="Pitch motion" />
+          <Segment
+            options={["anchor", "rise", "fall", "orbit"]}
+            value={motion}
+            set={(value) => {
+              setSavedRiff(null);
+              setMotion(value as PatternMotion);
+            }}
+          />
+          <ControlTitle n="5" title="Activity" />
           <input
             className="density-range"
-            aria-label="Riff attack density"
+            aria-label="Synth pattern activity"
             type="range"
             min=".3"
             max="1"
@@ -2907,9 +3063,11 @@ function RiffTool({
               setDensity(Number(event.target.value));
             }}
           />
+          <ControlTitle n="6" title="Sound" />
+          <Select label="Instrument" value={voice} set={(value) => setVoice(value as SynthVoice)} options={SYNTH_VOICES} />
           <p className="control-note">
-            The riff cycle can resolve against a different bar length. Accent
-            groups become the audible picking grid.
+            The first note is deliberately displaced. A short pitch cell then
+            repeats across the section with one restrained turnaround change.
           </p>
           <button
             className="primary-button wide"
@@ -2918,13 +3076,13 @@ function RiffTool({
               setSeed((value) => value + 1);
             }}
           >
-            Generate prog riff <span>↻</span>
+            Create another pattern <span>↻</span>
           </button>
         </section>
         <section className="result-panel">
           <div className="result-heading">
             <div>
-              <p className="eyebrow">POLYMETER RIFF</p>
+              <p className="eyebrow">REPEATING GUIDE PATTERN</p>
               <h2>
                 {cycle} pulse · {grouping}
               </h2>
@@ -2940,7 +3098,7 @@ function RiffTool({
               {transport.mode === "stopped" ? "▶ Listen" : "■ Stop"}
             </button>
           </div>
-          <div className="riff-grid" aria-label="Generated riff events">
+          <div className="riff-grid" aria-label="Generated synth pattern events">
             {riff.map((note, index) => (
               <span
                 key={index}
@@ -2964,7 +3122,7 @@ function RiffTool({
                   ? transport.stop()
                   : transport.start(false)
               }
-              aria-label={transport.mode === "once" ? "Stop riff" : "Play riff"}
+              aria-label={transport.mode === "once" ? "Stop synth pattern" : "Play synth pattern"}
             >
               {transport.mode === "once" ? "■" : "▶"}
             </button>
@@ -2980,7 +3138,7 @@ function RiffTool({
                   : transport.start(true)
               }
               aria-label={
-                transport.mode === "loop" ? "Stop looping riff" : "Loop riff"
+                transport.mode === "loop" ? "Stop looping synth pattern" : "Loop synth pattern"
               }
               aria-pressed={transport.mode === "loop"}
             >
@@ -2992,8 +3150,8 @@ function RiffTool({
             onClick={() =>
               save(
                 "riff",
-                `${cycle}-pulse ${grouping} riff`,
-                `${riff.length} attacks · ${grouping} against ${section?.meterMap?.join(" → ") ?? project.meter}`,
+                `${cycle}-pulse ${grouping} synth pattern`,
+                `${riff.length} notes · starts after ${startOffset} beat · ${grouping} across ${section?.meterMap?.join(" → ") ?? project.meter}`,
                 riff.map(
                   (note) =>
                     `${note.pitch}|${note.start}|${note.duration}|${note.accent ? 1 : 0}|${note.muted ? 1 : 0}`,
@@ -3001,7 +3159,18 @@ function RiffTool({
               )
             }
           >
-            {idea ? "✓ Update riff" : `＋ Save to ${project.name}`}
+            {idea ? "✓ Update pattern" : `＋ Save to ${project.name}`}
+          </button>
+          <button
+            className="export-button wide"
+            onClick={() =>
+              downloadMidi(
+                `${project.name}-synth-pattern`,
+                createMidiFile({ name: `${project.name} synth pattern`, bpm: project.bpm, meter: project.meter, notes: riff, program: MIDI_PROGRAMS[voice] }),
+              )
+            }
+          >
+            ⇩ Export pattern as MIDI
           </button>
         </section>
       </div>
@@ -3346,6 +3515,23 @@ function DrumTool({
           >
             {idea ? "✓ Update drum loop" : `＋ Save to ${project.name}`}
           </button>
+          <button
+            className="export-button wide"
+            onClick={() =>
+              downloadMidi(
+                `${project.name}-drums`,
+                createMidiFile({
+                  name: `${project.name} drums`,
+                  bpm: project.bpm,
+                  meter: project.meter,
+                  notes: loop.map((hit) => ({ pitch: DRUM_MIDI_NOTES[hit.instrument], start: hit.step / 4, duration: 0.12, velocity: hit.velocity, channel: 9 })),
+                  program: 0,
+                }),
+              )
+            }
+          >
+            ⇩ Export drums as MIDI
+          </button>
         </section>
       </div>
     </>
@@ -3675,8 +3861,8 @@ function CreateModal({
           <ToolButton
             tone="amber"
             icon="⇶"
-            title="Prog riff"
-            copy="Build a polymeter"
+            title="Synth pattern"
+            copy="Build a repeating guide"
             onClick={() => choose("riff")}
           />
           <ToolButton

@@ -29,6 +29,8 @@ test("riff generator is deterministic and contains displaced accent data", () =>
   assert.ok(riff.length > 0);
   assert.ok(riff.some((note) => note.accent));
   assert.ok(riff.every((note) => note.start >= 0 && note.start < 7));
+  assert.ok(riff[0].start > 0, "guide pattern should enter after beat one");
+  assert.notEqual(riff[0].pitch % 12, 4, "guide pattern should not open on the root");
 });
 
 test("advanced harmony, motif transformations, and tension guidance provide prog writing tools", () => {
