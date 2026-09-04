@@ -136,6 +136,7 @@ test("both generators expose accessible play and loop controls", () => {
 });
 
 test("songwriting tools offer varied synth voices and MIDI export", () => {
+  assert.match(source, /air flute/);
   assert.match(source, /warm pad/);
   assert.match(source, /analog pulse/);
   assert.match(source, /Export chords as MIDI/);
@@ -199,7 +200,9 @@ test("the progression editor explains each chord's harmonic role", () => {
 test("drum loops are section-aware, editable, and restricted to the five-piece kit", () => {
   assert.match(source, /function DrumTool/);
   assert.match(source, /DRUM_INSTRUMENTS\.map/);
-  assert.match(source, /kick, snare, hi-hat, crash, and ride/);
+  assert.match(source, /Try another proven groove/);
+  assert.match(source, /Following this section/);
+  assert.match(source, /inferGrooveContext/);
   assert.match(source, /openSectionTool\(section\.id, "drums"\)/);
   assert.match(source, /decodeDrumIdea/);
   assert.match(source, /Loop drum loop/);

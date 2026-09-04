@@ -29,6 +29,7 @@ import {
   DrumInstrument,
   DrumStyle,
   generateDrumLoop,
+  GrooveEnergy,
   isAccentedStep,
   melodyLoopDurationMs,
   progressionLoopDurationMs,
@@ -89,9 +90,16 @@ type Screen =
   | "metronome"
   | "settings";
 type ChordDraft = { id: string; name: string; beats: number };
-type SynthVoice = "warm pad" | "glass" | "pluck" | "analog pulse" | "deep bass";
+type SynthVoice =
+  | "air flute"
+  | "warm pad"
+  | "glass"
+  | "pluck"
+  | "analog pulse"
+  | "deep bass";
 
 const SYNTH_VOICES: SynthVoice[] = [
+  "air flute",
   "warm pad",
   "glass",
   "pluck",
@@ -105,6 +113,7 @@ const PATTERN_STARTS = [
   ["After beat 2", 1.5],
 ] as const;
 const MIDI_PROGRAMS: Record<SynthVoice, number> = {
+  "air flute": 73,
   "warm pad": 89,
   glass: 98,
   pluck: 84,
@@ -255,6 +264,55 @@ const sectionMeterMap = (section: SongSection, fallback: string) =>
   );
 const sectionBeatTotal = (section: SongSection, fallback: string) =>
   meterMapTotal(sectionMeterMap(section, fallback), fallback);
+const inferGrooveContext = (project: Project, section?: SongSection) => {
+  const projectIdeas = project.sections.flatMap((item) => item.ideas);
+  const activeIdeas = section
+    ? [...projectIdeas, ...section.ideas]
+    : projectIdeas;
+  const ideaText = activeIdeas
+    .map((idea) => `${idea.name} ${idea.detail} ${(idea.data ?? []).join(" ")}`)
+    .join(" ")
+    .toLowerCase();
+  const projectText = `${project.name} ${section?.name ?? ""}`.toLowerCase();
+  let score = 0;
+  const signals: string[] = [];
+  if (
+    /calm|mellow|soft|gentle|sparse|ambient|dream|warm|ballad|breathe|melanchol/.test(
+      ideaText,
+    )
+  ) {
+    score -= 3;
+    signals.push("the softer project ideas");
+  }
+  if (
+    /heavy|power|driv|aggress|punch|djent|metal|hard|intense/.test(ideaText)
+  ) {
+    score += 3;
+    signals.push("the high-energy project ideas");
+  }
+  if (/\b[a-g](?:b|#)?(?:maj7|maj9|m7|m9|add9|sus2|sus4|11|13)\b/.test(ideaText)) {
+    score -= 2;
+    signals.push("the extended harmony");
+  }
+  if (/intro|verse|breakdown|outro|midnight|fading/.test(projectText)) score -= 1;
+  if (/chorus|hook|drop|climax/.test(projectText)) score += 1;
+  if (project.bpm <= 105) {
+    score -= 1;
+    signals.push(`${project.bpm} BPM`);
+  } else if (project.bpm >= 142) {
+    score += 1;
+    signals.push(`${project.bpm} BPM`);
+  }
+  const energy: GrooveEnergy =
+    score <= -2 ? "mellow" : score >= 2 ? "powerful" : "balanced";
+  const source = signals.slice(0, 2).join(" and ");
+  return {
+    energy,
+    reason: source
+      ? `Following ${source}${section ? ` in ${section.name}` : ""}.`
+      : `A balanced pocket fits the current project context.`,
+  };
+};
 const chordRole = (symbol: string, root: Root, mode: Mode) => {
   const degree = getScale(root, mode).findIndex(
     (note) => notePitchClass(note) === notePitchClass(symbol),
@@ -538,6 +596,13 @@ function useAudioEngine() {
       const volume = ctx.createGain();
       const filter = ctx.createBiquadFilter();
       const profiles = {
+        "air flute": {
+          type: "sine" as OscillatorType,
+          attack: 0.055,
+          cutoff: 3100,
+          release: 0.24,
+          detune: 0,
+        },
         "warm pad": { type: "sawtooth" as OscillatorType, attack: 0.12, cutoff: 1250, release: 0.42, detune: 7 },
         glass: { type: "sine" as OscillatorType, attack: 0.006, cutoff: 5200, release: 0.34, detune: 12 },
         pluck: { type: "triangle" as OscillatorType, attack: 0.004, cutoff: 2600, release: 0.12, detune: 0 },
@@ -571,6 +636,21 @@ function useAudioEngine() {
         oscillator.start(when);
         oscillator.stop(when + duration + profile.release);
       });
+      if (voice === "air flute") {
+        const vibrato = ctx.createOscillator();
+        const vibratoDepth = ctx.createGain();
+        vibrato.frequency.value = 5.1;
+        vibratoDepth.gain.setValueAtTime(0, when);
+        vibratoDepth.gain.linearRampToValueAtTime(7, when + 0.16);
+        vibrato.connect(vibratoDepth);
+        oscillators.forEach((oscillator) =>
+          vibratoDepth.connect(oscillator.detune),
+        );
+        active.current.add(vibrato);
+        vibrato.onended = () => active.current.delete(vibrato);
+        vibrato.start(when);
+        vibrato.stop(when + duration + profile.release);
+      }
     };
     const createNoiseSample = (
       ctx: AudioContext,
@@ -1456,6 +1536,7 @@ function ProjectView({
             (offset + start) * beat,
             Math.min(note.duration, sectionBeats - start) * beat * 0.82,
             0.04,
+            "air flute",
           );
       });
       const savedDrums = section.ideas.find((idea) => idea.type === "drums");
@@ -1465,6 +1546,7 @@ function ProjectView({
             beatsPerBar,
             density: 0.58,
             style: sectionIndex % 2 ? "driving" : "steady",
+            energy: inferGrooveContext(project, section).energy,
             seed: sectionIndex + 31,
           });
       playDrumsForMeterMap(engine, drums, offset, section, project.meter, beat);
@@ -1554,6 +1636,7 @@ function ProjectView({
           start * beat,
           Math.min(note.duration, sectionBeats - start) * beat * 0.82,
           0.04,
+          "air flute",
         );
     });
     const savedDrums = section.ideas.find((idea) => idea.type === "drums");
@@ -1563,6 +1646,7 @@ function ProjectView({
           beatsPerBar,
           density: 0.58,
           style: sectionIndex % 2 ? "driving" : "steady",
+          energy: inferGrooveContext(project, section).energy,
           seed: sectionIndex + 31,
         });
     playDrumsForMeterMap(engine, drums, 0, section, project.meter, beat);
@@ -1636,7 +1720,7 @@ function ProjectView({
         const duration = Number(savedDuration) || 0.45;
         const pitch = Number(savedPitch) || 60 + (notePitchClass(name) ?? 0);
         endBeat = Math.max(endBeat, start + duration);
-        engine.tone(pitch, start * beat, duration * beat, 0.055);
+        engine.tone(pitch, start * beat, duration * beat, 0.055, "air flute");
       });
       finishAt(endBeat * beat * 1000);
       return;
@@ -2559,7 +2643,7 @@ function MelodyTool({
   const [density, setDensity] = useState(section ? 0.55 : 0.6);
   const [noteCount, setNoteCount] = useState(Math.min(30, defaultNoteCount));
   const [seed, setSeed] = useState(initialSeed);
-  const [voice, setVoice] = useState<SynthVoice>("glass");
+  const [voice, setVoice] = useState<SynthVoice>("air flute");
   const [savedMelody, setSavedMelody] = useState(() =>
     idea ? decodeMelodyIdea(idea) : null,
   );
@@ -3309,17 +3393,36 @@ function DrumTool({
   save: (t: Idea["type"], n: string, d: string, data?: string[]) => void;
   go: (s: Screen) => void;
 }) {
-  const beatsPerBar = Number(project.meter.split("/")[0]) || 4;
-  const [style, setStyle] = useState<DrumStyle>("steady");
-  const [density, setDensity] = useState(0.6);
+  const beatsPerBar = section
+    ? meterBeats(sectionMeterMap(section, project.meter)[0])
+    : meterBeats(project.meter);
+  const grooveContext = useMemo(
+    () => inferGrooveContext(project, section),
+    [project, section],
+  );
+  const [energyMode, setEnergyMode] = useState<"follow song" | GrooveEnergy>(
+    "follow song",
+  );
+  const energy =
+    energyMode === "follow song" ? grooveContext.energy : energyMode;
+  const [style, setStyle] = useState<DrumStyle>(() =>
+    grooveContext.energy === "powerful" ? "driving" : "steady",
+  );
+  const [density, setDensity] = useState(() =>
+    grooveContext.energy === "mellow"
+      ? 0.45
+      : grooveContext.energy === "powerful"
+        ? 0.78
+        : 0.6,
+  );
   const [seed, setSeed] = useState(sectionIndex >= 0 ? sectionIndex + 21 : 21);
   const [savedLoop, setSavedLoop] = useState<DrumHit[] | null>(() =>
     idea ? decodeDrumIdea(idea) : null,
   );
   const engine = useAudioEngine();
   const generatedLoop = useMemo(
-    () => generateDrumLoop({ beatsPerBar, density, style, seed }),
-    [beatsPerBar, density, style, seed],
+    () => generateDrumLoop({ beatsPerBar, density, style, energy, seed }),
+    [beatsPerBar, density, style, energy, seed],
   );
   const loop = savedLoop ?? generatedLoop;
   const beatSeconds = beatDurationSeconds(project.bpm);
@@ -3384,7 +3487,20 @@ function DrumTool({
               setStyle(value as DrumStyle);
             }}
           />
-          <ControlTitle n="2" title="Density" />
+          <ControlTitle n="2" title="Energy" />
+          <Segment
+            options={["follow song", "mellow", "balanced", "powerful"]}
+            value={energyMode}
+            set={(value) => {
+              setSavedLoop(null);
+              setEnergyMode(value as "follow song" | GrooveEnergy);
+            }}
+          />
+          <div className="groove-context">
+            <b>Following this section: {energy}</b>
+            <span>{grooveContext.reason}</span>
+          </div>
+          <ControlTitle n="3" title="Density" />
           <label className="range-control">
             <span>{Math.round(density * 100)}% activity</span>
             <input
@@ -3401,14 +3517,14 @@ function DrumTool({
             />
           </label>
           <p className="control-note">
-            Choose djent, odd-meter, or linear motion for progressive feels. The
-            kit stays limited to kick, snare, hi-hat, crash, and ride.
+            Each result starts from a complete, proven groove. Another click
+            chooses a new pocket and adds only one restrained variation.
           </p>
           <button
             className="primary-button coral-button wide"
             onClick={regenerate}
           >
-            Generate drum loop <span>↻</span>
+            Try another proven groove <span>↻</span>
           </button>
         </section>
         <section className="result-panel">
@@ -3418,7 +3534,7 @@ function DrumTool({
                 {idea ? "Editing saved drum loop" : "Your drum loop"}
               </p>
               <h2>
-                {style} pocket · {project.meter}
+                {energy} {style} pocket · {project.meter}
               </h2>
             </div>
             <button
@@ -3505,7 +3621,7 @@ function DrumTool({
             onClick={() =>
               save(
                 "drums",
-                `${style} drum loop`,
+                `${energy} ${style} drum loop`,
                 `${loop.length} hits · ${project.meter}`,
                 loop.map(
                   (hit) => `${hit.instrument}|${hit.step}|${hit.velocity}`,

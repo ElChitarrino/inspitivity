@@ -79,3 +79,50 @@ test("drum-loop generation is deterministic and uses only the supported kit", ()
   assert.ok(loop.some((hit) => hit.instrument === "kick"));
   assert.ok(loop.some((hit) => hit.instrument === "snare"));
 });
+
+test("drum generation varies complete grooves while preserving the pocket", () => {
+  const first = generateDrumLoop({
+    beatsPerBar: 4,
+    density: 0.7,
+    style: "steady",
+    energy: "balanced",
+    seed: 44,
+  });
+  const next = generateDrumLoop({
+    beatsPerBar: 4,
+    density: 0.7,
+    style: "steady",
+    energy: "balanced",
+    seed: 45,
+  });
+  assert.notDeepEqual(first, next);
+  for (const loop of [first, next])
+    assert.deepEqual(
+      loop
+        .filter((hit) => hit.instrument === "snare" && hit.velocity > 0.6)
+        .map((hit) => hit.step),
+      [4, 12],
+    );
+});
+
+test("song energy produces a genuinely mellower or more powerful version", () => {
+  const mellow = generateDrumLoop({
+    style: "driving",
+    energy: "mellow",
+    density: 0.75,
+    seed: 7,
+  });
+  const powerful = generateDrumLoop({
+    style: "driving",
+    energy: "powerful",
+    density: 0.75,
+    seed: 7,
+  });
+  assert.ok(mellow.length < powerful.length);
+  assert.equal(mellow.some((hit) => hit.instrument === "crash"), false);
+  assert.equal(powerful.some((hit) => hit.instrument === "crash"), true);
+  assert.ok(
+    Math.max(...mellow.map((hit) => hit.velocity)) <
+      Math.max(...powerful.map((hit) => hit.velocity)),
+  );
+});

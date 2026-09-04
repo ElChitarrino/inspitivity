@@ -60,38 +60,74 @@ export const DRUM_INSTRUMENTS = [
 export type DrumInstrument = (typeof DRUM_INSTRUMENTS)[number];
 export type DrumStyle =
   "steady" | "syncopated" | "driving" | "djent" | "odd meter" | "linear";
+export type GrooveEnergy = "mellow" | "balanced" | "powerful";
 export type DrumHit = {
   instrument: DrumInstrument;
   step: number;
   velocity: number;
 };
 
-function drumRandom(seed: number) {
-  let value = (Math.abs(Math.trunc(seed)) || 1) >>> 0;
-  return () => {
-    value += 0x6d2b79f5;
-    let result = value;
-    result = Math.imul(result ^ (result >>> 15), result | 1);
-    result ^= result + Math.imul(result ^ (result >>> 7), result | 61);
-    return ((result ^ (result >>> 14)) >>> 0) / 4294967296;
-  };
-}
+type GrooveTemplate = {
+  kick: number[];
+  snare: number[];
+  hats: number[];
+  ride?: number[];
+};
+
+// These are complete, playable one-bar grooves. Generation selects and gently
+// dresses a pattern; it never invents unrelated hits one step at a time.
+const GROOVE_TEMPLATES: Record<DrumStyle, GrooveTemplate[]> = {
+  steady: [
+    { kick: [0, 8, 10], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
+    { kick: [0, 6, 8, 14], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
+    { kick: [0, 7, 10], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
+  ],
+  syncopated: [
+    { kick: [0, 3, 7, 10], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
+    { kick: [0, 6, 9, 14], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
+    { kick: [0, 3, 8, 11, 14], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
+  ],
+  driving: [
+    { kick: [0, 3, 8, 10, 14], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14], ride: [0, 4, 8, 12] },
+    { kick: [0, 2, 7, 8, 11, 14], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14], ride: [0, 4, 8, 12] },
+    { kick: [0, 3, 6, 8, 10, 15], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14], ride: [0, 4, 8, 12] },
+  ],
+  djent: [
+    { kick: [0, 2, 3, 7, 8, 11, 14], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
+    { kick: [0, 3, 6, 8, 9, 14, 15], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
+    { kick: [0, 2, 5, 7, 10, 11, 15], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
+  ],
+  "odd meter": [
+    { kick: [0, 3, 8, 11], snare: [5, 13], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
+    { kick: [0, 6, 9, 14], snare: [4, 11], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
+    { kick: [0, 3, 7, 10, 14], snare: [5, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
+  ],
+  linear: [
+    { kick: [0, 6, 10], snare: [4, 12], hats: [2, 8, 14] },
+    { kick: [0, 7, 11], snare: [4, 12], hats: [2, 6, 9, 14] },
+    { kick: [0, 3, 8, 14], snare: [4, 11], hats: [2, 6, 10, 13] },
+  ],
+};
 
 export function generateDrumLoop({
   beatsPerBar = 4,
   density = 0.6,
   style = "steady",
+  energy = "balanced",
   seed = Date.now(),
 }: {
   beatsPerBar?: number;
   density?: number;
   style?: DrumStyle;
+  energy?: GrooveEnergy;
   seed?: number;
 }): DrumHit[] {
   const beats = Math.max(2, Math.min(12, Math.round(beatsPerBar)));
   const steps = beats * 4;
-  const random = drumRandom(seed);
   const normalizedDensity = Math.max(0.1, Math.min(1, density));
+  const templates = GROOVE_TEMPLATES[style];
+  const seedIndex = Math.abs(Math.trunc(seed));
+  const template = templates[seedIndex % templates.length];
   const hits: DrumHit[] = [];
   const add = (instrument: DrumInstrument, step: number, velocity: number) => {
     const clampedStep = ((step % steps) + steps) % steps;
@@ -106,56 +142,58 @@ export function generateDrumLoop({
         velocity: Math.max(0.2, Math.min(1, velocity)),
       });
   };
-  const backbeat =
-    style === "odd meter"
-      ? [Math.floor(steps * 0.42), Math.floor(steps * 0.76)]
-      : beats >= 4
-        ? [4, 12]
-        : [Math.floor(steps / 2)];
+  const mapStep = (step: number) => Math.round((step / 16) * steps) % steps;
+  const detailLimit = Math.max(1, Math.round(normalizedDensity * 5));
+  const chooseDetails = (values: number[], keepAtLeast = 1) =>
+    values.filter(
+      (_, index) =>
+        index < keepAtLeast || ((index + seedIndex) % 5) < detailLimit,
+    );
+  const velocity = {
+    mellow: { kick: 0.72, snare: 0.68, hat: 0.38, ride: 0.34 },
+    balanced: { kick: 0.88, snare: 0.82, hat: 0.52, ride: 0.48 },
+    powerful: { kick: 1, snare: 0.94, hat: 0.66, ride: 0.62 },
+  }[energy];
 
-  add("kick", 0, 1);
-  backbeat.forEach((step) => add("snare", step, 0.88));
-  for (let step = 0; step < steps; step += style === "linear" ? 3 : 2)
-    add(
-      style === "driving" || style === "djent" ? "ride" : "hihat",
-      step,
-      step % 4 === 0 ? 0.78 : 0.56,
+  const kickCount =
+    energy === "mellow"
+      ? Math.min(2, template.kick.length)
+      : energy === "balanced"
+        ? Math.max(2, Math.ceil(template.kick.length * normalizedDensity))
+        : template.kick.length;
+  template.kick
+    .slice(0, kickCount)
+    .forEach((step, index) =>
+      add("kick", mapStep(step), velocity.kick - (index ? 0.08 : 0)),
+    );
+  template.snare.forEach((step) => add("snare", mapStep(step), velocity.snare));
+
+  const hats =
+    energy === "mellow"
+      ? template.hats.filter((step) => step % 4 === 0)
+      : chooseDetails(template.hats, Math.min(4, template.hats.length));
+  hats.forEach((step) =>
+    add("hihat", mapStep(step), velocity.hat + (step % 4 === 0 ? 0.09 : 0)),
+  );
+  if (energy !== "mellow")
+    chooseDetails(template.ride ?? [], 0).forEach((step) =>
+      add("ride", mapStep(step), velocity.ride),
     );
 
-  for (let beat = 1; beat < beats; beat++) {
-    const step = beat * 4;
-    const kickChance =
-      style === "djent"
-        ? 0.92
-        : style === "driving"
-          ? 0.82
-          : style === "syncopated" || style === "odd meter"
-            ? 0.34
-            : style === "linear"
-              ? 0.42
-              : 0.54;
-    if (random() < kickChance) add("kick", step, 0.72 + random() * 0.18);
-    if (
-      ["syncopated", "djent", "odd meter"].includes(style) &&
-      random() < normalizedDensity * 0.72
-    )
-      add("kick", step + (random() < 0.5 ? 1 : 3), 0.54 + random() * 0.22);
+  // A seed chooses one known-safe embellishment, rather than gambling on every step.
+  const variation = seedIndex % 3;
+  if (energy === "mellow") {
+    if (normalizedDensity > 0.7 && variation === 1)
+      add("hihat", mapStep(14), 0.3);
+  } else {
+    if (variation === 0 && normalizedDensity > 0.55)
+      add("snare", mapStep(11), energy === "powerful" ? 0.58 : 0.42);
+    if (variation === 1 && normalizedDensity > 0.65)
+      add("kick", mapStep(15), energy === "powerful" ? 0.86 : 0.66);
+    if (variation === 2 && normalizedDensity > 0.75)
+      add("hihat", mapStep(15), energy === "powerful" ? 0.58 : 0.44);
   }
-  for (let step = 1; step < steps; step += 2)
-    if (
-      random() <
-      normalizedDensity *
-        (style === "driving" || style === "djent" ? 0.9 : 0.62)
-    )
-      add("hihat", step, 0.35 + random() * 0.25);
-  if (normalizedDensity > 0.56 && random() < 0.58)
-    add("crash", 0, 0.65 + random() * 0.22);
-  if (
-    ["driving", "djent"].includes(style) &&
-    normalizedDensity > 0.55 &&
-    random() < 0.5
-  )
-    add("ride", Math.floor(steps / 2), 0.55 + random() * 0.18);
+  if (energy === "powerful") add("crash", 0, 0.86);
 
   return hits.sort(
     (a, b) =>
