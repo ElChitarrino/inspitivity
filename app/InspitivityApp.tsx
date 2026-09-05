@@ -98,6 +98,11 @@ type SynthVoice =
   | "analog pulse"
   | "deep bass";
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+};
+
 const SYNTH_VOICES: SynthVoice[] = [
   "air flute",
   "warm pad",
@@ -446,6 +451,60 @@ function useProjects() {
       localStorage.setItem("inspitivity-projects", JSON.stringify(projects));
   }, [projects, ready]);
   return [projects, setProjects] as const;
+}
+
+function usePhoneInstall() {
+  const [installPrompt, setInstallPrompt] =
+    useState<BeforeInstallPromptEvent | null>(null);
+  const [standalone, setStandalone] = useState(false);
+  const [isIos, setIsIos] = useState(false);
+
+  useEffect(() => {
+    const navigatorWithStandalone = navigator as Navigator & {
+      standalone?: boolean;
+    };
+    setStandalone(
+      window.matchMedia("(display-mode: standalone)").matches ||
+        navigatorWithStandalone.standalone === true,
+    );
+    setIsIos(/iphone|ipad|ipod/i.test(navigator.userAgent));
+
+    const capturePrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+    const markInstalled = () => {
+      setStandalone(true);
+      setInstallPrompt(null);
+    };
+
+    window.addEventListener("beforeinstallprompt", capturePrompt);
+    window.addEventListener("appinstalled", markInstalled);
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {
+        /* online use remains available when offline registration fails */
+      });
+    }
+    return () => {
+      window.removeEventListener("beforeinstallprompt", capturePrompt);
+      window.removeEventListener("appinstalled", markInstalled);
+    };
+  }, []);
+
+  const install = useCallback(async () => {
+    if (!installPrompt) return false;
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === "accepted") setInstallPrompt(null);
+    return choice.outcome === "accepted";
+  }, [installPrompt]);
+
+  return {
+    canInstall: Boolean(installPrompt),
+    install,
+    isIos,
+    standalone,
+  };
 }
 
 function saveRecording(id: string, blob: Blob) {
@@ -861,6 +920,7 @@ function useLoopTransport(
 
 export default function InspitivityApp() {
   const [projects, setProjects] = useProjects();
+  const phoneInstall = usePhoneInstall();
   const [screen, setScreen] = useState<Screen>("home");
   const [selectedId, setSelectedId] = useState("midnight");
   const [modal, setModal] = useState<"project" | "create" | "record" | null>(
@@ -1104,6 +1164,8 @@ export default function InspitivityApp() {
       {screen === "settings" && (
         <Settings
           projects={projects}
+          phoneInstall={phoneInstall}
+          notify={notify}
           backUp={() => {
             const blob = new Blob([JSON.stringify(projects, null, 2)], {
               type: "application/json",
@@ -3842,10 +3904,19 @@ function Segment<T extends string | number>({
 function Settings({
   projects,
   backUp,
+  phoneInstall,
+  notify,
 }: {
   projects: Project[];
   backUp: () => void;
+  phoneInstall: ReturnType<typeof usePhoneInstall>;
+  notify: (message: string) => void;
 }) {
+  const installOnPhone = async () => {
+    const installed = await phoneInstall.install();
+    if (installed) notify("Inspitivity added to your phone");
+  };
+
   return (
     <>
       <Topbar title="Settings" subtitle="Local by default" />
@@ -3867,6 +3938,46 @@ function Settings({
         <button className="secondary-button wide" onClick={backUp}>
           ↓ Download project backup
         </button>
+      </div>
+      <div className="settings-card compact install-card">
+        <span className="phone-glyph" aria-hidden="true">▯</span>
+        <div>
+          <p className="eyebrow">Phone app</p>
+          <h3>
+            {phoneInstall.standalone
+              ? "Installed on this device"
+              : "Add Inspitivity to your Home Screen"}
+          </h3>
+          {phoneInstall.standalone ? (
+            <p>
+              Inspitivity now opens full-screen and keeps your projects on this
+              device.
+            </p>
+          ) : phoneInstall.canInstall ? (
+            <p>
+              Install the app for a full-screen workspace and faster access.
+            </p>
+          ) : phoneInstall.isIos ? (
+            <ol className="install-steps">
+              <li>Open this page in Safari.</li>
+              <li>Tap the Share button.</li>
+              <li>Choose <b>Add to Home Screen</b>, then <b>Add</b>.</li>
+            </ol>
+          ) : (
+            <p>
+              Open your browser menu and choose <b>Install app</b> or
+              <b> Add to Home screen</b>.
+            </p>
+          )}
+          {phoneInstall.canInstall && !phoneInstall.standalone && (
+            <button
+              className="primary-button wide"
+              onClick={installOnPhone}
+            >
+              Install on this device
+            </button>
+          )}
+        </div>
       </div>
       <div className="settings-card compact">
         <h3>About this prototype</h3>

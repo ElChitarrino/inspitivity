@@ -26,6 +26,19 @@ test("projects and audio are stored locally without requiring an account", () =>
   assert.match(source, /navigator\.mediaDevices\.getUserMedia/);
 });
 
+test("the songwriting workspace is installable on a phone", async () => {
+  const layout = await readFile(resolve(process.cwd(), "app/layout.tsx"), "utf8");
+  const manifest = await readFile(resolve(process.cwd(), "app/manifest.ts"), "utf8");
+  const serviceWorker = await readFile(resolve(process.cwd(), "public/sw.js"), "utf8");
+  assert.match(source, /beforeinstallprompt/);
+  assert.match(source, /serviceWorker\.register\("\/sw\.js"\)/);
+  assert.match(source, /Add to Home Screen/);
+  assert.match(layout, /appleWebApp/);
+  assert.match(layout, /viewportFit: "cover"/);
+  assert.match(manifest, /display: "standalone"/);
+  assert.match(serviceWorker, /inspitivity-shell-v1/);
+});
+
 test("arrangements expose section creation, ordering, and idea saving", () => {
   assert.match(source, /\+ Add section/);
   assert.match(source, /aria-label="Move up"/);

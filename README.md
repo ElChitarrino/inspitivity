@@ -2,6 +2,13 @@
 
 Inspitivity is a local-first songwriting workspace for creating chord progressions, melodies, recordings, and section-based arrangements. Project data stays in the browser on the device.
 
+## Install on a phone
+
+- iPhone or iPad: open the hosted site in Safari, tap **Share**, then **Add to Home Screen**.
+- Android: open the hosted site, open the browser menu, then choose **Install app** or **Add to Home screen**.
+
+The installed app opens full-screen. Its app shell remains available offline, while projects and recordings stay in local browser storage on that device.
+
 ## Run locally
 
 Requires Node.js 22.13 or later.
