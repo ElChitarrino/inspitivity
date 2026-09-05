@@ -99,3 +99,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .project-actions button{flex:1}
   .result-heading{align-items:flex-start;gap:12px}
 }
+
+.audio-status{display:flex;align-items:center;gap:8px;margin:10px 0 0;font-size:13px;font-weight:750;color:#d7e2dc}
+.audio-status span{width:8px;height:8px;border-radius:50%;background:var(--mint);box-shadow:0 0 12px color-mix(in srgb,var(--mint) 70%,transparent)}

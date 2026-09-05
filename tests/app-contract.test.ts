@@ -36,12 +36,16 @@ test("the songwriting workspace is installable on a phone", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.match(serviceWorker, /inspitivity-shell-v2/);
+  assert.match(serviceWorker, /inspitivity-shell-v3/);
 });
 
 test("mobile playback explicitly unlocks and masters the Web Audio graph", () => {
   assert.match(source, /const unlock = async \(\) =>/);
-  assert.match(source, /if \(context\.state !== "running"\) await context\.resume\(\)/);
+  assert.match(source, /context\.state === "running" \? Promise\.resolve\(\) : context\.resume\(\)/);
+  assert.match(source, /sharedAudioGraph/);
+  assert.match(source, /sharedNativeAudioUnlock\.play/);
+  assert.match(source, /const diagnostics = \(\) =>/);
+  assert.match(source, /Audio signal active/);
   assert.match(source, /createDynamicsCompressor/);
   assert.match(source, /createConvolver/);
   assert.match(source, /engine\.unlock/);

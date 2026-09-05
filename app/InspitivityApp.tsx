@@ -822,15 +822,47 @@ function BottomNav({
   );
 }
 
+type SharedAudioGraph = {
+  context: AudioContext;
+  input: GainNode;
+  analyser: AnalyserNode;
+};
+
+let sharedAudioGraph: SharedAudioGraph | null = null;
+let sharedNativeAudioUnlock: HTMLAudioElement | null = null;
+const sharedAudioSources = new Set<AudioScheduledSourceNode>();
+
+function silentWavUrl() {
+  const sampleRate = 8000;
+  const sampleCount = 800;
+  const buffer = new ArrayBuffer(44 + sampleCount);
+  const view = new DataView(buffer);
+  const write = (offset: number, value: string) => {
+    for (let index = 0; index < value.length; index++)
+      view.setUint8(offset + index, value.charCodeAt(index));
+  };
+  write(0, "RIFF");
+  view.setUint32(4, 36 + sampleCount, true);
+  write(8, "WAVEfmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate, true);
+  view.setUint16(32, 1, true);
+  view.setUint16(34, 8, true);
+  write(36, "data");
+  view.setUint32(40, sampleCount, true);
+  for (let index = 44; index < buffer.byteLength; index++)
+    view.setUint8(index, 128);
+  return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+}
+
 function useAudioEngine() {
-  const graph = useRef<{
-    context: AudioContext;
-    input: GainNode;
-  } | null>(null);
-  const active = useRef<Set<AudioScheduledSourceNode>>(new Set());
   return useMemo(() => {
-    const getGraph = () => {
-      if (graph.current) return graph.current;
+    const getGraph = (): SharedAudioGraph => {
+      if (sharedAudioGraph && sharedAudioGraph.context.state !== "closed")
+        return sharedAudioGraph;
       const AudioContextConstructor =
         window.AudioContext ??
         (window as typeof window & {
@@ -845,6 +877,7 @@ function useAudioEngine() {
       const wet = context.createGain();
       const compressor = context.createDynamicsCompressor();
       const master = context.createGain();
+      const analyser = context.createAnalyser();
 
       const impulseLength = Math.floor(context.sampleRate * 1.45);
       const impulse = context.createBuffer(2, impulseLength, context.sampleRate);
@@ -864,12 +897,15 @@ function useAudioEngine() {
       compressor.attack.value = 0.006;
       compressor.release.value = 0.24;
       master.gain.value = 0.92;
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.2;
 
       input.connect(dry).connect(compressor);
       input.connect(reverb).connect(wet).connect(compressor);
-      compressor.connect(master).connect(context.destination);
-      graph.current = { context, input };
-      return graph.current;
+      compressor.connect(master).connect(analyser).connect(context.destination);
+      const createdGraph = { context, input, analyser };
+      sharedAudioGraph = createdGraph;
+      return createdGraph;
     };
     const get = () => {
       const { context } = getGraph();
@@ -878,7 +914,16 @@ function useAudioEngine() {
     };
     const unlock = async () => {
       const { context, input } = getGraph();
-      if (context.state !== "running") await context.resume();
+      if (!sharedNativeAudioUnlock) {
+        sharedNativeAudioUnlock = new Audio(silentWavUrl());
+        sharedNativeAudioUnlock.loop = true;
+        sharedNativeAudioUnlock.preload = "auto";
+        sharedNativeAudioUnlock.setAttribute("playsinline", "");
+      }
+      const nativeUnlock = sharedNativeAudioUnlock.play().catch(() => undefined);
+      const contextUnlock =
+        context.state === "running" ? Promise.resolve() : context.resume();
+      await Promise.allSettled([nativeUnlock, contextUnlock]);
       const silence = context.createBufferSource();
       silence.buffer = context.createBuffer(1, 1, context.sampleRate);
       silence.connect(input);
@@ -918,8 +963,8 @@ function useAudioEngine() {
         oscillator.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
         oscillator.detune.value = detune;
         oscillator.connect(filter);
-        active.current.add(oscillator);
-        oscillator.onended = () => active.current.delete(oscillator);
+        sharedAudioSources.add(oscillator);
+        oscillator.onended = () => sharedAudioSources.delete(oscillator);
         return oscillator;
       });
       filter.type = "lowpass";
@@ -955,8 +1000,8 @@ function useAudioEngine() {
         oscillators.forEach((oscillator) =>
           vibratoDepth.connect(oscillator.detune),
         );
-        active.current.add(vibrato);
-        vibrato.onended = () => active.current.delete(vibrato);
+        sharedAudioSources.add(vibrato);
+        vibrato.onended = () => sharedAudioSources.delete(vibrato);
         vibrato.start(when);
         vibrato.stop(when + duration + profile.release);
       }
@@ -995,8 +1040,8 @@ function useAudioEngine() {
       volume.gain.setValueAtTime(gain, when);
       volume.gain.exponentialRampToValueAtTime(0.0001, when + duration);
       source.connect(filter).connect(volume).connect(getGraph().input);
-      active.current.add(source);
-      source.onended = () => active.current.delete(source);
+      sharedAudioSources.add(source);
+      source.onended = () => sharedAudioSources.delete(source);
       source.start(when);
       source.stop(when + duration);
     };
@@ -1012,8 +1057,8 @@ function useAudioEngine() {
         volume.gain.setValueAtTime(0.26 * velocity, when);
         volume.gain.exponentialRampToValueAtTime(0.0001, when + 0.18);
         oscillator.connect(volume).connect(getGraph().input);
-        active.current.add(oscillator);
-        oscillator.onended = () => active.current.delete(oscillator);
+        sharedAudioSources.add(oscillator);
+        oscillator.onended = () => sharedAudioSources.delete(oscillator);
         oscillator.start(when);
         oscillator.stop(when + 0.19);
         return;
@@ -1034,17 +1079,30 @@ function useAudioEngine() {
       cymbalNoise(start, 0.52, 0.075 * velocity, 4200, 0.16);
       tone(82, start, 0.17, 0.014 * velocity, "click");
     };
+    const diagnostics = () => {
+      const { context, analyser } = getGraph();
+      const samples = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(samples);
+      return {
+        state: context.state,
+        peak: samples.reduce(
+          (maximum, sample) => Math.max(maximum, Math.abs(sample - 128)),
+          0,
+        ),
+        activeSources: sharedAudioSources.size,
+      };
+    };
     const stopAll = () => {
-      active.current.forEach((source) => {
+      sharedAudioSources.forEach((source) => {
         try {
           source.stop();
         } catch {
           /* already stopped */
         }
       });
-      active.current.clear();
+      sharedAudioSources.clear();
     };
-    return { tone, drum, get, unlock, stopAll };
+    return { tone, drum, get, unlock, diagnostics, stopAll };
   }, []);
 }
 
@@ -1813,6 +1871,7 @@ function ProjectView({
   const [note, setNote] = useState("");
   const [sectionName, setSectionName] = useState("");
   const [arrangementPlaying, setArrangementPlaying] = useState(false);
+  const [audioStatus, setAudioStatus] = useState<string | null>(null);
   const [activeSectionIndex, setActiveSectionIndex] = useState<number | null>(
     null,
   );
@@ -1888,7 +1947,11 @@ function ProjectView({
       stopArrangement();
       return;
     }
-    if (!(await engine.unlock())) return;
+    if (!(await engine.unlock())) {
+      setAudioStatus("Audio blocked by this browser");
+      return;
+    }
+    setAudioStatus("Starting sound…");
     engine.stopAll();
     const { root, mode } = projectHarmony(project);
     const beat = beatDurationSeconds(project.bpm);
@@ -1980,6 +2043,14 @@ function ProjectView({
       offset += sectionBeats;
     });
     setArrangementPlaying(true);
+    window.setTimeout(() => {
+      const status = engine.diagnostics();
+      setAudioStatus(
+        status.state === "running" && status.peak > 1
+          ? "Audio signal active"
+          : `Audio output ${status.state}`,
+      );
+    }, 300);
     arrangementTimer.current = window.setTimeout(
       () => {
         arrangementTimer.current = null;
@@ -2231,6 +2302,12 @@ function ProjectView({
           Hear the full sketch, then change one layer inside the section that
           needs it.
         </p>
+        {audioStatus && (
+          <p className="audio-status" role="status">
+            <span aria-hidden="true" />
+            {audioStatus}
+          </p>
+        )}
       </div>
       <SectionTitle
         eyebrow=""
