@@ -36,7 +36,26 @@ test("the songwriting workspace is installable on a phone", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.match(serviceWorker, /inspitivity-shell-v1/);
+  assert.match(serviceWorker, /inspitivity-shell-v2/);
+});
+
+test("mobile playback explicitly unlocks and masters the Web Audio graph", () => {
+  assert.match(source, /const unlock = async \(\) =>/);
+  assert.match(source, /if \(context\.state !== "running"\) await context\.resume\(\)/);
+  assert.match(source, /createDynamicsCompressor/);
+  assert.match(source, /createConvolver/);
+  assert.match(source, /engine\.unlock/);
+});
+
+test("the home screen can create a coherent playable sketch in one flow", () => {
+  assert.match(source, /What should the idea feel like\?/);
+  assert.match(source, /Build playable sketch/);
+  assert.match(source, /function buildPlayableSketch/);
+  assert.match(source, /Emotive space/);
+  assert.match(source, /Neo-soul glow/);
+  assert.match(source, /Progressive lift/);
+  assert.match(source, /Heavy tension/);
+  assert.match(source, /fitMelodyToChords/);
 });
 
 test("arrangements expose section creation, ordering, and idea saving", () => {

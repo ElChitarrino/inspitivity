@@ -103,6 +103,22 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
+type SketchPreset = {
+  id: "emotive" | "neo-soul" | "prog" | "heavy";
+  label: string;
+  copy: string;
+  accent: string;
+  root: Root;
+  mode: Mode;
+  bpm: number;
+  meter: string;
+  mood: MelodyMood;
+  groove: DrumStyle;
+  energy: GrooveEnergy;
+  colour: HarmonyColour;
+  opening: ProgressionOpening;
+};
+
 const SYNTH_VOICES: SynthVoice[] = [
   "air flute",
   "warm pad",
@@ -158,6 +174,68 @@ const MODES: Mode[] = [
   "minor pentatonic",
 ];
 const COLORS = ["mint", "violet", "amber", "blue", "coral"];
+const SKETCH_PRESETS: SketchPreset[] = [
+  {
+    id: "emotive",
+    label: "Emotive space",
+    copy: "Sparse, vocal-led and resolving",
+    accent: "◌",
+    root: "A",
+    mode: "minor",
+    bpm: 88,
+    meter: "6/8",
+    mood: "melancholic",
+    groove: "steady",
+    energy: "mellow",
+    colour: "diatonic",
+    opening: "away",
+  },
+  {
+    id: "neo-soul",
+    label: "Neo-soul glow",
+    copy: "Extended harmony and pocket",
+    accent: "✦",
+    root: "E",
+    mode: "dorian",
+    bpm: 102,
+    meter: "4/4",
+    mood: "calm",
+    groove: "syncopated",
+    energy: "balanced",
+    colour: "diatonic",
+    opening: "away",
+  },
+  {
+    id: "prog",
+    label: "Progressive lift",
+    copy: "Odd pulse, melody and breathing room",
+    accent: "⌁",
+    root: "E",
+    mode: "dorian",
+    bpm: 120,
+    meter: "7/8",
+    mood: "bright",
+    groove: "odd meter",
+    energy: "balanced",
+    colour: "quartal",
+    opening: "surprise",
+  },
+  {
+    id: "heavy",
+    label: "Heavy tension",
+    copy: "Low pulse, restraint and impact",
+    accent: "◆",
+    root: "Eb",
+    mode: "phrygian",
+    bpm: 132,
+    meter: "7/8",
+    mood: "dark",
+    groove: "djent",
+    energy: "powerful",
+    colour: "pedal point",
+    opening: "surprise",
+  },
+];
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clampBpm = (bpm: number) =>
   Math.max(30, Math.min(260, Number.isFinite(bpm) ? Math.round(bpm) : 120));
@@ -338,6 +416,112 @@ const chordRole = (symbol: string, root: Root, mode: Mode) => {
   ][degree];
   return `${minor ? numeral.toLowerCase() : numeral}${diminished ? "°" : ""} · ${role}`;
 };
+
+function buildPlayableSketch(preset: SketchPreset): Project {
+  const seed = Date.now() % 100000;
+  const beatsPerBar = meterBeats(preset.meter);
+  const sections = [
+    { name: "Intro", bars: 4, color: "violet", density: 0.38, notes: 12 },
+    { name: "Verse", bars: 4, color: "mint", density: 0.54, notes: 20 },
+    { name: "Hook", bars: 4, color: "amber", density: 0.68, notes: 26 },
+  ].map((shape, sectionIndex): SongSection => {
+    const sectionSeed = seed + sectionIndex * 17;
+    const chords = makeChordDrafts(
+      preset.root,
+      preset.mode,
+      4,
+      preset.id === "neo-soul" || preset.id === "prog" ? "advanced" : "medium",
+      sectionSeed,
+      beatsPerBar,
+      sectionIndex === 2 ? 12 : 0,
+      preset.colour,
+      sectionIndex === 2 ? "tonic" : preset.opening,
+    );
+    const rawMelody = generateMelody({
+      root: preset.root,
+      mode: preset.mode,
+      notes: shape.notes,
+      density: shape.density,
+      mood: sectionIndex === 0 ? "calm" : preset.mood,
+      seed: sectionSeed + 7,
+    });
+    const melody = fitMelodyToChords(rawMelody, chords);
+    const drums = generateDrumLoop({
+      beatsPerBar,
+      density: shape.density,
+      style: sectionIndex === 0 ? "steady" : preset.groove,
+      energy: sectionIndex === 0 ? "mellow" : preset.energy,
+      seed: sectionSeed + 13,
+    });
+    const ideas: Idea[] = [
+      {
+        id: uid(),
+        type: "chords",
+        name: `${shape.name} harmony`,
+        detail: chords.map((chord) => chord.name).join(" · "),
+        data: chords.map((chord) => `${chord.name}|${chord.beats}`),
+      },
+      {
+        id: uid(),
+        type: "melody",
+        name: `${shape.name} motif`,
+        detail: melody.map((note) => note.note).join(" · "),
+        data: melody.map(
+          (note) => `${note.note}|${note.start}|${note.duration}|${note.pitch}`,
+        ),
+      },
+      {
+        id: uid(),
+        type: "drums",
+        name: `${shape.name} pocket`,
+        detail: `${drums.length} hits · ${preset.meter}`,
+        data: drums.map(
+          (hit) => `${hit.instrument}|${hit.step}|${hit.velocity}`,
+        ),
+      },
+    ];
+    if ((preset.id === "prog" || preset.id === "heavy") && sectionIndex === 2) {
+      const riff = generateProgRiff({
+        root: preset.root,
+        mode: preset.mode,
+        beats: beatsPerBar,
+        cycle: preset.id === "heavy" ? 5 : 7,
+        grouping: preset.id === "heavy" ? "3+2+2" : "2+2+3",
+        density: preset.id === "heavy" ? 0.72 : 0.52,
+        seed: sectionSeed + 23,
+        startOffset: 0.5,
+        motion: preset.id === "heavy" ? "anchor" : "orbit",
+      });
+      ideas.push({
+        id: uid(),
+        type: "riff",
+        name: "Hook pulse",
+        detail: `${riff.length} notes · ${preset.meter}`,
+        data: riff.map(
+          (note) =>
+            `${note.pitch}|${note.start}|${note.duration}|${note.accent ? 1 : 0}|${note.muted ? 1 : 0}`,
+        ),
+      });
+    }
+    return {
+      id: uid(),
+      name: shape.name,
+      bars: shape.bars,
+      color: shape.color,
+      ideas,
+      meterMap: Array.from({ length: shape.bars }, () => preset.meter),
+    };
+  });
+  return {
+    id: uid(),
+    name: `${preset.label} sketch`,
+    bpm: preset.bpm,
+    meter: preset.meter,
+    key: formatProjectKey(preset.root, preset.mode),
+    updated: Date.now(),
+    sections,
+  };
+}
 
 const STARTER_PROJECTS: Project[] = [
   {
@@ -639,10 +823,68 @@ function BottomNav({
 }
 
 function useAudioEngine() {
-  const context = useRef<AudioContext | null>(null);
+  const graph = useRef<{
+    context: AudioContext;
+    input: GainNode;
+  } | null>(null);
   const active = useRef<Set<AudioScheduledSourceNode>>(new Set());
   return useMemo(() => {
-    const get = () => context.current ?? (context.current = new AudioContext());
+    const getGraph = () => {
+      if (graph.current) return graph.current;
+      const AudioContextConstructor =
+        window.AudioContext ??
+        (window as typeof window & {
+          webkitAudioContext?: typeof AudioContext;
+        }).webkitAudioContext;
+      if (!AudioContextConstructor)
+        throw new Error("Web Audio is not supported on this device.");
+      const context = new AudioContextConstructor({ latencyHint: "interactive" });
+      const input = context.createGain();
+      const dry = context.createGain();
+      const reverb = context.createConvolver();
+      const wet = context.createGain();
+      const compressor = context.createDynamicsCompressor();
+      const master = context.createGain();
+
+      const impulseLength = Math.floor(context.sampleRate * 1.45);
+      const impulse = context.createBuffer(2, impulseLength, context.sampleRate);
+      for (let channel = 0; channel < impulse.numberOfChannels; channel++) {
+        const data = impulse.getChannelData(channel);
+        for (let index = 0; index < impulseLength; index++) {
+          const fade = Math.pow(1 - index / impulseLength, 2.7);
+          data[index] = (Math.random() * 2 - 1) * fade;
+        }
+      }
+      reverb.buffer = impulse;
+      dry.gain.value = 0.92;
+      wet.gain.value = 0.12;
+      compressor.threshold.value = -22;
+      compressor.knee.value = 18;
+      compressor.ratio.value = 4;
+      compressor.attack.value = 0.006;
+      compressor.release.value = 0.24;
+      master.gain.value = 0.92;
+
+      input.connect(dry).connect(compressor);
+      input.connect(reverb).connect(wet).connect(compressor);
+      compressor.connect(master).connect(context.destination);
+      graph.current = { context, input };
+      return graph.current;
+    };
+    const get = () => {
+      const { context } = getGraph();
+      if (context.state === "suspended") void context.resume();
+      return context;
+    };
+    const unlock = async () => {
+      const { context, input } = getGraph();
+      if (context.state !== "running") await context.resume();
+      const silence = context.createBufferSource();
+      silence.buffer = context.createBuffer(1, 1, context.sampleRate);
+      silence.connect(input);
+      silence.start();
+      return context.state === "running";
+    };
     const tone = (
       midi: number,
       start = 0,
@@ -681,8 +923,16 @@ function useAudioEngine() {
         return oscillator;
       });
       filter.type = "lowpass";
-      filter.frequency.setValueAtTime(profile.cutoff, when);
-      const scaledGain = gain / Math.sqrt(oscillators.length);
+      filter.frequency.setValueAtTime(Math.max(220, profile.cutoff * 0.46), when);
+      filter.frequency.exponentialRampToValueAtTime(
+        profile.cutoff,
+        when + Math.max(0.02, profile.attack),
+      );
+      filter.frequency.exponentialRampToValueAtTime(
+        Math.max(180, profile.cutoff * 0.58),
+        when + duration + profile.release,
+      );
+      const scaledGain = (gain * 1.35) / Math.sqrt(oscillators.length);
       volume.gain.setValueAtTime(0.0001, when);
       volume.gain.linearRampToValueAtTime(scaledGain, when + profile.attack);
       volume.gain.setValueAtTime(scaledGain, Math.max(when + profile.attack, when + duration * 0.7));
@@ -690,7 +940,7 @@ function useAudioEngine() {
         0.0001,
         when + duration + profile.release,
       );
-      filter.connect(volume).connect(ctx.destination);
+      filter.connect(volume).connect(getGraph().input);
       oscillators.forEach((oscillator) => {
         oscillator.start(when);
         oscillator.stop(when + duration + profile.release);
@@ -744,7 +994,7 @@ function useAudioEngine() {
       filter.frequency.setValueAtTime(cutoff, when);
       volume.gain.setValueAtTime(gain, when);
       volume.gain.exponentialRampToValueAtTime(0.0001, when + duration);
-      source.connect(filter).connect(volume).connect(ctx.destination);
+      source.connect(filter).connect(volume).connect(getGraph().input);
       active.current.add(source);
       source.onended = () => active.current.delete(source);
       source.start(when);
@@ -759,9 +1009,9 @@ function useAudioEngine() {
         oscillator.type = "sine";
         oscillator.frequency.setValueAtTime(150, when);
         oscillator.frequency.exponentialRampToValueAtTime(43, when + 0.13);
-        volume.gain.setValueAtTime(0.18 * velocity, when);
+        volume.gain.setValueAtTime(0.26 * velocity, when);
         volume.gain.exponentialRampToValueAtTime(0.0001, when + 0.18);
-        oscillator.connect(volume).connect(ctx.destination);
+        oscillator.connect(volume).connect(getGraph().input);
         active.current.add(oscillator);
         oscillator.onended = () => active.current.delete(oscillator);
         oscillator.start(when);
@@ -794,7 +1044,7 @@ function useAudioEngine() {
       });
       active.current.clear();
     };
-    return { tone, drum, get, stopAll };
+    return { tone, drum, get, unlock, stopAll };
   }, []);
 }
 
@@ -815,6 +1065,76 @@ function scheduleClickTrack(
       "click",
     );
   }
+}
+
+function playChord(
+  engine: ReturnType<typeof useAudioEngine>,
+  symbol: string,
+  start: number,
+  duration: number,
+  gain = 0.045,
+  voice: SynthVoice = "warm pad",
+) {
+  const pitch = notePitchClass(symbol);
+  if (pitch === null) return;
+  const strum = voice === "warm pad" || voice === "pluck" ? 0.024 : 0.012;
+  chordIntervals(symbol)
+    .slice(0, 5)
+    .forEach((interval, index) =>
+      engine.tone(
+        48 + pitch + interval,
+        start + index * strum,
+        Math.max(0.1, duration - index * strum),
+        gain * (index > 3 ? 0.78 : 1),
+        voice,
+      ),
+    );
+  engine.tone(
+    36 + pitch,
+    start,
+    Math.max(0.1, duration * 0.82),
+    gain * 0.72,
+    "deep bass",
+  );
+}
+
+function fitMelodyToChords<
+  T extends {
+    pitch: number;
+    note: string;
+    start: number;
+    duration: number;
+    velocity: number;
+  },
+>(melody: T[], chords: ChordDraft[]) {
+  const totalBeats = chords.reduce((sum, chord) => sum + chord.beats, 0);
+  if (!totalBeats || !chords.length) return melody;
+  return melody.map((note) => {
+    const beat = ((note.start % totalBeats) + totalBeats) % totalBeats;
+    const onStrongBeat = Math.abs(beat - Math.round(beat)) < 0.08;
+    if (!onStrongBeat) return note;
+    let cursor = 0;
+    const chord =
+      chords.find((item) => {
+        cursor += item.beats;
+        return beat < cursor;
+      }) ?? chords[chords.length - 1];
+    const rootPitch = notePitchClass(chord.name);
+    if (rootPitch === null) return note;
+    const pitchClasses = new Set(
+      chordIntervals(chord.name).map((interval) => (rootPitch + interval) % 12),
+    );
+    let fittedPitch = note.pitch;
+    for (let distance = 0; distance <= 6; distance++) {
+      const candidates = distance ? [note.pitch - distance, note.pitch + distance] : [note.pitch];
+      const match = candidates.find((pitch) => pitchClasses.has(((pitch % 12) + 12) % 12));
+      if (match !== undefined) {
+        fittedPitch = match;
+        break;
+      }
+    }
+    return { ...note, pitch: fittedPitch, note: midiNoteName(fittedPitch) };
+  });
 }
 
 function playDrumLoop(
@@ -881,6 +1201,7 @@ function useLoopTransport(
   playOnce: () => void,
   durationMs: number,
   stopAudio: () => void,
+  unlockAudio: () => Promise<boolean>,
 ) {
   const [mode, setMode] = useState<"stopped" | "once" | "loop">("stopped");
   const timer = useRef<number | null>(null);
@@ -900,8 +1221,13 @@ function useLoopTransport(
     setMode("stopped");
   }, [clear]);
   const start = useCallback(
-    (loop: boolean) => {
+    async (loop: boolean) => {
       clear();
+      const unlocked = await unlockAudio();
+      if (!unlocked) {
+        setMode("stopped");
+        return;
+      }
       setMode(loop ? "loop" : "once");
       const run = () => {
         playRef.current();
@@ -912,7 +1238,7 @@ function useLoopTransport(
       };
       run();
     },
-    [clear],
+    [clear, unlockAudio],
   );
   useEffect(() => () => clear(), [clear]);
   return { mode, start, stop };
@@ -963,6 +1289,13 @@ export default function InspitivityApp() {
     setSelectedId(project.id);
     setModal(null);
     setScreen("project");
+  };
+  const launchSketch = (preset: SketchPreset) => {
+    const project = buildPlayableSketch(preset);
+    setProjects((items) => [project, ...items]);
+    setSelectedId(project.id);
+    setScreen("project");
+    notify(`${preset.label} sketch is ready to play`);
   };
   const updateSelected = useCallback(
     (fn: (project: Project) => Project) =>
@@ -1064,6 +1397,7 @@ export default function InspitivityApp() {
           go={navigate}
           create={() => setModal("create")}
           record={() => setModal("record")}
+          launchSketch={launchSketch}
         />
       )}
       {screen === "projects" && (
@@ -1228,13 +1562,19 @@ function Home({
   go,
   create,
   record,
+  launchSketch,
 }: {
   projects: Project[];
   openProject: (id: string) => void;
   go: (s: Screen) => void;
   create: () => void;
   record: () => void;
+  launchSketch: (preset: SketchPreset) => void;
 }) {
+  const [presetId, setPresetId] = useState<SketchPreset["id"]>("neo-soul");
+  const preset =
+    SKETCH_PRESETS.find((candidate) => candidate.id === presetId) ??
+    SKETCH_PRESETS[0];
   return (
     <>
       <Topbar
@@ -1242,23 +1582,48 @@ function Home({
         subtitle="Your songwriting partner"
         onCreate={create}
       />
-      <section className="hero-card">
-        <div className="local-badge">
-          <span className="status-dot" /> Local workspace
+      <section className="spark-studio">
+        <div className="spark-heading">
+          <div>
+            <p className="eyebrow">Start with musical context</p>
+            <h2>What should the idea feel like?</h2>
+          </div>
+          <button className="record-now" onClick={record}>
+            <b>●</b>
+            <span>Record now</span>
+          </button>
         </div>
-        <h2>
-          Turn the spark
-          <br />
-          into a song.
-        </h2>
-        <p>
-          Capture ideas, shape the arrangement and find the next chord—without
-          breaking your flow.
+        <div className="preset-grid" role="radiogroup" aria-label="Sketch direction">
+          {SKETCH_PRESETS.map((candidate) => (
+            <button
+              key={candidate.id}
+              className={candidate.id === preset.id ? "active" : ""}
+              role="radio"
+              aria-checked={candidate.id === preset.id}
+              onClick={() => setPresetId(candidate.id)}
+            >
+              <b>{candidate.accent}</b>
+              <span>{candidate.label}</span>
+              <small>{candidate.copy}</small>
+            </button>
+          ))}
+        </div>
+        <div className="sketch-launcher">
+          <div className="sketch-spec">
+            <span>{formatProjectKey(preset.root, preset.mode)}</span>
+            <span>{preset.bpm} BPM</span>
+            <span>{preset.meter}</span>
+          </div>
+          <button
+            className="primary-button"
+            onClick={() => launchSketch(preset)}
+          >
+            Build playable sketch <span>▶</span>
+          </button>
+        </div>
+        <p className="sketch-note">
+          Creates a coherent intro, verse and hook with chords, motif and drums.
         </p>
-        <button className="primary-button" onClick={create}>
-          Start creating <span>↗</span>
-        </button>
-        <Wave bars={11} />
       </section>
       <SectionTitle
         eyebrow="Pick up where you left off"
@@ -1518,11 +1883,12 @@ function ProjectView({
         return { ...section, meterMap: map };
       }),
     }));
-  const playArrangement = () => {
+  const playArrangement = async () => {
     if (arrangementPlaying) {
       stopArrangement();
       return;
     }
+    if (!(await engine.unlock())) return;
     engine.stopAll();
     const { root, mode } = projectHarmony(project);
     const beat = beatDurationSeconds(project.bpm);
@@ -1559,16 +1925,13 @@ function ProjectView({
           Number(savedBeats) || 4,
           sectionBeats - chordBeat,
         );
-        const pitch = notePitchClass(name);
-        if (pitch !== null)
-          chordIntervals(name).forEach((interval) =>
-            engine.tone(
-              48 + pitch + interval,
-              (offset + chordBeat) * beat,
-              duration * beat * 0.88,
-              0.032,
-            ),
-          );
+        playChord(
+          engine,
+          name,
+          (offset + chordBeat) * beat,
+          duration * beat * 0.88,
+          0.04,
+        );
         chordBeat += duration;
         chordIndex++;
       }
@@ -1627,13 +1990,14 @@ function ProjectView({
       offset * beat * 1000,
     );
   };
-  const playSection = (section: SongSection, sectionIndex: number) => {
+  const playSection = async (section: SongSection, sectionIndex: number) => {
     if (arrangementPlaying && activeSectionIndex === sectionIndex) {
       stopArrangement();
       return;
     }
     stopArrangement();
     stopIdea();
+    if (!(await engine.unlock())) return;
     const { root, mode } = projectHarmony(project);
     const beat = beatDurationSeconds(project.bpm);
     const beatsPerBar = Number(project.meter.split("/")[0]) || 4;
@@ -1659,16 +2023,13 @@ function ProjectView({
         Number(savedBeats) || 4,
         sectionBeats - chordBeat,
       );
-      const pitch = notePitchClass(name);
-      if (pitch !== null)
-        chordIntervals(name).forEach((interval) =>
-          engine.tone(
-            48 + pitch + interval,
-            chordBeat * beat,
-            duration * beat * 0.88,
-            0.032,
-          ),
-        );
+      playChord(
+        engine,
+        name,
+        chordBeat * beat,
+        duration * beat * 0.88,
+        0.04,
+      );
       chordBeat += duration;
       chordIndex++;
     }
@@ -1739,6 +2100,7 @@ function ProjectView({
     }
     stopArrangement();
     stopIdea();
+    if (!(await engine.unlock())) return;
     const beat = beatDurationSeconds(project.bpm);
     const beatsPerBar = Number(project.meter.split("/")[0]) || 4;
     setPlayingIdeaId(idea.id);
@@ -1757,16 +2119,12 @@ function ProjectView({
         (value) => {
           const [name, savedBeats] = value.split("|");
           const beats = Number(savedBeats) || 4;
-          const pitch = notePitchClass(name);
-          if (pitch !== null)
-            chordIntervals(name).forEach((interval) =>
-              engine.tone(
-                48 + pitch + interval,
-                start * beat,
-                beats * beat * 0.9,
-                0.035,
-              ),
-            );
+          playChord(
+            engine,
+            name,
+            start * beat,
+            beats * beat * 0.9,
+          );
           start += beats;
         },
       );
@@ -1869,6 +2227,10 @@ function ProjectView({
             />
           ))}
         </div>
+        <p className="flow-hint">
+          Hear the full sketch, then change one layer inside the section that
+          needs it.
+        </p>
       </div>
       <SectionTitle
         eyebrow=""
@@ -2057,25 +2419,8 @@ function ProjectView({
         ))}
       </div>
       <div className="project-actions">
-        <button onClick={record}>● Record</button>
-        <button
-          onClick={() => openSectionTool(project.sections[0].id, "chords")}
-        >
-          ♯ Chords
-        </button>
-        <button
-          onClick={() => openSectionTool(project.sections[0].id, "melody")}
-        >
-          ⌁ Melody
-        </button>
-        <button onClick={() => openSectionTool(project.sections[0].id, "riff")}>
-          ⇶ Pattern
-        </button>
-        <button
-          onClick={() => openSectionTool(project.sections[0].id, "drums")}
-        >
-          ● Drums
-        </button>
+        <button className="capture-action" onClick={record}>● Record idea</button>
+        <button onClick={() => setAdding(true)}>＋ Add section</button>
       </div>
       {adding && (
         <div className="modal-layer">
@@ -2370,17 +2715,14 @@ function ChordTool({
   const play = useCallback(() => {
     let startBeat = 0;
     chords.forEach((chord) => {
-      const pitch = notePitchClass(chord.name);
-      if (pitch !== null)
-        chordIntervals(chord.name).forEach((interval) =>
-          engine.tone(
-            48 + pitch + interval,
-            startBeat * beatSeconds,
-            chord.beats * beatSeconds * 0.92,
-            0.035,
-            voice,
-          ),
-        );
+      playChord(
+        engine,
+        chord.name,
+        startBeat * beatSeconds,
+        chord.beats * beatSeconds * 0.92,
+        0.045,
+        voice,
+      );
       startBeat += chord.beats;
     });
     if (metronomeEnabled)
@@ -2390,6 +2732,7 @@ function ChordTool({
     play,
     progressionLoopDurationMs(totalBeats, project.bpm),
     engine.stopAll,
+    engine.unlock,
   );
   const updateChord = (id: string, changes: Partial<ChordDraft>) =>
     setChords((items) =>
@@ -2710,10 +3053,21 @@ function MelodyTool({
     idea ? decodeMelodyIdea(idea) : null,
   );
   const engine = useAudioEngine();
+  const supportingChords = useMemo(() => {
+    const savedHarmony = section?.ideas.find(
+      (sectionIdea) => sectionIdea.type === "chords",
+    );
+    return savedHarmony
+      ? decodeChordDrafts(savedHarmony)
+      : makeChordDrafts(root, mode, 4, "medium", initialSeed, 4, 0, "diatonic", "away");
+  }, [section, root, mode, initialSeed]);
   const generatedMelody = useMemo(
     () =>
-      generateMelody({ root, mode, notes: noteCount, density, mood, seed }),
-    [root, mode, noteCount, density, mood, seed],
+      fitMelodyToChords(
+        generateMelody({ root, mode, notes: noteCount, density, mood, seed }),
+        supportingChords,
+      ),
+    [root, mode, noteCount, density, mood, seed, supportingChords],
   );
   const melody = savedMelody ?? generatedMelody;
   const bpm = project.bpm;
@@ -2745,6 +3099,7 @@ function MelodyTool({
     play,
     melodyLoopDurationMs(melody, bpm),
     engine.stopAll,
+    engine.unlock,
   );
   const melodyBeats = Math.max(
     4,
@@ -3132,6 +3487,7 @@ function RiffTool({
     play,
     progressionLoopDurationMs(beats, project.bpm),
     engine.stopAll,
+    engine.unlock,
   );
   return (
     <>
@@ -3495,6 +3851,7 @@ function DrumTool({
     play,
     progressionLoopDurationMs(beatsPerBar, project.bpm),
     engine.stopAll,
+    engine.unlock,
   );
   const toggleHit = (instrument: DrumInstrument, step: number) =>
     setSavedLoop((current) => {
@@ -3832,7 +4189,10 @@ function Metronome({
         </div>
         <button
           className={`metronome-play ${playing ? "playing" : ""}`}
-          onClick={() => (playing ? stop() : setPlaying(true))}
+          onClick={async () => {
+            if (playing) stop();
+            else if (await engine.unlock()) setPlaying(true);
+          }}
         >
           {playing ? "■ Stop" : "▶ Start"}
         </button>
