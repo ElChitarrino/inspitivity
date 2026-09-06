@@ -650,11 +650,13 @@ function usePhoneInstall() {
     const navigatorWithStandalone = navigator as Navigator & {
       standalone?: boolean;
     };
-    setStandalone(
-      window.matchMedia("(display-mode: standalone)").matches ||
-        navigatorWithStandalone.standalone === true,
-    );
-    setIsIos(/iphone|ipad|ipod/i.test(navigator.userAgent));
+    const hydrate = window.setTimeout(() => {
+      setStandalone(
+        window.matchMedia("(display-mode: standalone)").matches ||
+          navigatorWithStandalone.standalone === true,
+      );
+      setIsIos(/iphone|ipad|ipod/i.test(navigator.userAgent));
+    }, 0);
 
     const capturePrompt = (event: Event) => {
       event.preventDefault();
@@ -673,6 +675,7 @@ function usePhoneInstall() {
       });
     }
     return () => {
+      window.clearTimeout(hydrate);
       window.removeEventListener("beforeinstallprompt", capturePrompt);
       window.removeEventListener("appinstalled", markInstalled);
     };
