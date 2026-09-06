@@ -11,6 +11,7 @@ export type Mode =
   | "minor pentatonic";
 export type Complexity = "simple" | "medium" | "advanced";
 export type MelodyMood = "calm" | "bright" | "melancholic" | "dark";
+export type PhraseShape = "flow" | "hook" | "answer" | "floating";
 export type ProgressionOpening = "away" | "tonic" | "surprise";
 
 const PITCH_CLASS: Record<Root, number> = {
@@ -227,6 +228,7 @@ export function generateMelody({
   range = [3, 5],
   density = 0.6,
   mood = "calm",
+  shape = "flow",
   seed = Date.now(),
 }: {
   root: Root;
@@ -235,6 +237,7 @@ export function generateMelody({
   range?: [number, number];
   density?: number;
   mood?: MelodyMood;
+  shape?: PhraseShape;
   seed?: number;
 }) {
   const scale = getScale(root, mode);
@@ -261,7 +264,8 @@ export function generateMelody({
       return interval === MODES[mode][2] || interval === MODES[mode][4];
     })
     .sort((a, b) => Math.abs(a.index - middle) - Math.abs(b.index - middle));
-  let scaleIndex = tonalStarts[0]?.index ?? middle;
+  let scaleIndex = tonalStarts[Math.floor(random() * Math.min(3, tonalStarts.length))]?.index ?? middle;
+  const anchorIndex = scaleIndex;
 
   const nextMovement = () => {
     if (random() < profile.repeat) return 0;
@@ -273,6 +277,18 @@ export function generateMelody({
     return direction * distance;
   };
   const motifA = [0, nextMovement(), nextMovement(), nextMovement()];
+  const shapeContours: Record<PhraseShape, number[]> = {
+    flow: motifA,
+    hook: [0, 0, seed % 2 ? 2 : -2, -1],
+    answer: [0, 1, 2, -1],
+    floating: [0, 2, -1, 1],
+  };
+  const rhythmShapes: Record<PhraseShape, number[]> = {
+    flow: [0.5, 1, 0.5, 1],
+    hook: [0.5, 0.25, 0.75, 1.5],
+    answer: [0.5, 0.5, 1, 2],
+    floating: [1.5, 1, 2, 1.5],
+  };
   const motifB = [
     nextMovement(),
     -motifA[1] || nextMovement(),
@@ -292,7 +308,11 @@ export function generateMelody({
   for (let index = 0; index < notes; index++) {
     const phrase = Math.floor(index / 4) % 4;
     const position = index % 4;
-    let movement = phrase === 2 ? motifB[position] : motifA[position];
+    if (shape !== "flow" && position === 0)
+      scaleIndex = reflect(anchorIndex + (shape === "answer" && phrase % 2 ? -2 : 0), availablePitches.length - 1);
+    let movement = shape === "flow"
+      ? phrase === 2 ? motifB[position] : motifA[position]
+      : shapeContours[shape][position] * (shape === "answer" && phrase % 2 ? -1 : 1);
     // Repeat first; vary only one structural note in every second phrase.
     if (phrase === 1 && position === 3) movement += seed % 2 ? -1 : 1;
     if (phrase === 3 && position === 2) movement += seed % 3 ? -1 : 1;
@@ -302,6 +322,8 @@ export function generateMelody({
     const shortChance = 0.18 + normalizedDensity * 0.68;
     let step = random() < shortChance ? 0.5 : 1;
     if (random() < profile.syncopation * normalizedDensity) step = 0.25;
+    if (shape !== "flow")
+      step = rhythmShapes[shape][position] * (normalizedDensity > 0.75 ? 0.5 : 1);
     const duration = step * (random() < 0.18 ? 0.55 : 0.9);
     const pitch = availablePitches[scaleIndex];
     const pitchClass = pitch % 12;

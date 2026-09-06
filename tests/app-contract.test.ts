@@ -39,7 +39,7 @@ test("arrangement ideas reopen their saved notes, harmony, or melody for editing
   assert.match(source, /decodeChordDrafts/);
   assert.match(source, /decodeMelodyIdea/);
   assert.match(source, /Update note/);
-  assert.match(source, /Update melody/);
+  assert.match(source, /Save changes in/);
 });
 
 test("arrangement cards themselves reopen their saved editor and sections expose entry controls", () => {
@@ -206,6 +206,17 @@ test("drum loops are section-aware, editable, and restricted to the five-piece k
   assert.match(source, /openSectionTool\(section\.id, "drums"\)/);
   assert.match(source, /decodeDrumIdea/);
   assert.match(source, /Loop drum loop/);
+});
+
+test("chords, melody, and rhythm ask for a project and section unless opened inside one", () => {
+  assert.match(source, /function SaveDestinationModal/);
+  assert.match(source, /aria-label="Destination project"/);
+  assert.match(source, /aria-label="Destination section"/);
+  assert.match(source, /Where should this idea go\?/);
+  assert.match(source, /setPendingSave\(\{ type, name, detail, data \}\)/);
+  assert.match(source, /Save a copy somewhere else/);
+  assert.match(source, /"＋ Choose where to save…"/);
+  assert.match(source, /ideas: \[\.\.\.target\.ideas, \{ id: uid\(\), \.\.\.draft \}\]/);
 });
 
 test("progressive workflows include meter maps, synth patterns, transformations, tension, and transitions", () => {

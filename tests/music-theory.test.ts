@@ -72,3 +72,20 @@ test("melodic movement remains singable and resolves after motif variation", () 
     assert.equal(melody.at(-1)!.pitch % 12, 9);
   }
 });
+
+test("phrase shapes produce distinct rhythms and repeating hooks keep their pulse", () => {
+  const options = { root: "E" as Root, mode: "dorian" as Mode, notes: 16, seed: 7 };
+  const hook = generateMelody({ ...options, shape: "hook" });
+  const floating = generateMelody({ ...options, shape: "floating" });
+  const answer = generateMelody({ ...options, shape: "answer" });
+  const rhythm = (notes: typeof hook) => notes.slice(1).map((note, i) => note.start - notes[i].start);
+  assert.deepEqual(rhythm(hook).slice(0, 4), rhythm(hook).slice(4, 8));
+  assert.notDeepEqual(rhythm(hook), rhythm(answer));
+  assert.ok(floating.at(-1)!.start > hook.at(-1)!.start);
+  for (const melody of [hook, floating, answer]) {
+    assert.deepEqual(melody.length, 16);
+    assert.ok(melody[0].start > 0);
+    assert.ok(melody.every(note => getScale("E", "dorian").some(name => notePitchClass(name) === note.pitch % 12)));
+    assert.equal(melody.at(-1)!.pitch % 12, 4);
+  }
+});

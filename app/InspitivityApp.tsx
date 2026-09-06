@@ -15,6 +15,7 @@ import {
   generateMelody,
   getScale,
   MelodyMood,
+  PhraseShape,
   Mode,
   notePitchClass,
   ProgressionOpening,
@@ -78,6 +79,8 @@ type Project = {
   updated: number;
   sections: SongSection[];
 };
+type IdeaDraft = Omit<Idea, "id" | "recordingId">;
+type SaveIdea = (type: Idea["type"], name: string, detail: string, data?: string[], chooseDestination?: boolean) => void;
 type Screen =
   | "home"
   | "projects"
@@ -868,6 +871,8 @@ export default function InspitivityApp() {
   );
   const [toast, setToast] = useState("");
   const [editingIdea, setEditingIdea] = useState<Idea | null>(null);
+  const [pendingSave, setPendingSave] = useState<IdeaDraft | null>(null);
+  const savedDraftId = useRef<string | null>(null);
   const [draftSectionId, setDraftSectionId] = useState<string | null>(null);
   const [returnToArrangement, setReturnToArrangement] = useState(false);
   const [toolMetronomeEnabled, setToolMetronomeEnabled] = useState(false);
@@ -878,8 +883,12 @@ export default function InspitivityApp() {
     window.setTimeout(() => setToast(""), 2400);
   };
   const navigate = (next: Screen) => {
+    if (next !== screen) {
+      setEditingIdea(null);
+      savedDraftId.current = null;
+    }
     if (!["chords", "melody", "drums", "riff", "transition"].includes(next))
-      setReturnToArrangement(false);
+      { setReturnToArrangement(false); setDraftSectionId(null); }
     setScreen(next);
   };
   const openProject = (id: string) => {
@@ -918,28 +927,38 @@ export default function InspitivityApp() {
     name: string,
     detail: string,
     data?: string[],
+    chooseDestination = false,
   ) => {
-    if (!selected?.sections[0]) return;
-    if (editingIdea) {
+    if (!selected) return;
+    if (chooseDestination) {
+      setPendingSave({ type, name, detail, data });
+      return;
+    }
+    const existingId = editingIdea?.type === type ? editingIdea.id : savedDraftId.current;
+    if (existingId) {
       updateSelected((project) => ({
         ...project,
         sections: project.sections.map((section) => ({
           ...section,
           ideas: section.ideas.map((idea) =>
-            idea.id === editingIdea.id
+            idea.id === existingId
               ? { ...idea, type, name, detail, data }
               : idea,
           ),
         })),
       }));
-      notify(`Updated ${editingIdea.name}`);
-      setEditingIdea(null);
-      setDraftSectionId(null);
+      notify(`Saved changes to ${name}`);
       return;
     }
-    const destination =
-      selected.sections.find((section) => section.id === draftSectionId) ??
-      selected.sections[0];
+    const destination = selected.sections.find(
+      (section) => section.id === draftSectionId,
+    );
+    if (!destination) {
+      setPendingSave({ type, name, detail, data });
+      return;
+    }
+    const newId = uid();
+    savedDraftId.current = newId;
     updateSelected((project) => ({
       ...project,
       sections: project.sections.map((section) =>
@@ -948,25 +967,53 @@ export default function InspitivityApp() {
               ...section,
               ideas: [
                 ...section.ideas,
-                { id: uid(), type, name, detail, data },
+                { id: newId, type, name, detail, data },
               ],
             }
           : section,
       ),
     }));
     notify(`Saved to ${selected.name} · ${destination.name}`);
-    setDraftSectionId(null);
+  };
+  const saveIdeaTo = (projectId: string, sectionId: string) => {
+    if (!pendingSave) return;
+    const project = projects.find((item) => item.id === projectId);
+    const section = project?.sections.find((item) => item.id === sectionId);
+    if (!project || !section) return;
+    const draft = pendingSave;
+    setProjects((items) =>
+      items.map((item) =>
+        item.id === projectId
+          ? {
+              ...item,
+              updated: Date.now(),
+              sections: item.sections.map((target) =>
+                target.id === sectionId
+                  ? {
+                      ...target,
+                      ideas: [...target.ideas, { id: uid(), ...draft }],
+                    }
+                  : target,
+              ),
+            }
+          : item,
+      ),
+    );
+    setPendingSave(null);
+    notify(`Saved to ${project.name} · ${section.name}`);
   };
   const openSectionTool = (
     sectionId: string,
     tool: "chords" | "melody" | "drums" | "riff" | "transition",
   ) => {
+    savedDraftId.current = null;
     setEditingIdea(null);
     setDraftSectionId(sectionId);
     setReturnToArrangement(true);
     setScreen(tool);
   };
   const backFromMusicTool = () => {
+    savedDraftId.current = null;
     const destination = returnToArrangement ? "project" : "home";
     setEditingIdea(null);
     setDraftSectionId(null);
@@ -974,6 +1021,7 @@ export default function InspitivityApp() {
     setScreen(destination);
   };
   const editArrangementIdea = (sectionId: string, idea: Idea) => {
+    savedDraftId.current = null;
     if (
       idea.type === "chords" ||
       idea.type === "melody" ||
@@ -1148,6 +1196,15 @@ export default function InspitivityApp() {
             }));
             notify("Recording saved locally");
           }}
+        />
+      )}
+      {pendingSave && (
+        <SaveDestinationModal
+          projects={projects}
+          defaultProjectId={selected?.id ?? projects[0]?.id ?? ""}
+          idea={pendingSave}
+          close={() => setPendingSave(null)}
+          save={saveIdeaTo}
         />
       )}
       {toast && (
@@ -2168,6 +2225,43 @@ function ToolHeader({
   );
 }
 
+function TempoInput({ bpm, commit, label }: {
+  bpm: number;
+  commit: (value: number) => void;
+  label: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const finish = () => {
+    const value = Number(draft);
+    if (draft !== null && draft.trim() && Number.isFinite(value))
+      commit(clampBpm(value));
+    setDraft(null);
+  };
+  return (
+    <input
+      aria-label={label}
+      type="text"
+      inputMode="numeric"
+      value={draft ?? String(bpm)}
+      onChange={(event) => setDraft(event.target.value)}
+      onFocus={(event) => event.target.select()}
+      onBlur={finish}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") {
+          setDraft(null);
+        }
+        if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+          event.preventDefault();
+          const value = draft?.trim() ? Number(draft) : bpm;
+          commit(clampBpm((Number.isFinite(value) ? value : bpm) + (event.key === "ArrowUp" ? 1 : -1)));
+          setDraft(null);
+        }
+      }}
+    />
+  );
+}
+
 function ProjectContext({
   project,
   update,
@@ -2213,20 +2307,12 @@ function ProjectContext({
           ))}
         </select>
       </label>
-      <label className="global-tempo">
+      <div className="global-tempo">
         <span>Tempo</span>
-        <input
-          aria-label="Project tempo"
-          type="number"
-          min="30"
-          max="260"
-          value={project.bpm}
-          onChange={(event) =>
-            update((p) => ({ ...p, bpm: clampBpm(Number(event.target.value)) }))
-          }
-        />
+        <TempoInput label="Project tempo" bpm={project.bpm}
+          commit={(bpm) => update((p) => ({ ...p, bpm }))} />
         <b>BPM</b>
-      </label>
+      </div>
       {toggleMetronome && (
         <button
           className={`context-metronome ${metronomeEnabled ? "active" : ""}`}
@@ -2243,6 +2329,21 @@ function ProjectContext({
         </button>
       )}
     </section>
+  );
+}
+
+function SaveActions({ section, editing, submit }: {
+  section?: SongSection;
+  editing: boolean;
+  submit: (chooseDestination: boolean) => void;
+}) {
+  return (
+    <div className="save-actions">
+      <button className="secondary-button wide" onClick={() => submit(false)}>
+        {section ? `${editing ? "✓ Save changes in" : "＋ Save to"} ${section.name}` : "＋ Choose where to save…"}
+      </button>
+      {section && <button className="export-button wide" onClick={() => submit(true)}>Save a copy somewhere else…</button>}
+    </div>
   );
 }
 
@@ -2264,7 +2365,7 @@ function ChordTool({
   sectionIndex: number;
   updateProject: (fn: (p: Project) => Project) => void;
   back: () => void;
-  save: (t: Idea["type"], n: string, d: string, data?: string[]) => void;
+  save: SaveIdea;
   go: (s: Screen) => void;
   metronomeEnabled: boolean;
   toggleMetronome: () => void;
@@ -2285,8 +2386,10 @@ function ChordTool({
       ? decodeChordDrafts(idea)
       : makeChordDrafts(root, mode, initialCount, "medium", initialSeed),
   );
+  const [previousChords, setPreviousChords] = useState<ChordDraft[] | null>(null);
   const engine = useAudioEngine();
   const regenerate = (nextRoot = root, nextMode = mode) => {
+    setPreviousChords(chords);
     const nextSeed = seed + 1;
     setSeed(nextSeed);
     setChords(
@@ -2358,6 +2461,26 @@ function ChordTool({
       )}
       <div className="tool-layout">
         <section className="control-panel">
+          <div className="idea-starts" aria-label="Harmony starting points">
+            <p>Start with a feel</p>
+            {([
+              ["Dreamy", "advanced", 8, "warm pad"],
+              ["Pop pulse", "simple", 2, "pluck"],
+              ["Slow bloom", "medium", 4, "glass"],
+            ] as const).map(([label, level, beats, sound]) => (
+              <button key={label} onClick={() => {
+                transport.stop();
+                setPreviousChords(chords);
+                setComplexity(level); setDefaultBeats(beats); setVoice(sound);
+                setHarmonyColour("diatonic"); setLengthVariation(0);
+                setSeed(seed + 1);
+                setChords(makeChordDrafts(root, mode, count, level, seed + 1, beats, 0, "diatonic", opening));
+              }}>{label}</button>
+            ))}
+          </div>
+          {previousChords && <button className="export-button wide" onClick={() => {
+            transport.stop(); setChords(previousChords); setPreviousChords(chords);
+          }}>↶ Swap with previous progression</button>}
           <ControlTitle n="1" title="Number of chords" />
           <label className="range-control">
             <span>{count} chords</span>
@@ -2569,19 +2692,17 @@ function ChordTool({
               ↻<small>{transport.mode === "loop" ? "Looping" : "Loop"}</small>
             </button>
           </div>
-          <button
-            className="secondary-button wide"
-            onClick={() =>
+          <SaveActions section={section} editing={!!idea}
+            submit={(chooseDestination) =>
               save(
                 "chords",
                 `${formatProjectKey(root, mode)} progression`,
                 chords.map((c) => `${c.name} (${c.beats} beats)`).join(" · "),
                 chords.map((c) => `${c.name}|${c.beats}`),
+                chooseDestination,
               )
             }
-          >
-            {idea ? "✓ Update progression" : `＋ Save to ${project.name}`}
-          </button>
+          />
           <button
             className="export-button wide"
             onClick={() => {
@@ -2624,7 +2745,7 @@ function MelodyTool({
   sectionIndex: number;
   updateProject: (fn: (p: Project) => Project) => void;
   back: () => void;
-  save: (t: Idea["type"], n: string, d: string, data?: string[]) => void;
+  save: SaveIdea;
   go: (s: Screen) => void;
   metronomeEnabled: boolean;
   toggleMetronome: () => void;
@@ -2639,7 +2760,12 @@ function MelodyTool({
       )
     : 16;
   const initialSeed = sectionIndex >= 0 ? sectionIndex + 11 : 7;
-  const [mood, setMood] = useState<MelodyMood>("calm");
+  const [mood, setMood] = useState<MelodyMood>(() =>
+    (["calm", "bright", "melancholic", "dark"] as const).find(value => idea?.name.startsWith(value)) ?? "calm",
+  );
+  const [shape, setShape] = useState<PhraseShape>(() =>
+    (["flow", "hook", "answer", "floating"] as const).find(value => idea?.name.split(" ").includes(value)) ?? "flow",
+  );
   const [density, setDensity] = useState(section ? 0.55 : 0.6);
   const [noteCount, setNoteCount] = useState(Math.min(30, defaultNoteCount));
   const [seed, setSeed] = useState(initialSeed);
@@ -2647,11 +2773,12 @@ function MelodyTool({
   const [savedMelody, setSavedMelody] = useState(() =>
     idea ? decodeMelodyIdea(idea) : null,
   );
+  const [previousMelody, setPreviousMelody] = useState<ReturnType<typeof generateMelody> | null>(null);
   const engine = useAudioEngine();
   const generatedMelody = useMemo(
     () =>
-      generateMelody({ root, mode, notes: noteCount, density, mood, seed }),
-    [root, mode, noteCount, density, mood, seed],
+      generateMelody({ root, mode, notes: noteCount, density, mood, seed, shape }),
+    [root, mode, noteCount, density, mood, seed, shape],
   );
   const melody = savedMelody ?? generatedMelody;
   const bpm = project.bpm;
@@ -2806,6 +2933,24 @@ function MelodyTool({
       )}
       <div className="tool-layout">
         <section className="control-panel violet-panel">
+          <div className="idea-starts" aria-label="Melody phrase shapes">
+            <p>Shape the phrase</p>
+            {([
+              ["flow", "Flowing", "Stepwise movement and varied timing."],
+              ["hook", "Repeating hook", "A short, recognizable rhythm that returns."],
+              ["answer", "Question & answer", "Paired phrases with room to breathe."],
+              ["floating", "Floating", "Longer notes and open space."],
+            ] as const).map(([value, label, description]) => (
+              <button key={value} aria-pressed={shape === value} title={description}
+                onClick={() => {
+                  transport.stop(); setPreviousMelody(melody);
+                  setSavedMelody(null); setShape(value);
+                }}>{label}</button>
+            ))}
+          </div>
+          {previousMelody && <button className="export-button wide" onClick={() => {
+            transport.stop(); setSavedMelody(previousMelody); setPreviousMelody(melody);
+          }}>↶ Swap with previous melody</button>}
           <ControlTitle n="1" title="Mood" />
           <div className="mood-grid">
             {moods.map(([name, icon]) => (
@@ -2876,12 +3021,14 @@ function MelodyTool({
             options={SYNTH_VOICES}
           />
           <p className="control-note">
-            New phrases begin as a pickup on the 3rd or 5th, repeat a clear
-            motif, then vary one structural note before resolving.
+            Keep the key and mood, then explore another phrase. Hooks repeat a
+            rhythm; floating lines leave more space. Recover your last idea above.
           </p>
           <button
             className="primary-button violet-button wide"
             onClick={() => {
+              transport.stop();
+              setPreviousMelody(melody);
               setSavedMelody(null);
               setSeed((s) => s + 1);
             }}
@@ -2984,21 +3131,19 @@ function MelodyTool({
               ↻<small>{transport.mode === "loop" ? "Looping" : "Loop"}</small>
             </button>
           </div>
-          <button
-            className="secondary-button wide"
-            onClick={() =>
+          <SaveActions section={section} editing={!!idea}
+            submit={(chooseDestination) =>
               save(
                 "melody",
-                `${mood} ${root} ${mode} melody`,
+                `${mood} ${shape} ${root} ${mode} melody`,
                 melody.map((n) => n.note).join(" · "),
                 melody.map(
                   (n) => `${n.note}|${n.start}|${n.duration}|${n.pitch}`,
                 ),
+                chooseDestination,
               )
             }
-          >
-            {idea ? "✓ Update melody" : `＋ Save to ${project.name}`}
-          </button>
+          />
           <button
             className="export-button wide"
             onClick={() =>
@@ -3034,7 +3179,7 @@ function RiffTool({
   sectionIndex: number;
   updateProject: (fn: (p: Project) => Project) => void;
   back: () => void;
-  save: (t: Idea["type"], n: string, d: string, data?: string[]) => void;
+  save: SaveIdea;
   go: (s: Screen) => void;
   metronomeEnabled: boolean;
   toggleMetronome: () => void;
@@ -3276,7 +3421,7 @@ function TransitionTool({
   section?: SongSection;
   updateProject: (fn: (p: Project) => Project) => void;
   back: () => void;
-  save: (t: Idea["type"], n: string, d: string, data?: string[]) => void;
+  save: SaveIdea;
   go: (s: Screen) => void;
 }) {
   const [style, setStyle] = useState<TransitionStyle>(
@@ -3390,7 +3535,7 @@ function DrumTool({
   sectionIndex: number;
   updateProject: (fn: (p: Project) => Project) => void;
   back: () => void;
-  save: (t: Idea["type"], n: string, d: string, data?: string[]) => void;
+  save: SaveIdea;
   go: (s: Screen) => void;
 }) {
   const beatsPerBar = section
@@ -3616,9 +3761,8 @@ function DrumTool({
               ↻<small>{transport.mode === "loop" ? "Looping" : "Loop"}</small>
             </button>
           </div>
-          <button
-            className="secondary-button wide"
-            onClick={() =>
+          <SaveActions section={section} editing={!!idea}
+            submit={(chooseDestination) =>
               save(
                 "drums",
                 `${energy} ${style} drum loop`,
@@ -3626,11 +3770,10 @@ function DrumTool({
                 loop.map(
                   (hit) => `${hit.instrument}|${hit.step}|${hit.velocity}`,
                 ),
+                chooseDestination,
               )
             }
-          >
-            {idea ? "✓ Update drum loop" : `＋ Save to ${project.name}`}
-          </button>
+          />
           <button
             className="export-button wide"
             onClick={() =>
@@ -3683,7 +3826,8 @@ function Metronome({
     timer.current = null;
     setPlaying(false);
     setBeat(0);
-  }, []);
+    engine.stopAll();
+  }, [engine]);
   useEffect(() => {
     if (!playing) return;
     let next = engine.get().currentTime;
@@ -3706,8 +3850,12 @@ function Metronome({
       timer.current = window.setTimeout(schedule, 30);
     };
     schedule();
-    return stop;
-  }, [playing, bpm, meter, subdivision, engine, stop]);
+    return () => {
+      if (timer.current) window.clearTimeout(timer.current);
+      timer.current = null;
+      engine.stopAll();
+    };
+  }, [playing, bpm, meter, subdivision, engine]);
   const tap = () => {
     const now = performance.now();
     taps.current = [...taps.current.filter((t) => now - t < 2500), now].slice(
@@ -3729,16 +3877,12 @@ function Metronome({
       <ProjectContext project={project} update={updateProject} />
       <div className="metronome-card">
         <div className="tempo-dial">
-          <button onClick={() => setBpm((b) => b - 1)}>−</button>
+          <button aria-label="Decrease tempo" onClick={() => setBpm((b) => b - 1)}>−</button>
           <div>
-            <input
-              aria-label="Tempo"
-              value={bpm}
-              onChange={(e) => setBpm(Number(e.target.value))}
-            />
+            <TempoInput label="Tempo" bpm={bpm} commit={setBpm} />
             <span>PROJECT BPM</span>
           </div>
-          <button onClick={() => setBpm((b) => b + 1)}>+</button>
+          <button aria-label="Increase tempo" onClick={() => setBpm((b) => b + 1)}>+</button>
         </div>
         <div className="beat-lights">
           {Array.from({ length: beats }, (_, i) => (
@@ -3998,6 +4142,107 @@ function CreateModal({
         </div>
       </div>
     </div>
+  );
+}
+
+function SaveDestinationModal({
+  projects,
+  defaultProjectId,
+  idea,
+  close,
+  save,
+}: {
+  projects: Project[];
+  defaultProjectId: string;
+  idea: IdeaDraft;
+  close: () => void;
+  save: (projectId: string, sectionId: string) => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const element = dialog.current;
+    element?.showModal();
+    return () => element?.close();
+  }, []);
+  const initialProject =
+    projects.find((project) => project.id === defaultProjectId) ?? projects[0];
+  const [projectId, setProjectId] = useState(initialProject?.id ?? "");
+  const [sectionId, setSectionId] = useState(
+    initialProject?.sections[0]?.id ?? "",
+  );
+  const destinationProject =
+    projects.find((project) => project.id === projectId) ?? projects[0];
+  const destinationSection = destinationProject?.sections.find(
+    (section) => section.id === sectionId,
+  );
+  const chooseProject = (nextProjectId: string) => {
+    const nextProject = projects.find(
+      (project) => project.id === nextProjectId,
+    );
+    setProjectId(nextProjectId);
+    setSectionId(nextProject?.sections[0]?.id ?? "");
+  };
+  const ideaLabel = idea.type === "drums" ? "rhythm" : idea.type;
+  return (
+      <dialog ref={dialog}
+        className="modal small save-destination-modal"
+        aria-modal="true"
+        aria-labelledby="save-destination-title"
+        onCancel={(event) => { event.preventDefault(); close(); }}
+      >
+        <button className="modal-close" onClick={close} aria-label="Close">
+          ×
+        </button>
+        <p className="eyebrow">Save {ideaLabel}</p>
+        <h2 id="save-destination-title">Where should this idea go?</h2>
+        <label className="select-control">
+          <span>Project</span>
+          <select
+            aria-label="Destination project"
+            value={projectId}
+            onChange={(event) => chooseProject(event.target.value)}
+          >
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="select-control">
+          <span>Section</span>
+          <select
+            aria-label="Destination section"
+            value={sectionId}
+            onChange={(event) => setSectionId(event.target.value)}
+            disabled={!destinationProject?.sections.length}
+          >
+            {(destinationProject?.sections ?? []).map((section) => (
+              <option key={section.id} value={section.id}>
+                {section.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {destinationSection ? (
+          <p className="save-destination-summary">
+            {idea.name} will be added to <b>{destinationSection.name}</b> in{" "}
+            <b>{destinationProject.name}</b>.
+          </p>
+        ) : (
+          <p className="save-destination-summary">
+            This project needs a section before you can save an idea to it.
+          </p>
+        )}
+        <button
+          className="primary-button wide"
+          disabled={!destinationSection}
+          onClick={() => save(projectId, sectionId)}
+        >
+          Save idea
+        </button>
+        <button className="export-button wide" onClick={close}>Cancel</button>
+      </dialog>
   );
 }
 
