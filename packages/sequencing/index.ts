@@ -68,6 +68,7 @@ export type DrumHit = {
 };
 
 type GrooveTemplate = {
+  steps?: number;
   kick: number[];
   snare: number[];
   hats: number[];
@@ -109,6 +110,31 @@ const GROOVE_TEMPLATES: Record<DrumStyle, GrooveTemplate[]> = {
   ],
 };
 
+// Additional complete pockets: half-time, broken-beat and displaced backbeats.
+GROOVE_TEMPLATES.steady.push(
+  { kick: [0, 6, 10], snare: [8], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
+  { kick: [0, 4, 8, 12], snare: [4, 12], hats: [2, 6, 10, 14] },
+  { kick: [2, 8, 11], snare: [4, 12], hats: [0, 3, 6, 8, 11, 14] },
+);
+GROOVE_TEMPLATES.syncopated.push(
+  { kick: [0, 5, 10], snare: [4, 12], hats: [0, 3, 6, 8, 11, 14] },
+  { kick: [2, 7, 10, 15], snare: [4, 12], hats: [0, 2, 5, 8, 10, 13] },
+  { kick: [0, 6, 11], snare: [8], hats: [0, 2, 6, 8, 10, 14] },
+);
+GROOVE_TEMPLATES.driving.push(
+  { kick: [0, 4, 8, 12], snare: [4, 12], hats: [0,2,4,6,8,10,12,14], ride: [2,6,10,14] },
+  { kick: [0, 2, 6, 10, 14], snare: [8], hats: [0,2,4,6,8,10,12,14] },
+  { kick: [0, 1, 6, 8, 9, 14], snare: [4, 12], hats: [0,2,4,6,8,10,12,14] },
+);
+const METER_POCKETS: Record<number, GrooveTemplate[]> = {
+  3: [{ steps:12, kick:[0,6], snare:[4], hats:[0,2,4,6,8,10] }, { steps:12, kick:[0,7], snare:[8], hats:[0,3,6,9] }],
+  5: [{ steps:20, kick:[0,8,14], snare:[4,12], hats:[0,2,4,6,8,10,12,14,16,18] }, { steps:20, kick:[0,6,12], snare:[8,16], hats:[0,3,6,8,10,12,14,16,18] }],
+  6: [{ steps:24, kick:[0,14], snare:[12], hats:[0,4,8,12,16,20] }, { steps:24, kick:[0,8,20], snare:[12], hats:[0,4,8,12,16,20] }],
+  7: [{ steps:28, kick:[0,12,20], snare:[8,24], hats:[0,4,8,12,16,20,24] }, { steps:28, kick:[0,8,16], snare:[12,24], hats:[0,4,8,12,16,20,24] }, { steps:28, kick:[0,8,20], snare:[4,16], hats:[0,4,8,12,16,20,24] }],
+  9: [{ steps:36, kick:[0,12,24], snare:[8,20,32], hats:[0,4,8,12,16,20,24,28,32] }, { steps:36, kick:[0,16,28], snare:[8,24], hats:[0,4,8,12,16,20,24,28,32] }],
+  11: [{ steps:44, kick:[0,12,24,32], snare:[8,20,36], hats:[0,4,8,12,16,20,24,28,32,36,40] }, { steps:44, kick:[0,8,20,32], snare:[12,28,40], hats:[0,4,8,12,16,20,24,28,32,36,40] }],
+};
+
 export function generateDrumLoop({
   beatsPerBar = 4,
   density = 0.6,
@@ -125,7 +151,7 @@ export function generateDrumLoop({
   const beats = Math.max(2, Math.min(12, Math.round(beatsPerBar)));
   const steps = beats * 4;
   const normalizedDensity = Math.max(0.1, Math.min(1, density));
-  const templates = GROOVE_TEMPLATES[style];
+  const templates = METER_POCKETS[beats] ?? GROOVE_TEMPLATES[style];
   const seedIndex = Math.abs(Math.trunc(seed));
   const template = templates[seedIndex % templates.length];
   const hits: DrumHit[] = [];
@@ -142,7 +168,7 @@ export function generateDrumLoop({
         velocity: Math.max(0.2, Math.min(1, velocity)),
       });
   };
-  const mapStep = (step: number) => Math.round((step / 16) * steps) % steps;
+  const mapStep = (step: number) => step % steps;
   const detailLimit = Math.max(1, Math.round(normalizedDensity * 5));
   const chooseDetails = (values: number[], keepAtLeast = 1) =>
     values.filter(

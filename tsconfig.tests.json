@@ -11,6 +11,6 @@
     "allowJs": false,
     "declaration": false
   },
-  "include": ["packages/**/*.ts", "tests/**/*.ts"],
+  "include": ["packages/**/*.ts", "tests/**/*.ts", "worker-configuration.d.ts"],
   "exclude": ["node_modules", "app", "worker", "db"]
 }

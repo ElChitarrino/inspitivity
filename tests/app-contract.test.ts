@@ -20,9 +20,11 @@ test("the product surface retains all six planned workflows", () => {
     assert.match(source, new RegExp(feature));
 });
 
-test("projects and audio are stored locally without requiring an account", () => {
-  assert.match(source, /localStorage\.setItem\("inspitivity-projects"/);
-  assert.match(source, /indexedDB\.open\("inspitivity-audio"/);
+test("projects and recordings retain an offline copy alongside private cloud sync", async () => {
+  const storage = await readFile(resolve(process.cwd(), "app/workspace-storage.ts"), "utf8");
+  assert.match(storage, /inspitivity-projects/);
+  assert.match(storage, /indexedDB\.open\("inspitivity-audio"/);
+  assert.match(storage, /\/api\/workspace/);
   assert.match(source, /navigator\.mediaDevices\.getUserMedia/);
 });
 
@@ -211,7 +213,7 @@ test("melody notes preserve the phrase while pitch and duration are edited by dr
 });
 
 test("the melody generator lets writers choose exactly how many notes to generate", () => {
-  assert.match(source, /const \[noteCount, setNoteCount\] = useState\(Math\.min\(30, defaultNoteCount\)\)/);
+  assert.match(source, /const \[noteCount, setNoteCount\] = useDraftState\("noteCount", Math\.min\(30, defaultNoteCount\)\)/);
   assert.match(source, /aria-label="Number of melody notes"/);
   assert.match(source, /min="0"/);
   assert.match(source, /max="30"/);

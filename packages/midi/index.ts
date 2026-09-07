@@ -81,3 +81,38 @@ export function createMidiFile({
     ...chunk("MTrk", track),
   ]);
 }
+
+export function createMultitrackMidi({ name, tracks, markers, length }: {
+  name: string;
+  tracks: { name: string; channel: number; program: number; notes: MidiNoteEvent[] }[];
+  markers: { start: number; meter: string; bpm: number; name?: string }[];
+  length: number;
+}) {
+  type Event = { tick: number; order: number; bytes: number[] };
+  const titleEvent = (title: string): Event => { const t=text(title.slice(0,100)); return { tick:0, order:0, bytes:[0xff,3,...variableLength(t.length),...t] }; };
+  const encode = (events: Event[]) => {
+    events.sort((a,b)=>a.tick-b.tick || a.order-b.order);
+    const bytes: number[] = []; let previous=0;
+    for (const e of events) { bytes.push(...variableLength(e.tick-previous),...e.bytes); previous=e.tick; }
+    bytes.push(...variableLength(Math.max(previous,Math.round(length*480))-previous),0xff,0x2f,0);
+    return chunk("MTrk",bytes);
+  };
+  const conductor: Event[] = [titleEvent(name)];
+  for (const marker of markers) {
+    const tick=Math.round(marker.start*480), tempo=Math.round(60000000/Math.max(10,marker.bpm));
+    conductor.push({ tick,order:1,bytes:[0xff,0x51,3,(tempo>>16)&255,(tempo>>8)&255,tempo&255] }, { tick,order:2,bytes:meterBytes(marker.meter) });
+    if (marker.name) { const t=text(marker.name); conductor.push({tick,order:3,bytes:[0xff,6,...variableLength(t.length),...t]}); }
+  }
+  const encoded = [encode(conductor)];
+  for (const track of tracks) {
+    const events: Event[] = [titleEvent(track.name), {tick:0,order:1,bytes:[0xc0|track.channel,track.program]}];
+    for (const n of track.notes) {
+      if (![n.pitch,n.start,n.duration].every(Number.isFinite)) continue;
+      const start=Math.max(0,Math.round(n.start*480)), end=Math.max(start+1,Math.round((n.start+n.duration)*480));
+      const pitch=Math.max(0,Math.min(127,Math.round(n.pitch))), velocity=Math.max(1,Math.min(127,Math.round((n.velocity ?? .7)*127)));
+      events.push({tick:start,order:5,bytes:[0x90|track.channel,pitch,velocity]}, {tick:end,order:4,bytes:[0x80|track.channel,pitch,0]});
+    }
+    encoded.push(encode(events));
+  }
+  return new Uint8Array([...chunk("MThd",[0,1,...u16(encoded.length),...u16(480)]),...encoded.flat()]);
+}

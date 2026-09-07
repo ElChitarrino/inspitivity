@@ -21,7 +21,7 @@ import {
   ProgressionOpening,
   Root,
 } from "../packages/music-theory";
-import { createMidiFile, type MidiNoteEvent } from "../packages/midi";
+import { createMidiFile, createMultitrackMidi, type MidiNoteEvent } from "../packages/midi";
 import {
   beatDurationSeconds,
   calculateTapTempo,
@@ -53,32 +53,13 @@ import {
   type TransitionStyle,
 } from "../packages/prog";
 
-type Idea = {
-  id: string;
-  type:
-    "audio" | "chords" | "melody" | "drums" | "riff" | "transition" | "text";
-  name: string;
-  detail: string;
-  recordingId?: string;
-  data?: string[];
-};
-type SongSection = {
-  id: string;
-  name: string;
-  bars: number;
-  color: string;
-  ideas: Idea[];
-  meterMap?: string[];
-};
-type Project = {
-  id: string;
-  name: string;
-  bpm: number;
-  meter: string;
-  key: string;
-  updated: number;
-  sections: SongSection[];
-};
+import { useCloudProjects, saveRecording, getRecording, downloadBackup, restoreBackup } from "./workspace-storage";
+import { DraftSession, DraftToolbar, useDraftState, useDraftPreview, type DraftPreview } from "./draft-session";
+import { sectionFeel, buildSongPlan, type SongLayer } from "../packages/workspace/music";
+import type { Idea, SongSection, Project } from "../packages/workspace";
+import { varyNotes } from "../packages/workspace/variation";
+import { VariationControls } from "./variation-controls";
+
 type IdeaDraft = Omit<Idea, "id" | "recordingId">;
 type SaveIdea = (type: Idea["type"], name: string, detail: string, data?: string[], chooseDestination?: boolean) => void;
 type Screen =
@@ -350,55 +331,7 @@ const sectionMeterMap = (section: SongSection, fallback: string) =>
   );
 const sectionBeatTotal = (section: SongSection, fallback: string) =>
   meterMapTotal(sectionMeterMap(section, fallback), fallback);
-const inferGrooveContext = (project: Project, section?: SongSection) => {
-  const projectIdeas = project.sections.flatMap((item) => item.ideas);
-  const activeIdeas = section
-    ? [...projectIdeas, ...section.ideas]
-    : projectIdeas;
-  const ideaText = activeIdeas
-    .map((idea) => `${idea.name} ${idea.detail} ${(idea.data ?? []).join(" ")}`)
-    .join(" ")
-    .toLowerCase();
-  const projectText = `${project.name} ${section?.name ?? ""}`.toLowerCase();
-  let score = 0;
-  const signals: string[] = [];
-  if (
-    /calm|mellow|soft|gentle|sparse|ambient|dream|warm|ballad|breathe|melanchol/.test(
-      ideaText,
-    )
-  ) {
-    score -= 3;
-    signals.push("the softer project ideas");
-  }
-  if (
-    /heavy|power|driv|aggress|punch|djent|metal|hard|intense/.test(ideaText)
-  ) {
-    score += 3;
-    signals.push("the high-energy project ideas");
-  }
-  if (/\b[a-g](?:b|#)?(?:maj7|maj9|m7|m9|add9|sus2|sus4|11|13)\b/.test(ideaText)) {
-    score -= 2;
-    signals.push("the extended harmony");
-  }
-  if (/intro|verse|breakdown|outro|midnight|fading/.test(projectText)) score -= 1;
-  if (/chorus|hook|drop|climax/.test(projectText)) score += 1;
-  if (project.bpm <= 105) {
-    score -= 1;
-    signals.push(`${project.bpm} BPM`);
-  } else if (project.bpm >= 142) {
-    score += 1;
-    signals.push(`${project.bpm} BPM`);
-  }
-  const energy: GrooveEnergy =
-    score <= -2 ? "mellow" : score >= 2 ? "powerful" : "balanced";
-  const source = signals.slice(0, 2).join(" and ");
-  return {
-    energy,
-    reason: source
-      ? `Following ${source}${section ? ` in ${section.name}` : ""}.`
-      : `A balanced pocket fits the current project context.`,
-  };
-};
+const inferGrooveContext = sectionFeel;
 const chordRole = (symbol: string, root: Root, mode: Mode) => {
   const degree = getScale(root, mode).findIndex(
     (note) => notePitchClass(note) === notePitchClass(symbol),
@@ -604,42 +537,6 @@ function Wave({ tone = "mint", bars = 7 }: { tone?: string; bars?: number }) {
   );
 }
 
-function useProjects() {
-  const [projects, setProjects] = useState<Project[]>(STARTER_PROJECTS);
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    const hydrate = window.setTimeout(() => {
-      try {
-        const saved = localStorage.getItem("inspitivity-projects");
-        if (saved)
-          setProjects(
-            (JSON.parse(saved) as Project[]).map((project) => ({
-              ...project,
-              key: normalizeAccidentals(project.key),
-              sections: project.sections.map((section) => ({
-                ...section,
-                ideas: section.ideas.map((idea) => ({
-                  ...idea,
-                  detail: normalizeAccidentals(idea.detail),
-                  data: idea.data?.map(normalizeAccidentals),
-                })),
-              })),
-            })),
-          );
-      } catch {
-        /* keep starter data */
-      }
-      setReady(true);
-    }, 0);
-    return () => window.clearTimeout(hydrate);
-  }, []);
-  useEffect(() => {
-    if (ready)
-      localStorage.setItem("inspitivity-projects", JSON.stringify(projects));
-  }, [projects, ready]);
-  return [projects, setProjects] as const;
-}
-
 function usePhoneInstall() {
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
@@ -695,36 +592,6 @@ function usePhoneInstall() {
     isIos,
     standalone,
   };
-}
-
-function saveRecording(id: string, blob: Blob) {
-  return new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open("inspitivity-audio", 1);
-    request.onupgradeneeded = () =>
-      request.result.createObjectStore("recordings");
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const tx = request.result.transaction("recordings", "readwrite");
-      tx.objectStore("recordings").put(blob, id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    };
-  });
-}
-
-function getRecording(id: string) {
-  return new Promise<Blob | undefined>((resolve, reject) => {
-    const request = indexedDB.open("inspitivity-audio", 1);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const store = request.result
-        .transaction("recordings", "readonly")
-        .objectStore("recordings");
-      const read = store.get(id);
-      read.onsuccess = () => resolve(read.result);
-      read.onerror = () => reject(read.error);
-    };
-  });
 }
 
 function Topbar({
@@ -836,7 +703,6 @@ type SharedAudioGraph = {
 
 let sharedAudioGraph: SharedAudioGraph | null = null;
 let sharedNativeAudioUnlock: HTMLAudioElement | null = null;
-const sharedAudioSources = new Set<AudioScheduledSourceNode>();
 
 function silentWavUrl() {
   const sampleRate = 8000;
@@ -866,6 +732,7 @@ function silentWavUrl() {
 
 function useAudioEngine() {
   return useMemo(() => {
+    const sources = new Set<AudioScheduledSourceNode>();
     const getGraph = (): SharedAudioGraph => {
       if (sharedAudioGraph && sharedAudioGraph.context.state !== "closed")
         return sharedAudioGraph;
@@ -969,8 +836,8 @@ function useAudioEngine() {
         oscillator.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
         oscillator.detune.value = detune;
         oscillator.connect(filter);
-        sharedAudioSources.add(oscillator);
-        oscillator.onended = () => sharedAudioSources.delete(oscillator);
+        sources.add(oscillator);
+        oscillator.onended = () => sources.delete(oscillator);
         return oscillator;
       });
       filter.type = "lowpass";
@@ -1006,8 +873,8 @@ function useAudioEngine() {
         oscillators.forEach((oscillator) =>
           vibratoDepth.connect(oscillator.detune),
         );
-        sharedAudioSources.add(vibrato);
-        vibrato.onended = () => sharedAudioSources.delete(vibrato);
+        sources.add(vibrato);
+        vibrato.onended = () => sources.delete(vibrato);
         vibrato.start(when);
         vibrato.stop(when + duration + profile.release);
       }
@@ -1046,8 +913,8 @@ function useAudioEngine() {
       volume.gain.setValueAtTime(gain, when);
       volume.gain.exponentialRampToValueAtTime(0.0001, when + duration);
       source.connect(filter).connect(volume).connect(getGraph().input);
-      sharedAudioSources.add(source);
-      source.onended = () => sharedAudioSources.delete(source);
+      sources.add(source);
+      source.onended = () => sources.delete(source);
       source.start(when);
       source.stop(when + duration);
     };
@@ -1063,8 +930,8 @@ function useAudioEngine() {
         volume.gain.setValueAtTime(0.26 * velocity, when);
         volume.gain.exponentialRampToValueAtTime(0.0001, when + 0.18);
         oscillator.connect(volume).connect(getGraph().input);
-        sharedAudioSources.add(oscillator);
-        oscillator.onended = () => sharedAudioSources.delete(oscillator);
+        sources.add(oscillator);
+        oscillator.onended = () => sources.delete(oscillator);
         oscillator.start(when);
         oscillator.stop(when + 0.19);
         return;
@@ -1095,18 +962,18 @@ function useAudioEngine() {
           (maximum, sample) => Math.max(maximum, Math.abs(sample - 128)),
           0,
         ),
-        activeSources: sharedAudioSources.size,
+        activeSources: sources.size,
       };
     };
     const stopAll = () => {
-      sharedAudioSources.forEach((source) => {
+      sources.forEach((source) => {
         try {
           source.stop();
         } catch {
           /* already stopped */
         }
       });
-      sharedAudioSources.clear();
+      sources.clear();
     };
     return { tone, drum, get, unlock, diagnostics, stopAll };
   }, []);
@@ -1269,6 +1136,7 @@ function useLoopTransport(
 ) {
   const [mode, setMode] = useState<"stopped" | "once" | "loop">("stopped");
   const timer = useRef<number | null>(null);
+  const startGeneration = useRef(0);
   const playRef = useRef(playOnce);
   const durationRef = useRef(durationMs);
   useEffect(() => {
@@ -1276,6 +1144,7 @@ function useLoopTransport(
     durationRef.current = durationMs;
   }, [playOnce, durationMs]);
   const clear = useCallback(() => {
+    startGeneration.current++;
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = null;
     stopAudio();
@@ -1287,7 +1156,10 @@ function useLoopTransport(
   const start = useCallback(
     async (loop: boolean) => {
       clear();
+      window.dispatchEvent(new Event("inspitivity-solo-preview"));
+      const token=++startGeneration.current;
       const unlocked = await unlockAudio();
+      if(token !== startGeneration.current) return;
       if (!unlocked) {
         setMode("stopped");
         return;
@@ -1304,12 +1176,13 @@ function useLoopTransport(
     },
     [clear, unlockAudio],
   );
-  useEffect(() => () => clear(), [clear]);
+  useEffect(() => { window.addEventListener("inspitivity-context-play",stop); return () => { window.removeEventListener("inspitivity-context-play",stop); clear(); }; }, [clear,stop]);
   return { mode, start, stop };
 }
 
 export default function InspitivityApp() {
-  const [projects, setProjects] = useProjects();
+  const [projects, setProjects, cloud] = useCloudProjects(STARTER_PROJECTS);
+  const [previews, setPreviews] = useState<Record<string, DraftPreview>>({});
   const phoneInstall = usePhoneInstall();
   const [screen, setScreen] = useState<Screen>("home");
   const [selectedId, setSelectedId] = useState("midnight");
@@ -1324,6 +1197,10 @@ export default function InspitivityApp() {
   const [returnToArrangement, setReturnToArrangement] = useState(false);
   const [toolMetronomeEnabled, setToolMetronomeEnabled] = useState(false);
   const selected = projects.find((p) => p.id === selectedId) ?? projects[0];
+  const publishPreview = useCallback((preview: DraftPreview) => {
+    const key = `${selected?.id}/${draftSectionId ?? "scratch"}/${preview.type}`;
+    setPreviews(current => JSON.stringify(current[key]) === JSON.stringify(preview) ? current : { ...current, [key]: preview });
+  }, [selected?.id, draftSectionId]);
 
   const notify = (message: string) => {
     setToast(message);
@@ -1331,7 +1208,7 @@ export default function InspitivityApp() {
   };
   const navigate = (next: Screen) => {
     if (next !== screen) {
-      setEditingIdea(null);
+      setEditingIdea(selected?.sections.find(s => s.id === draftSectionId)?.ideas.find(i => i.type === next) ?? null);
       savedDraftId.current = null;
     }
     if (!["chords", "melody", "drums", "riff", "transition"].includes(next))
@@ -1401,6 +1278,7 @@ export default function InspitivityApp() {
           ),
         })),
       }));
+      window.dispatchEvent(new Event("inspitivity-draft-saved"));
       notify(`Saved changes to ${name}`);
       return;
     }
@@ -1427,6 +1305,7 @@ export default function InspitivityApp() {
           : section,
       ),
     }));
+    window.dispatchEvent(new Event("inspitivity-draft-saved"));
     notify(`Saved to ${selected.name} · ${destination.name}`);
   };
   const saveIdeaTo = (projectId: string, sectionId: string) => {
@@ -1454,6 +1333,7 @@ export default function InspitivityApp() {
       ),
     );
     setPendingSave(null);
+    window.dispatchEvent(new Event("inspitivity-draft-saved"));
     notify(`Saved to ${project.name} · ${section.name}`);
   };
   const openSectionTool = (
@@ -1461,7 +1341,7 @@ export default function InspitivityApp() {
     tool: "chords" | "melody" | "drums" | "riff" | "transition",
   ) => {
     savedDraftId.current = null;
-    setEditingIdea(null);
+    setEditingIdea(selected?.sections.find(s => s.id === sectionId)?.ideas.find(i => i.type === tool) ?? null);
     setDraftSectionId(sectionId);
     setReturnToArrangement(true);
     setScreen(tool);
@@ -1489,7 +1369,20 @@ export default function InspitivityApp() {
       setScreen(idea.type);
     }
   };
-  const draftSection = selected?.sections.find(
+  const musicProject = useMemo(() => selected ? ({ ...selected, sections: selected.sections.map((section, index) => {
+    const scope = draftSectionId ?? "scratch";
+    if (draftSectionId ? section.id !== draftSectionId : index !== 0) return section;
+    const ideas = [...section.ideas];
+    for (const type of ["chords", "melody", "drums", "riff"] as const) {
+      const preview = previews[`${selected.id}/${scope}/${type}`];
+      if (!preview) continue;
+      const i=ideas.findIndex(idea=>idea.type===type);
+      const draft: Idea={ id:`context-${type}`, type, name:`${type} draft`, detail:"", data:preview.data };
+      if(i>=0) ideas[i]=draft; else ideas.push(draft);
+    }
+    return { ...section, ideas };
+  }) }) : undefined, [selected, previews, draftSectionId]);
+  const draftSection = musicProject?.sections.find(
     (section) => section.id === draftSectionId,
   );
   const draftSectionIndex =
@@ -1499,6 +1392,9 @@ export default function InspitivityApp() {
 
   return (
     <main className={`app-shell ${screen}-screen`}>
+      <div className="sync-status"><span role="status">{cloud.status}</span><button onClick={() => void cloud.sync()}>Sync now</button></div>
+      {selected && ["project", "drums", "chords", "melody", "riff"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} chooseSection={(id) => { setDraftSectionId(id); setEditingIdea(null); }} />}
+      <DraftSession key={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} id={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} publish={publishPreview}>
       {screen === "home" && (
         <Home
           projects={projects}
@@ -1530,7 +1426,7 @@ export default function InspitivityApp() {
         <ChordTool
           key={`${editingIdea?.id ?? "new-chords"}-${draftSectionId ?? "default"}`}
           idea={editingIdea?.type === "chords" ? editingIdea : undefined}
-          project={selected}
+          project={musicProject ?? selected}
           section={draftSection}
           sectionIndex={draftSectionIndex}
           updateProject={updateSelected}
@@ -1545,7 +1441,7 @@ export default function InspitivityApp() {
         <MelodyTool
           key={`${editingIdea?.id ?? "new-melody"}-${draftSectionId ?? "default"}`}
           idea={editingIdea?.type === "melody" ? editingIdea : undefined}
-          project={selected}
+          project={musicProject ?? selected}
           section={draftSection}
           sectionIndex={draftSectionIndex}
           updateProject={updateSelected}
@@ -1560,7 +1456,7 @@ export default function InspitivityApp() {
         <DrumTool
           key={`${editingIdea?.id ?? "new-drums"}-${draftSectionId ?? "default"}`}
           idea={editingIdea?.type === "drums" ? editingIdea : undefined}
-          project={selected}
+          project={musicProject ?? selected}
           section={draftSection}
           sectionIndex={draftSectionIndex}
           updateProject={updateSelected}
@@ -1573,7 +1469,7 @@ export default function InspitivityApp() {
         <RiffTool
           key={`${editingIdea?.id ?? "new-riff"}-${draftSectionId ?? "default"}`}
           idea={editingIdea?.type === "riff" ? editingIdea : undefined}
-          project={selected}
+          project={musicProject ?? selected}
           section={draftSection}
           sectionIndex={draftSectionIndex}
           updateProject={updateSelected}
@@ -1609,18 +1505,18 @@ export default function InspitivityApp() {
           projects={projects}
           phoneInstall={phoneInstall}
           notify={notify}
-          backUp={() => {
-            const blob = new Blob([JSON.stringify(projects, null, 2)], {
-              type: "application/json",
-            });
-            const a = document.createElement("a");
-            a.href = URL.createObjectURL(blob);
-            a.download = "inspitivity-backup.json";
-            a.click();
-            notify("Local backup downloaded");
+          backUp={async () => {
+            try { await downloadBackup(projects); notify("Complete backup downloaded, including recordings"); }
+            catch (error) { notify(error instanceof Error ? error.message : "Backup failed"); }
           }}
+          restore={async (file) => {
+            try { const restored = await restoreBackup(file); setProjects(items => [...restored, ...items]); notify("Backup restored as copies; existing projects are unchanged"); }
+            catch (error) { notify(error instanceof Error ? error.message : "Restore failed"); }
+          }}
+          syncStatus={cloud.status}
         />
       )}
+      </DraftSession>
       <BottomNav
         screen={screen}
         go={navigate}
@@ -2003,6 +1899,7 @@ function ProjectView({
       }),
     }));
   const playArrangement = async () => {
+    window.dispatchEvent(new Event("inspitivity-solo-preview"));
     if (arrangementPlaying) {
       stopArrangement();
       return;
@@ -2122,6 +2019,7 @@ function ProjectView({
     );
   };
   const playSection = async (section: SongSection, sectionIndex: number) => {
+    window.dispatchEvent(new Event("inspitivity-solo-preview"));
     if (arrangementPlaying && activeSectionIndex === sectionIndex) {
       stopArrangement();
       return;
@@ -2217,14 +2115,13 @@ function ProjectView({
       sectionBeats * beat * 1000,
     );
   };
-  useEffect(
-    () => () => {
-      stopArrangement();
-      stopIdea();
-    },
-    [stopArrangement, stopIdea],
-  );
+  useEffect(() => {
+    const stop = () => { stopArrangement(); stopIdea(); };
+    window.addEventListener("inspitivity-context-play", stop);
+    return () => { window.removeEventListener("inspitivity-context-play", stop); stop(); };
+  }, [stopArrangement, stopIdea]);
   const playIdea = async (idea: Idea) => {
+    window.dispatchEvent(new Event("inspitivity-solo-preview"));
     if (playingIdeaId === idea.id) {
       stopIdea();
       return;
@@ -2629,6 +2526,113 @@ function ProjectView({
   );
 }
 
+function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection }: {
+  project: Project; previews: Record<string, DraftPreview>; activeSectionId: string | null; chooseSection: (id: string) => void;
+}) {
+  const engine = useAudioEngine();
+  const [wholeSong, setWholeSong] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [message, setMessage] = useState("");
+  const [mix, setMix] = useState<Record<SongLayer, { muted: boolean; solo: boolean; volume: number }>>({
+    drums: { muted:false,solo:false,volume:.8 }, chords: { muted:false,solo:false,volume:.65 }, melody: { muted:false,solo:false,volume:.8 }, riff: { muted:false,solo:false,volume:.6 },
+  });
+  const selectedSection = project.sections.find(s => s.id === activeSectionId) ?? project.sections[0];
+  const previewProject = useMemo(() => ({ ...project, sections: (wholeSong ? project.sections : selectedSection ? [selectedSection] : []).map(section => {
+    const scope = activeSectionId ?? "scratch";
+    const ideas = [...section.ideas];
+    for (const type of ["drums", "chords", "melody", "riff"] as const) {
+      const draft = section.id === selectedSection?.id ? previews[`${project.id}/${scope}/${type}`] : undefined;
+      if (draft) {
+        const i=ideas.findIndex(idea => idea.type === type);
+        const idea: Idea = { id:`preview-${type}`, type, name:`${type} draft`, detail:"", data:draft.data };
+        if (i >= 0) ideas[i]=idea; else ideas.push(idea);
+      }
+    }
+    return { ...section, ideas };
+  }) }), [project, wholeSong, selectedSection, previews, activeSectionId]);
+  const plan = useMemo(() => buildSongPlan(previewProject), [previewProject]);
+  const latest = useRef({ plan, mix, previews, projectId:project.id, scope:activeSectionId ?? "scratch" });
+  useEffect(() => { latest.current={ plan, mix, previews, projectId:project.id, scope:activeSectionId ?? "scratch" }; }, [plan,mix,previews,project.id,activeSectionId]);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null), generation = useRef(0);
+  const stop = useCallback(() => {
+    generation.current++;
+    if (timer.current) clearInterval(timer.current);
+    timer.current=null; engine.stopAll(); setPlaying(false); setProgress(0);
+  }, [engine]);
+  useEffect(() => {
+    window.addEventListener("inspitivity-solo-preview",stop);
+    return () => { window.removeEventListener("inspitivity-solo-preview",stop); stop(); };
+  }, [stop, project.id, selectedSection?.id, wholeSong]);
+  const start = async () => {
+    stop();
+    const token = generation.current;
+    try {
+      if (!(await engine.unlock()) || token !== generation.current) return;
+      if (!latest.current.plan.events.length) { setMessage("Add or generate a part to hear this section."); return; }
+      window.dispatchEvent(new Event("inspitivity-context-play"));
+      setMessage(""); setPlaying(true);
+      let cyclePlan=latest.current.plan, origin=engine.get().currentTime+.04, index=0;
+      const schedule = () => {
+        const now=engine.get().currentTime;
+        if (now > origin+cyclePlan.seconds) {
+          // Skip missed cycles when a background tab is throttled; never play a burst of late notes.
+          origin += Math.max(1,Math.floor((now-origin)/Math.max(.1,cyclePlan.seconds)))*cyclePlan.seconds;
+          cyclePlan=latest.current.plan; index=0;
+        }
+        let guard=0;
+        while (guard++ < 5000) {
+          if (index >= cyclePlan.events.length) {
+            if (origin+cyclePlan.seconds > now+.12 || cyclePlan.seconds <= 0) break;
+            origin+=cyclePlan.seconds; cyclePlan=latest.current.plan; index=0;
+            if (!cyclePlan.events.length) break;
+          }
+          const event=cyclePlan.events[index];
+          if (!event || origin+event.seconds > now+.12) break;
+          index++;
+          if (origin+event.seconds < now-.02) continue;
+          const settings=latest.current.mix[event.layer], solo=Object.values(latest.current.mix).some(m=>m.solo);
+          if (settings.muted || (solo && !settings.solo) || settings.volume <= 0) continue;
+          const delay=Math.max(0,origin+event.seconds-engine.get().currentTime);
+          if (event.layer === "drums") {
+            const instrument=({36:"kick",38:"snare",42:"hihat",49:"crash",51:"ride"} as Record<number,DrumInstrument>)[event.pitch];
+            if (instrument) engine.drum(instrument,delay,event.velocity*settings.volume);
+          } else {
+            const draft=latest.current.previews[`${latest.current.projectId}/${latest.current.scope}/${event.layer}`];
+            const voice=(draft?.voice ?? (event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : "analog pulse")) as SynthVoice;
+            engine.tone(event.pitch,delay,event.secondsDuration,.065*event.velocity*settings.volume,voice);
+          }
+        }
+        setProgress(Math.max(0,Math.min(1,(now-origin)/Math.max(.1,cyclePlan.seconds))));
+      };
+      schedule(); timer.current=setInterval(schedule,25);
+    } catch { setMessage("Audio could not start. Tap Play again."); stop(); }
+  };
+  const updateMix=(layer:SongLayer, update:Partial<(typeof mix)[SongLayer]>) => setMix(current=>({...current,[layer]:{...current[layer],...update}}));
+  return <section className="section-player" aria-label="Shared song player">
+    <div className="section-player-heading"><div><p className="eyebrow">HEAR THE IDEA TOGETHER</p><b>{project.name}</b></div>
+      <label>Preview<select aria-label="Preview section" value={wholeSong ? "__song" : selectedSection?.id ?? ""} onChange={e => { stop(); setWholeSong(e.target.value === "__song"); if(e.target.value !== "__song") chooseSection(e.target.value); }}>
+        {project.sections.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}<option value="__song">Whole song</option>
+      </select></label>
+      <PlayButton playing={playing} label={wholeSong ? "song preview" : "section preview"} onClick={() => playing ? stop() : void start()} />
+    </div>
+    <progress aria-label="Playback position" max={1} value={progress} />
+    <details className="section-mixer"><summary>Mix layers · mute, solo & volume</summary><div className="mixer-grid">
+      {([ ["drums","Drums"], ["chords","Chords"], ["melody","Melody"], ["riff","Pattern"] ] as const).map(([layer,label])=><div className="mixer-channel" key={layer}><b>{label}</b>
+        <button aria-label={`Mute ${label}`} aria-pressed={mix[layer].muted} onClick={()=>updateMix(layer,{muted:!mix[layer].muted})}>Mute</button>
+        <button aria-label={`Solo ${label}`} aria-pressed={mix[layer].solo} onClick={()=>updateMix(layer,{solo:!mix[layer].solo})}>Solo</button>
+        <input type="range" aria-label={`${label} volume`} min="0" max="1" step="0.05" value={mix[layer].volume} onChange={e=>updateMix(layer,{volume:Number(e.target.value)})} />
+      </div>)}
+    </div></details>
+    <p>{message || "Loops saved parts plus your current drafts. Missing layers stay silent. Edits enter on the next loop."}</p>
+    <button className="export-button" onClick={() => {
+      const song=buildSongPlan(project);
+      const tracks=([ ["drums","Drums",9,0], ["chords","Chords",0,89], ["melody","Melody",1,73], ["riff","Pattern",2,81] ] as const).map(([layer,name,channel,program])=>({name,channel,program,notes:song.events.filter(e=>e.layer===layer)}));
+      downloadMidi(`${project.name}-song`,createMultitrackMidi({name:project.name,tracks,markers:song.markers,length:song.quarters}));
+    }}>⇩ Export saved song as multitrack MIDI</button>
+  </section>;
+}
+
 function PlayButton({ playing, onClick, label, compact = false, className = "" }: {
   playing: boolean;
   onClick: () => void;
@@ -2845,20 +2849,20 @@ function ChordTool({
   const { root, mode } = projectHarmony(project);
   const initialCount = idea?.data?.length || section?.bars || 4;
   const initialSeed = sectionIndex >= 0 ? sectionIndex + 1 : 1;
-  const [count, setCount] = useState(initialCount);
-  const [defaultBeats, setDefaultBeats] = useState(4);
-  const [lengthVariation, setLengthVariation] = useState(0);
-  const [complexity, setComplexity] = useState<Complexity>("medium");
-  const [harmonyColour, setHarmonyColour] = useState<HarmonyColour>("diatonic");
-  const [opening, setOpening] = useState<ProgressionOpening>("away");
-  const [voice, setVoice] = useState<SynthVoice>("warm pad");
-  const [seed, setSeed] = useState(initialSeed);
-  const [chords, setChords] = useState<ChordDraft[]>(() =>
+  const [count, setCount] = useDraftState("count", initialCount);
+  const [defaultBeats, setDefaultBeats] = useDraftState("defaultBeats", 4);
+  const [lengthVariation, setLengthVariation] = useDraftState("lengthVariation", 0);
+  const [complexity, setComplexity] = useDraftState<Complexity>("complexity", "medium");
+  const [harmonyColour, setHarmonyColour] = useDraftState<HarmonyColour>("harmonyColour", "diatonic");
+  const [opening, setOpening] = useDraftState<ProgressionOpening>("opening", "away");
+  const [voice, setVoice] = useDraftState<SynthVoice>("voice", "warm pad");
+  const [seed, setSeed] = useDraftState("seed", initialSeed);
+  const [chords, setChords] = useDraftState<ChordDraft[]>("chords", () =>
     idea
       ? decodeChordDrafts(idea)
       : makeChordDrafts(root, mode, initialCount, "medium", initialSeed),
   );
-  const [previousChords, setPreviousChords] = useState<ChordDraft[] | null>(null);
+  const [previousChords, setPreviousChords] = useDraftState<ChordDraft[] | null>("previousChords", null);
   const engine = useAudioEngine();
   const regenerate = (nextRoot = root, nextMode = mode) => {
     setPreviousChords(chords);
@@ -2908,6 +2912,7 @@ function ChordTool({
         chord.id === id ? { ...chord, ...changes } : chord,
       ),
     );
+  useDraftPreview({ type: "chords", data: chords.map(c => `${c.name}|${c.beats}`), voice });
   return (
     <>
       <ToolHeader
@@ -2929,6 +2934,7 @@ function ChordTool({
           Editing {section.name} · {section.bars} bars
         </p>
       )}
+      <DraftToolbar />
       <div className="tool-layout">
         <section className="control-panel">
           <div className="idea-starts" aria-label="Harmony starting points">
@@ -2979,6 +2985,7 @@ function ChordTool({
               onChange={(event) => setDefaultBeats(Number(event.target.value))}
             />
           </label>
+          <details className="advanced-controls"><summary>Advanced harmony & timing</summary>
           <ControlTitle n="3" title="Length variation" />
           <label className="range-control">
             <span>
@@ -3023,6 +3030,7 @@ function ChordTool({
               "pedal point",
             ]}
           />
+          </details>
           <ControlTitle n="7" title="Preview sound" />
           <Select
             label="Instrument"
@@ -3039,6 +3047,14 @@ function ChordTool({
           </button>
         </section>
         <section className="result-panel">
+          <VariationControls value={chords} apply={value=>{transport.stop();setChords(value);}} vary={(kind,locks)=>{
+            setSeed(seed+1);
+            const candidate=makeChordDrafts(root,mode,chords.length,complexity,seed+1,defaultBeats,lengthVariation,harmonyColour,opening);
+            return chords.map((chord,index)=>({...chord,
+              name:!locks.notes && index===(seed+1)%chords.length ? candidate[index].name : chord.name,
+              beats:locks.rhythm ? chord.beats : kind==="space" ? Math.min(8,chord.beats*2) : kind==="energy" ? Math.max(1,chord.beats/2) : chord.beats
+            }));
+          }} />
           <div className="result-heading">
             <div>
               <p className="eyebrow">
@@ -3210,29 +3226,29 @@ function MelodyTool({
       )
     : 16;
   const initialSeed = sectionIndex >= 0 ? sectionIndex + 11 : 7;
-  const [mood, setMood] = useState<MelodyMood>(() =>
+  const [mood, setMood] = useDraftState<MelodyMood>("mood", () =>
     (["calm", "bright", "melancholic", "dark"] as const).find(value => idea?.name.startsWith(value)) ?? "calm",
   );
-  const [shape, setShape] = useState<PhraseShape>(() =>
+  const [shape, setShape] = useDraftState<PhraseShape>("shape", () =>
     (["flow", "hook", "answer", "floating"] as const).find(value => idea?.name.split(" ").includes(value)) ?? "flow",
   );
-  const [density, setDensity] = useState(section ? 0.55 : 0.6);
-  const [noteCount, setNoteCount] = useState(Math.min(30, defaultNoteCount));
-  const [seed, setSeed] = useState(initialSeed);
-  const [voice, setVoice] = useState<SynthVoice>("air flute");
-  const [savedMelody, setSavedMelody] = useState(() =>
+  const [density, setDensity] = useDraftState("density", section ? 0.55 : 0.6);
+  const [noteCount, setNoteCount] = useDraftState("noteCount", Math.min(30, defaultNoteCount));
+  const [seed, setSeed] = useDraftState("seed", initialSeed);
+  const [voice, setVoice] = useDraftState<SynthVoice>("voice", "air flute");
+  const [savedMelody, setSavedMelody] = useDraftState("savedMelody", () =>
     idea ? decodeMelodyIdea(idea) : null,
   );
-  const [previousMelody, setPreviousMelody] = useState<ReturnType<typeof generateMelody> | null>(null);
+  const [previousMelody, setPreviousMelody] = useDraftState<ReturnType<typeof generateMelody> | null>("previousMelody", null);
   const engine = useAudioEngine();
   const supportingChords = useMemo(() => {
-    const savedHarmony = section?.ideas.find(
+    const savedHarmony = (section ?? project.sections[0])?.ideas.find(
       (sectionIdea) => sectionIdea.type === "chords",
     );
     return savedHarmony
       ? decodeChordDrafts(savedHarmony)
       : makeChordDrafts(root, mode, 4, "medium", initialSeed, 4, 0, "diatonic", "away");
-  }, [section, root, mode, initialSeed]);
+  }, [section, project.sections, root, mode, initialSeed]);
   const generatedMelody = useMemo(
     () =>
       fitMelodyToChords(
@@ -3373,6 +3389,7 @@ function MelodyTool({
     ["melancholic", "☂"],
     ["dark", "◔"],
   ];
+  useDraftPreview({ type: "melody", data: melody.map(n => `${n.note}|${n.start}|${n.duration}|${n.pitch}`), voice });
   return (
     <>
       <ToolHeader
@@ -3393,6 +3410,7 @@ function MelodyTool({
           Editing {section.name} · {section.bars} bars
         </p>
       )}
+      <DraftToolbar />
       <div className="tool-layout">
         <section className="control-panel violet-panel">
           <div className="idea-starts" aria-label="Melody phrase shapes">
@@ -3459,6 +3477,7 @@ function MelodyTool({
               }}
             />
           </label>
+          <details className="advanced-controls"><summary>Advanced motif transformations</summary>
           <ControlTitle n="4" title="Motif development" />
           <div className="motif-actions" aria-label="Transform this motif">
             {(
@@ -3475,6 +3494,7 @@ function MelodyTool({
               </button>
             ))}
           </div>
+          </details>
           <ControlTitle n="5" title="Preview sound" />
           <Select
             label="Instrument"
@@ -3499,6 +3519,10 @@ function MelodyTool({
           </button>
         </section>
         <section className="result-panel">
+          <VariationControls value={melody} apply={value=>{transport.stop();setSavedMelody(value);}} vary={(kind,locks)=>{
+            setSeed(seed+1);
+            return varyNotes(melody,kind,locks,getScale(root,mode).map(n=>notePitchClass(n) ?? 0),seed+1).map(n=>({...n,note:midiNoteName(n.pitch)}));
+          }} />
           <div className="result-heading">
             <div>
               <p className="eyebrow violet-text">
@@ -3632,22 +3656,24 @@ function RiffTool({
   const beats = section
     ? sectionBeatTotal(section, project.meter)
     : meterBeats(project.meter);
-  const [cycle, setCycle] = useState(5);
-  const [grouping, setGrouping] = useState("3+3+2");
-  const [density, setDensity] = useState(0.72);
-  const [startOffset, setStartOffset] = useState(0.5);
-  const [motion, setMotion] = useState<PatternMotion>("orbit");
-  const [voice, setVoice] = useState<SynthVoice>("analog pulse");
-  const [seed, setSeed] = useState(sectionIndex >= 0 ? sectionIndex + 41 : 41);
-  const [savedRiff, setSavedRiff] = useState<RiffEvent[] | null>(() =>
+  const [cycle, setCycle] = useDraftState("cycle", 5);
+  const [grouping, setGrouping] = useDraftState("grouping", "3+3+2");
+  const [density, setDensity] = useDraftState("density", 0.72);
+  const [startOffset, setStartOffset] = useDraftState("startOffset", 0.5);
+  const [motion, setMotion] = useDraftState<PatternMotion>("motion", "orbit");
+  const [voice, setVoice] = useDraftState<SynthVoice>("voice", "analog pulse");
+  const [seed, setSeed] = useDraftState("seed", sectionIndex >= 0 ? sectionIndex + 41 : 41);
+  const [savedRiff, setSavedRiff] = useDraftState<RiffEvent[] | null>("savedRiff", () =>
     idea ? decodeRiffIdea(idea) : null,
   );
   const engine = useAudioEngine();
-  const generatedRiff = useMemo(
-    () =>
-      generateProgRiff({ root, mode, beats, cycle, grouping, density, seed, startOffset, motion }),
-    [root, mode, beats, cycle, grouping, density, seed, startOffset, motion],
-  );
+  const riffHarmony = (section ?? project.sections[0])?.ideas.find(i => i.type === "chords");
+  const harmonyData = JSON.stringify(riffHarmony?.data ?? []);
+  const generatedRiff = useMemo(() => {
+    const generated = generateProgRiff({ root, mode, beats, cycle, grouping, density, seed, startOffset, motion });
+    const harmony = (JSON.parse(harmonyData) as string[]).map((value,index)=>{const [name,length]=value.split("|"); return {id:String(index),name,beats:Number(length)||4};});
+    return fitMelodyToChords(generated.map(n=>({...n,note:midiNoteName(n.pitch),velocity:.7})),harmony);
+  }, [root, mode, beats, cycle, grouping, density, seed, startOffset, motion, harmonyData]);
   const riff = savedRiff ?? generatedRiff;
   const beatSeconds = beatDurationSeconds(project.bpm);
   const play = useCallback(() => {
@@ -3661,6 +3687,7 @@ function RiffTool({
     engine.stopAll,
     engine.unlock,
   );
+  useDraftPreview({ type: "riff", data: riff.map(n => `${n.pitch}|${n.start}|${n.duration}|${n.accent ? 1 : 0}|${n.muted ? 1 : 0}`), voice });
   return (
     <>
       <ToolHeader
@@ -3682,8 +3709,10 @@ function RiffTool({
           {sectionMeterMap(section, project.meter).join(" → ")}
         </p>
       )}
+      <DraftToolbar />
       <div className="tool-layout">
         <section className="control-panel riff-panel">
+          <details className="advanced-controls"><summary>Advanced pulse & grouping</summary>
           <ControlTitle n="1" title="Pattern length" />
           <Segment
             options={[3, 4, 5, 7]}
@@ -3704,6 +3733,7 @@ function RiffTool({
             }}
             options={["3+3+2", "2+2+3", "4+3", "3+2+2", "5+5+3"]}
           />
+          </details>
           <ControlTitle n="3" title="Start position" />
           <Select
             label="First note"
@@ -3754,6 +3784,10 @@ function RiffTool({
           </button>
         </section>
         <section className="result-panel">
+          <VariationControls value={riff} apply={value=>{transport.stop();setSavedRiff(value);}} vary={(kind,locks)=>{
+            setSeed(seed+1);
+            return varyNotes(riff,kind,locks,getScale(root,mode).map(n=>notePitchClass(n) ?? 0),seed+1);
+          }} />
           <div className="result-heading">
             <div>
               <p className="eyebrow">REPEATING GUIDE PATTERN</p>
@@ -3974,23 +4008,23 @@ function DrumTool({
     () => inferGrooveContext(project, section),
     [project, section],
   );
-  const [energyMode, setEnergyMode] = useState<"follow song" | GrooveEnergy>(
+  const [energyMode, setEnergyMode] = useDraftState<"follow song" | GrooveEnergy>("energyMode",
     "follow song",
   );
   const energy =
     energyMode === "follow song" ? grooveContext.energy : energyMode;
-  const [style, setStyle] = useState<DrumStyle>(() =>
+  const [style, setStyle] = useDraftState<DrumStyle>("style", () =>
     grooveContext.energy === "powerful" ? "driving" : "steady",
   );
-  const [density, setDensity] = useState(() =>
+  const [density, setDensity] = useDraftState("density", () =>
     grooveContext.energy === "mellow"
       ? 0.45
       : grooveContext.energy === "powerful"
         ? 0.78
         : 0.6,
   );
-  const [seed, setSeed] = useState(sectionIndex >= 0 ? sectionIndex + 21 : 21);
-  const [savedLoop, setSavedLoop] = useState<DrumHit[] | null>(() =>
+  const [seed, setSeed] = useDraftState("seed", sectionIndex >= 0 ? sectionIndex + 21 : 21);
+  const [savedLoop, setSavedLoop] = useDraftState<DrumHit[] | null>("savedLoop", () =>
     idea ? decodeDrumIdea(idea) : null,
   );
   const engine = useAudioEngine();
@@ -4034,6 +4068,7 @@ function DrumTool({
     setSeed((current) => current + 1);
   };
   const steps = Array.from({ length: beatsPerBar * 4 }, (_, index) => index);
+  useDraftPreview({ type: "drums", data: loop.map(n => `${n.instrument}|${n.step}|${n.velocity}`) });
   return (
     <>
       <ToolHeader
@@ -4049,6 +4084,7 @@ function DrumTool({
           Editing {section.name} · repeats for {section.bars} bars
         </p>
       )}
+      <DraftToolbar />
       <div className="tool-layout">
         <section className="control-panel drum-panel">
           <ControlTitle n="1" title="Groove" />
@@ -4108,6 +4144,13 @@ function DrumTool({
           </button>
         </section>
         <section className="result-panel">
+          <VariationControls percussion value={loop} apply={value=>{transport.stop();setSavedLoop(value);}} vary={(kind,locks)=>{
+            setSeed(seed+1);
+            let next=loop.map(hit=>({...hit,velocity:Math.max(.2,Math.min(1,hit.velocity*(kind==="space"?.82:kind==="energy"?1.15:(hit.step%4===0?1.04:.92))))}));
+            if(!locks.rhythm && kind==="space") next=next.filter(hit=>hit.instrument!=="hihat" || hit.step%4===0);
+            if(!locks.rhythm && kind==="energy") for(let step=0;step<beatsPerBar*4;step+=2) if(!next.some(hit=>hit.instrument==="hihat"&&hit.step===step))next.push({instrument:"hihat",step,velocity:.5});
+            return next.sort((a,b)=>a.step-b.step);
+          }} />
           <div className="result-heading">
             <div>
               <p className="eyebrow coral-text">
@@ -4132,7 +4175,7 @@ function DrumTool({
                 role="row"
                 key={instrument}
                 style={{
-                  gridTemplateColumns: `60px repeat(${steps.length}, minmax(14px, 1fr))`,
+                  gridTemplateColumns: `60px repeat(${steps.length}, minmax(28px, 1fr))`,
                 }}
               >
                 <b>{instrument === "hihat" ? "Hi-hat" : instrument}</b>
@@ -4401,13 +4444,17 @@ function Segment<T extends string | number>({
 }
 
 function Settings({
+  restore,
+  syncStatus,
   projects,
   backUp,
   phoneInstall,
   notify,
 }: {
   projects: Project[];
-  backUp: () => void;
+  backUp: () => void | Promise<void>;
+  restore: (file: File) => Promise<void>;
+  syncStatus: string;
   phoneInstall: ReturnType<typeof usePhoneInstall>;
   notify: (message: string) => void;
 }) {
@@ -4418,25 +4465,26 @@ function Settings({
 
   return (
     <>
-      <Topbar title="Settings" subtitle="Local by default" />
+      <Topbar title="Settings" subtitle="Your ideas, on every device" />
       <div className="settings-card">
         <span className="settings-icon">◎</span>
         <h2>Your ideas stay yours.</h2>
         <p>
-          Inspitivity stores your projects and arrangements on this device.
-          Recordings use the browser&apos;s private local database.
+          Projects and recordings sync privately through this site. A device copy keeps your work available offline. Draft experiments stay on the device until you save them to a section.
         </p>
         <div className="storage-row">
-          <span>Local projects</span>
+          <span>Projects</span>
           <b>{projects.length}</b>
         </div>
         <div className="storage-row">
-          <span>Cloud account</span>
-          <b className="mint-text">Not required</b>
+          <span>Cloud sync</span>
+          <b className="mint-text">{syncStatus}</b>
         </div>
         <button className="secondary-button wide" onClick={backUp}>
-          ↓ Download project backup
+          ↓ Download complete backup
         </button>
+        <label className="backup-import">Restore backup as copies<input type="file" accept=".json,application/json" onChange={event => { const file=event.target.files?.[0]; if (file) void restore(file); event.target.value=""; }} /></label>
+        <p>Includes recordings. Older project-only backups can also be imported. Restoring never replaces existing projects.</p>
       </div>
       <div className="settings-card compact install-card">
         <span className="phone-glyph" aria-hidden="true">▯</span>
@@ -4481,8 +4529,8 @@ function Settings({
       <div className="settings-card compact">
         <h3>About this prototype</h3>
         <p>
-          Chord and melody generation run deterministically on-device. No
-          musical idea is sent to a server.
+          Musical generation runs on-device. Saved projects and recordings sync
+          privately to your account on this site; unsaved drafts stay on the device.
         </p>
       </div>
     </>

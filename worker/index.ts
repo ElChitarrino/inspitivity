@@ -1,8 +1,9 @@
 /** Cloudflare Worker entry point for Inspitivity. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { workspaceApi, type WorkspaceEnv } from "./workspace";
 
-interface Env {
+interface Env extends WorkspaceEnv {
   ASSETS: Fetcher;
   IMAGES: {
     input(stream: ReadableStream): {
@@ -27,6 +28,7 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === "/api/workspace" || url.pathname.startsWith("/api/recordings/")) return workspaceApi(request, env);
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];
