@@ -812,7 +812,7 @@ function BottomNav({
             ? "active"
             : ""
         }
-        onClick={() => go("chords")}
+        onClick={() => go("drums")}
       >
         <b>⌘</b>
         <span>Tools</span>
@@ -956,7 +956,7 @@ function useAudioEngine() {
           detune: 0,
         },
         "warm pad": { type: "sawtooth" as OscillatorType, attack: 0.12, cutoff: 1250, release: 0.42, detune: 7 },
-        glass: { type: "sine" as OscillatorType, attack: 0.006, cutoff: 5200, release: 0.34, detune: 12 },
+        glass: { type: "sine" as OscillatorType, attack: 0.03, cutoff: 2400, release: 0.38, detune: 0 },
         pluck: { type: "triangle" as OscillatorType, attack: 0.004, cutoff: 2600, release: 0.12, detune: 0 },
         "analog pulse": { type: "square" as OscillatorType, attack: 0.008, cutoff: 1500, release: 0.16, detune: 5 },
         "deep bass": { type: "sawtooth" as OscillatorType, attack: 0.012, cutoff: 520, release: 0.2, detune: 0 },
@@ -986,7 +986,7 @@ function useAudioEngine() {
       const scaledGain = (gain * 1.35) / Math.sqrt(oscillators.length);
       volume.gain.setValueAtTime(0.0001, when);
       volume.gain.linearRampToValueAtTime(scaledGain, when + profile.attack);
-      volume.gain.setValueAtTime(scaledGain, Math.max(when + profile.attack, when + duration * 0.7));
+      volume.gain.linearRampToValueAtTime(voice === "glass" ? scaledGain * 0.5 : scaledGain, Math.max(when + profile.attack, when + duration * 0.7));
       volume.gain.exponentialRampToValueAtTime(
         0.0001,
         when + duration + profile.release,
@@ -1736,7 +1736,7 @@ function Home({
             className="primary-button"
             onClick={() => launchSketch(preset)}
           >
-            Build playable sketch <span>▶</span>
+            Build playable sketch <span>＋</span>
           </button>
         </div>
         <p className="sketch-note">
@@ -1774,6 +1774,13 @@ function Home({
       <SectionTitle eyebrow="Built for momentum" title="Creative tools" />
       <div className="tool-grid">
         <ToolButton
+          tone="coral"
+          icon="●"
+          title="Drum Loops"
+          copy="Build a pocket"
+          onClick={() => go("drums")}
+        />
+        <ToolButton
           tone="blue"
           icon="♯"
           title="Chord Progression"
@@ -1793,13 +1800,6 @@ function Home({
           title="Synth Pattern"
           copy="A repeating guide pulse"
           onClick={() => go("riff")}
-        />
-        <ToolButton
-          tone="coral"
-          icon="●"
-          title="Drum Loops"
-          copy="Build a pocket"
-          onClick={() => go("drums")}
         />
         <ToolButton
           tone="amber"
@@ -2340,12 +2340,7 @@ function ProjectView({
         <div>
           <span>Song progress</span>
           <div className="song-summary-actions">
-            <button
-              className={arrangementPlaying ? "song-play playing" : "song-play"}
-              onClick={playArrangement}
-            >
-              {arrangementPlaying ? "■ Stop song" : "▶ Play song"}
-            </button>
+            <PlayButton playing={arrangementPlaying} label="song" onClick={() => void playArrangement()} />
             <b>{project.sections.reduce((n, s) => n + s.bars, 0)} bars</b>
           </div>
         </div>
@@ -2414,23 +2409,14 @@ function ProjectView({
                   </div>
                 </div>
                 <div className="section-header-actions">
-                  <button
-                    className={`section-play ${arrangementPlaying && activeSectionIndex === index ? "playing" : ""}`}
-                    onClick={() => playSection(section, index)}
-                    aria-label={
-                      arrangementPlaying && activeSectionIndex === index
-                        ? `Stop ${section.name}`
-                        : `Play ${section.name}`
-                    }
-                    aria-pressed={
-                      arrangementPlaying && activeSectionIndex === index
-                    }
-                  >
-                    {arrangementPlaying && activeSectionIndex === index
-                      ? "■ Stop"
-                      : "▶ Play"}
-                  </button>
+                  <PlayButton playing={arrangementPlaying && activeSectionIndex === index}
+                    label={section.name} onClick={() => void playSection(section, index)} />
                   <div className="section-builders">
+                    <button
+                      onClick={() => openSectionTool(section.id, "drums")}
+                    >
+                      ● Drums
+                    </button>
                     <button
                       onClick={() => openSectionTool(section.id, "chords")}
                     >
@@ -2443,11 +2429,6 @@ function ProjectView({
                     </button>
                     <button onClick={() => openSectionTool(section.id, "riff")}>
                       ⇶ Pattern
-                    </button>
-                    <button
-                      onClick={() => openSectionTool(section.id, "drums")}
-                    >
-                      ● Drums
                     </button>
                     <button
                       onClick={() => openSectionTool(section.id, "transition")}
@@ -2514,20 +2495,8 @@ function ProjectView({
                       </button>
                       <div className="idea-actions">
                         {idea.type !== "text" && idea.type !== "transition" && (
-                          <button
-                            className={
-                              playingIdeaId === idea.id ? "playing" : ""
-                            }
-                            onClick={() => void playIdea(idea)}
-                            aria-label={
-                              playingIdeaId === idea.id
-                                ? `Pause ${idea.name}`
-                                : `Play ${idea.name}`
-                            }
-                            aria-pressed={playingIdeaId === idea.id}
-                          >
-                            {playingIdeaId === idea.id ? "Ⅱ" : "▶"}
-                          </button>
+                          <PlayButton compact playing={playingIdeaId === idea.id}
+                            label={idea.name} onClick={() => void playIdea(idea)} />
                         )}
                         <button
                           className="delete-button"
@@ -2660,6 +2629,22 @@ function ProjectView({
   );
 }
 
+function PlayButton({ playing, onClick, label, compact = false, className = "" }: {
+  playing: boolean;
+  onClick: () => void;
+  label: string;
+  compact?: boolean;
+  className?: string;
+}) {
+  return <button type="button"
+    className={`play-control ${playing ? "playing" : ""} ${compact ? "compact" : ""} ${className}`}
+    onClick={onClick} aria-label={`${playing ? "Stop" : "Play"} ${label}`}
+    aria-pressed={playing} title={`${playing ? "Stop" : "Play"} ${label}`}>
+    <span className="play-symbol" aria-hidden="true">{playing ? "■" : "▶"}</span>
+    {!compact && <span>{playing ? "Stop" : "Play"}</span>}
+  </button>;
+}
+
 function ToolHeader({
   title,
   subtitle,
@@ -2678,6 +2663,12 @@ function ToolHeader({
       <Topbar title={title} subtitle={subtitle} onBack={back} />
       <div className="tool-tabs">
         <button
+          className={active === "drums" ? "active" : ""}
+          onClick={() => go("drums")}
+        >
+          Drums
+        </button>
+        <button
           className={active === "chords" ? "active" : ""}
           onClick={() => go("chords")}
         >
@@ -2694,12 +2685,6 @@ function ToolHeader({
           onClick={() => go("riff")}
         >
           Pattern
-        </button>
-        <button
-          className={active === "drums" ? "active" : ""}
-          onClick={() => go("drums")}
-        >
-          Drums
         </button>
         <button
           className={active === "metronome" ? "active" : ""}
@@ -3061,16 +3046,8 @@ function ChordTool({
               </p>
               <h2>{formatProjectKey(root, mode)}</h2>
             </div>
-            <button
-              className="listen-button"
-              onClick={() =>
-                transport.mode === "stopped"
-                  ? transport.start(false)
-                  : transport.stop()
-              }
-            >
-              {transport.mode === "stopped" ? "▶ Listen" : "■ Stop"}
-            </button>
+            <PlayButton playing={transport.mode !== "stopped"} label="progression"
+              onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} />
           </div>
           <div className="chord-editor">
             {chords.map((chord, index) => (
@@ -3142,20 +3119,8 @@ function ChordTool({
           <div
             className={`playback-bar ${transport.mode !== "stopped" ? "is-playing" : ""}`}
           >
-            <button
-              onClick={() =>
-                transport.mode === "once"
-                  ? transport.stop()
-                  : transport.start(false)
-              }
-              aria-label={
-                transport.mode === "once"
-                  ? "Stop progression"
-                  : "Play progression"
-              }
-            >
-              {transport.mode === "once" ? "■" : "▶"}
-            </button>
+            <PlayButton playing={transport.mode !== "stopped"} label="progression"
+              onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} />
             <Wave bars={22} />
             <span>
               {project.bpm} BPM · {totalBeats} beats
@@ -3543,16 +3508,8 @@ function MelodyTool({
                 {mood} motif · {formatProjectKey(root, mode)}
               </h2>
             </div>
-            <button
-              className="listen-button violet-listen"
-              onClick={() =>
-                transport.mode === "stopped"
-                  ? transport.start(false)
-                  : transport.stop()
-              }
-            >
-              {transport.mode === "stopped" ? "▶ Listen" : "■ Stop"}
-            </button>
+            <PlayButton playing={transport.mode !== "stopped"} label="melody"
+              onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} />
           </div>
           <div className="piano-roll">
             <p className="roll-hint">
@@ -3597,18 +3554,8 @@ function MelodyTool({
           <div
             className={`playback-bar violet-wave ${transport.mode !== "stopped" ? "is-playing" : ""}`}
           >
-            <button
-              onClick={() =>
-                transport.mode === "once"
-                  ? transport.stop()
-                  : transport.start(false)
-              }
-              aria-label={
-                transport.mode === "once" ? "Stop melody" : "Play melody"
-              }
-            >
-              {transport.mode === "once" ? "■" : "▶"}
-            </button>
+            <PlayButton playing={transport.mode !== "stopped"} label="melody"
+              onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} />
             <Wave tone="violet" bars={22} />
             <span>{bpm} BPM</span>
             <button
@@ -3814,16 +3761,8 @@ function RiffTool({
                 {cycle} pulse · {grouping}
               </h2>
             </div>
-            <button
-              className="listen-button"
-              onClick={() =>
-                transport.mode === "stopped"
-                  ? transport.start(false)
-                  : transport.stop()
-              }
-            >
-              {transport.mode === "stopped" ? "▶ Listen" : "■ Stop"}
-            </button>
+            <PlayButton playing={transport.mode !== "stopped"} label="pattern"
+              onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} />
           </div>
           <div className="riff-grid" aria-label="Generated synth pattern events">
             {riff.map((note, index) => (
@@ -3843,16 +3782,8 @@ function RiffTool({
           <div
             className={`playback-bar ${transport.mode !== "stopped" ? "is-playing" : ""}`}
           >
-            <button
-              onClick={() =>
-                transport.mode === "once"
-                  ? transport.stop()
-                  : transport.start(false)
-              }
-              aria-label={transport.mode === "once" ? "Stop synth pattern" : "Play synth pattern"}
-            >
-              {transport.mode === "once" ? "■" : "▶"}
-            </button>
+            <PlayButton playing={transport.mode !== "stopped"} label="pattern"
+              onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} />
             <Wave bars={22} />
             <span>
               {project.bpm} BPM · {beats} beats
@@ -4078,21 +4009,26 @@ function DrumTool({
     engine.stopAll,
     engine.unlock,
   );
-  const toggleHit = (instrument: DrumInstrument, step: number) =>
-    setSavedLoop((current) => {
-      const next = [...(current ?? generatedLoop)];
+  const toggleHit = (instrument: DrumInstrument, step: number) => {
+      const next = [...loop];
       const index = next.findIndex(
         (hit) => hit.instrument === instrument && hit.step === step,
       );
       if (index >= 0) next.splice(index, 1);
-      else next.push({ instrument, step, velocity: 0.7 });
-      return next.sort(
+      else {
+        next.push({ instrument, step, velocity: 0.7 });
+        // Audition outside React's state updater so Strict Mode cannot play twice.
+        void engine.unlock().then((ready) => {
+          if (ready) engine.drum(instrument, 0, 0.7);
+        });
+      }
+      setSavedLoop(next.sort(
         (a, b) =>
           a.step - b.step ||
           DRUM_INSTRUMENTS.indexOf(a.instrument) -
             DRUM_INSTRUMENTS.indexOf(b.instrument),
-      );
-    });
+      ));
+  };
   const regenerate = () => {
     setSavedLoop(null);
     setSeed((current) => current + 1);
@@ -4181,17 +4117,10 @@ function DrumTool({
                 {energy} {style} pocket · {project.meter}
               </h2>
             </div>
-            <button
-              className="listen-button coral-listen"
-              onClick={() =>
-                transport.mode === "stopped"
-                  ? transport.start(false)
-                  : transport.stop()
-              }
-            >
-              {transport.mode === "stopped" ? "▶ Listen" : "■ Stop"}
-            </button>
+            <PlayButton playing={transport.mode !== "stopped"} label="drum loop"
+              onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} />
           </div>
+          <p className="drum-audition-hint">Tap an empty step to add and hear a hit. Tap it again to remove it.</p>
           <div
             className="drum-sequencer"
             role="grid"
@@ -4229,18 +4158,8 @@ function DrumTool({
           <div
             className={`playback-bar coral-wave ${transport.mode !== "stopped" ? "is-playing" : ""}`}
           >
-            <button
-              onClick={() =>
-                transport.mode === "once"
-                  ? transport.stop()
-                  : transport.start(false)
-              }
-              aria-label={
-                transport.mode === "once" ? "Stop drum loop" : "Play drum loop"
-              }
-            >
-              {transport.mode === "once" ? "■" : "▶"}
-            </button>
+            <PlayButton playing={transport.mode !== "stopped"} label="drum loop"
+              onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} />
             <Wave tone="coral" bars={22} />
             <span>{project.bpm} BPM · 1 bar</span>
             <button
@@ -4411,15 +4330,11 @@ function Metronome({
             options={["1", "2", "4"]}
           />
         </div>
-        <button
-          className={`metronome-play ${playing ? "playing" : ""}`}
+        <PlayButton className="metronome-play" playing={playing} label="metronome"
           onClick={async () => {
             if (playing) stop();
             else if (await engine.unlock()) setPlaying(true);
-          }}
-        >
-          {playing ? "■ Stop" : "▶ Start"}
-        </button>
+          }} />
         <button className="tap-button" onClick={tap}>
           Tap tempo
         </button>
@@ -4656,6 +4571,13 @@ function CreateModal({
             onClick={() => choose("record")}
           />
           <ToolButton
+            tone="coral"
+            icon="●"
+            title="Drum loop"
+            copy="Build a pocket"
+            onClick={() => choose("drums")}
+          />
+         <ToolButton
             tone="blue"
             icon="♯"
             title="New progression"
@@ -4676,14 +4598,7 @@ function CreateModal({
             copy="Build a repeating guide"
             onClick={() => choose("riff")}
           />
-          <ToolButton
-            tone="coral"
-            icon="●"
-            title="Drum loop"
-            copy="Build a pocket"
-            onClick={() => choose("drums")}
-          />
-          <ToolButton
+           <ToolButton
             tone="amber"
             icon="＋"
             title="New project"

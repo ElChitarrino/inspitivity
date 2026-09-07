@@ -109,15 +109,15 @@ test("arrangement sections and ideas can be removed", () => {
   assert.match(source, /aria-label=\{`Remove \$\{idea\.name\}`\}/);
 });
 
-test("arrangement playback controls switch to a pause state while an idea is playing", () => {
+test("arrangement playback controls share the play and stop component", () => {
   assert.match(source, /playingIdeaId/);
-  assert.match(source, /Pause \$\{idea\.name\}/);
-  assert.match(source, /aria-pressed=\{playingIdeaId === idea\.id\}/);
+  assert.match(source, /<PlayButton compact playing=\{playingIdeaId === idea\.id\}/);
+  assert.match(source, /aria-pressed=\{playing\}/);
   assert.match(source, /const stopIdea/);
 });
 
 test("an arrangement can play its section harmony, melody, and saved drum loop as one sketch", () => {
-  assert.match(source, /Play song/);
+  assert.match(source, /label="song"/);
   assert.match(source, /function playArrangement|const playArrangement/);
   assert.match(source, /generateChordProgression/);
   assert.match(source, /generateMelody/);
@@ -145,7 +145,7 @@ test("each arrangement section can be auditioned with its saved or generated ske
   assert.match(source, /playSection\(section, index\)/);
   assert.match(
     source,
-    /arrangementPlaying && activeSectionIndex === index\s*\? `Stop \$\{section\.name\}`\s*: `Play \$\{section\.name\}`/,
+    /<PlayButton playing=\{arrangementPlaying && activeSectionIndex === index\}/,
   );
   assert.match(
     source,
