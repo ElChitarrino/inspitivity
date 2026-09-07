@@ -104,30 +104,6 @@ export function chordIntervals(symbol: string) {
 
 // Phrase-shaped templates give regeneration a dependable harmonic arc. Most
 // begin away from tonic, but they still prepare or imply a convincing return.
-const PROGRESSION_PATTERNS: Record<ProgressionOpening, number[][]> = {
-  away: [
-    [3, 0, 5, 4], [5, 4, 3, 1], [1, 3, 0, 4], [2, 3, 5, 1], [4, 5, 2, 3], [3, 1, 5, 0],
-    [5, 3, 0, 4],
-    [1, 4, 5, 3],
-    [3, 5, 1, 4],
-    [2, 5, 3, 4],
-    [5, 1, 3, 4],
-  ],
-  tonic: [
-    [0, 4, 5, 3], [0, 1, 5, 4], [0, 3, 1, 5], [0, 5, 3, 2], [0, 2, 5, 1],
-    [0, 3, 4, 0],
-    [0, 5, 1, 4],
-    [0, 2, 3, 4],
-  ],
-  surprise: [
-    [3, 2, 5, 0], [5, 6, 3, 1], [1, 2, 4, 5], [4, 3, 0, 2], [2, 1, 6, 5],
-    [2, 5, 3, 1],
-    [4, 1, 5, 3],
-    [6, 3, 1, 4],
-    [1, 5, 2, 4],
-  ],
-};
-
 export function generateChordProgression({
   root,
   mode,
@@ -144,8 +120,13 @@ export function generateChordProgression({
   opening?: ProgressionOpening;
 }) {
   const scale = getScale(root, mode);
-  const patterns = PROGRESSION_PATTERNS[opening];
-  const basePattern = patterns[Math.abs(seed) % patterns.length];
+  const random = seededRandom(seed);
+  const pick = <T,>(values: T[]) => values[Math.floor(random() * values.length)];
+  // Weighted harmonic movement: fifths, relative chords and modal steps.
+  // Each phrase is composed from its preceding chord, never selected from a list.
+  const paths = [[3,4,5,1,2], [4,4,6,3,5], [5,3,1,4], [0,1,4,5,2], [0,0,5,3], [1,3,4,0,2], [0,2,4,1]];
+  let previous = opening === "tonic" ? 0 : pick(opening === "away" ? [1,2,3,4,5] : [1,2,3,4,5,6]);
+  const used = new Set<number>();
   const minorLike = [
     "minor",
     "dorian",
@@ -154,7 +135,14 @@ export function generateChordProgression({
     "minor pentatonic",
   ].includes(mode);
   return Array.from({ length: bars }, (_, index) => {
-    const degree = basePattern[index % basePattern.length] % scale.length;
+    let degree = previous;
+    if (index > 0) {
+      let candidates = paths[previous].filter(d => d % scale.length !== previous);
+      if (index === bars-1 && opening !== "surprise") candidates = candidates.concat([0,4,5]);
+      if (used.size < Math.min(3,bars) && index > 1) candidates = candidates.filter(d => !used.has(d % scale.length));
+      degree = pick(candidates.length ? candidates : paths[previous]) % scale.length;
+    }
+    previous = degree; used.add(degree);
     const third =
       MODES[mode][(degree + 2) % MODES[mode].length] +
       (degree + 2 >= MODES[mode].length ? 12 : 0) -
@@ -165,20 +153,11 @@ export function generateChordProgression({
       MODES[mode][degree];
     let quality = fifth === 6 ? "dim" : third === 3 ? "m" : "";
     if (degree === 0 && minorLike) quality = "m";
-    const extension =
-      complexity === "simple"
-        ? ""
-        : complexity === "medium"
-          ? quality === ""
-            ? "maj7"
-            : quality === "m"
-              ? "7"
-              : "7"
-          : quality === ""
-            ? "maj9"
-            : quality === "m"
-              ? "9"
-              : "7";
+    const seventh = (MODES[mode][(degree+6)%scale.length] + (degree+6 >= scale.length ? 12 : 0) - MODES[mode][degree]) % 12;
+    const extension = complexity === "simple" ? "" : quality === "dim" ? "7"
+      : quality === "m" ? (complexity === "advanced" ? pick(["9","11","9"]) : "7")
+      : seventh === 11 ? (complexity === "advanced" ? pick(["maj9","maj13","maj9"]) : "maj7")
+      : (complexity === "advanced" ? pick(["9","13","9"]) : "7");
     return {
       name: `${scale[degree]}${quality}${extension}`,
       degree,
@@ -205,7 +184,7 @@ const MOOD_PROFILES: Record<
   dark: { upward: 0.42, leap: 0.3, repeat: 0.08, syncopation: 0.4 },
 };
 
-function seededRandom(seed: number) {
+export function seededRandom(seed: number) {
   let value = (Math.abs(Math.trunc(seed)) || 1) >>> 0;
   return () => {
     value += 0x6d2b79f5;
@@ -280,11 +259,13 @@ export function generateMelody({
     return direction * distance;
   };
   const motifA = [0, nextMovement(), nextMovement(), nextMovement()];
+  const direction = random() < .5 ? -1 : 1;
+  const leap = 1 + Math.floor(random()*3);
   const shapeContours: Record<PhraseShape, number[]> = {
     flow: motifA,
-    hook: [0, 0, seed % 2 ? 2 : -2, -1],
-    answer: [0, 1, 2, -1],
-    floating: [0, 2, -1, 1],
+    hook: [0, random()<.5 ? 0 : direction, leap*direction, -direction],
+    answer: [0, direction, leap*direction, -direction],
+    floating: [0, leap*direction, -direction, random()<.5 ? 0 : direction],
   };
   const rhythmShapes: Record<PhraseShape, number[]> = {
     flow: [0.5, 1, 0.5, 1],
@@ -292,6 +273,12 @@ export function generateMelody({
     answer: [0.5, 0.5, 1, 2],
     floating: [1.5, 1, 2, 1.5],
   };
+  for (const key of Object.keys(rhythmShapes) as PhraseShape[]) {
+    const rotate = Math.floor(random()*4);
+    rhythmShapes[key] = rhythmShapes[key].map((_,i)=>rhythmShapes[key][(i+rotate)%4]);
+    const split = Math.floor(random()*3);
+    if (rhythmShapes[key][split] > .5) { rhythmShapes[key][split] -= .25; rhythmShapes[key][split+1] += .25; }
+  }
   const motifB = [
     nextMovement(),
     -motifA[1] || nextMovement(),
@@ -306,7 +293,7 @@ export function generateMelody({
     velocity: number;
   }> = [];
   // A short pickup makes the phrase feel played rather than dropped on beat 1.
-  let start = profile.syncopation >= 0.3 ? 0.25 : 0.5;
+  let start = [0, .25, .5, 1][Math.floor(random()*4)];
 
   for (let index = 0; index < notes; index++) {
     const phrase = Math.floor(index / 4) % 4;
@@ -356,4 +343,27 @@ export function generateMelody({
     last.duration = Math.max(last.duration, 1);
   }
   return result;
+}
+
+
+export type VoicingStyle = "mixed" | "close" | "open" | "drop 2";
+export function voiceChord(symbol: string, seed = 1, style: VoicingStyle = "mixed"): number[] {
+  const root = notePitchClass(symbol);
+  if (root === null) return [];
+  const random = seededRandom(seed);
+  const selected = style === "mixed" ? (["close","open","drop 2"] as const)[Math.floor(random()*3)] : style;
+  let notes = chordIntervals(symbol).slice(0,5).map(interval => 48+root+interval);
+  const inversion = Math.floor(random()*Math.min(3,notes.length));
+  for (let i=0;i<inversion;i++) { notes[0]+=12; notes.sort((a,b)=>a-b); }
+  if (selected === "drop 2" && notes.length >= 3) notes[notes.length-2]-=12;
+  if (selected === "open") notes = notes.map((n,i)=>n+(i%2 ? 12 : 0));
+  if (random() < .35) notes=notes.map(n=>n-12);
+  const bass = notePitchClass(symbol.split("/")[1] ?? symbol) ?? root;
+  return [...new Set([36+bass,...notes])].sort((a,b)=>a-b);
+}
+export function decodeVoicing(symbol: string, encoded?: string): number[] {
+  const pitches = encoded?.split(",").map(Number) ?? [];
+  if (pitches.length >= 2 && pitches.length <= 8 && pitches.every(n=>Number.isInteger(n) && n>=24 && n<=96)) return pitches;
+  const root = notePitchClass(symbol);
+  return root === null ? [] : [36+(notePitchClass(symbol.split("/")[1] ?? symbol) ?? root), ...chordIntervals(symbol).slice(0,5).map(i=>48+root+i)];
 }

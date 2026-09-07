@@ -87,6 +87,7 @@ test("drum generation varies complete grooves while preserving the pocket", () =
     style: "steady",
     energy: "balanced",
     seed: 44,
+    fill: 0,
   });
   const next = generateDrumLoop({
     beatsPerBar: 4,
@@ -94,6 +95,7 @@ test("drum generation varies complete grooves while preserving the pocket", () =
     style: "steady",
     energy: "balanced",
     seed: 45,
+    fill: 0,
   });
   assert.notDeepEqual(first, next);
   for (const loop of [first, next])
@@ -125,4 +127,26 @@ test("song energy produces a genuinely mellower or more powerful version", () =>
     Math.max(...mellow.map((hit) => hit.velocity)) <
       Math.max(...powerful.map((hit) => hit.velocity)),
   );
+});
+
+test("every drum style produces structurally diverse multi-bar phrases",()=>{
+  for(const style of ["steady","syncopated","driving","djent","odd meter","linear"] as const) {
+    const beatsPerBar=style==="odd meter"?7:4;
+    const patterns=Array.from({length:128},(_,seed)=>generateDrumLoop({style,seed,bars:4,beatsPerBar}));
+    assert.ok(new Set(patterns.map(hits=>hits.map(h=>`${h.instrument}:${h.step}`).join("|"))).size>=110,style);
+    assert.ok(patterns.every(hits=>hits.every(h=>Number.isInteger(h.step)&&h.step>=0&&h.step<beatsPerBar*16&&h.velocity>=.2&&h.velocity<=1)));
+    assert.ok(patterns.every(hits=>new Set(hits.map(h=>`${h.instrument}:${h.step}`)).size===hits.length));
+    if(style==="linear") assert.ok(patterns.every(hits=>new Set(hits.map(h=>h.step)).size===hits.length));
+  }
+});
+
+test("phrases develop across bars and contain dynamics and tom fills",()=>{
+  const hits=generateDrumLoop({bars:4,style:"djent",energy:"powerful",density:1,fill:1,seed:42});
+  const first=hits.filter(h=>h.step<16).map(h=>`${h.instrument}:${h.step}`).join("|");
+  const last=hits.filter(h=>h.step>=48).map(h=>`${h.instrument}:${h.step-48}`).join("|");
+  assert.notEqual(first,last);
+  assert.ok(hits.some(h=>h.instrument.startsWith("tom")&&h.step>=48));
+  assert.ok(hits.some(h=>h.velocity<.4));
+  assert.ok(hits.some(h=>h.velocity>.9));
+  assert.notDeepEqual(generateDrumLoop({style:"steady",seed:42}),generateDrumLoop({style:"driving",seed:42}));
 });

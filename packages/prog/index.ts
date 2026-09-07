@@ -106,13 +106,16 @@ export function generateProgRiff({
     fall: [5, 4, 3, 2],
     orbit: [4, 2, 5, 3],
   };
-  const shape = degreeShapes[motion];
+  const rotation = Math.floor(random()*4);
+  const shift = Math.floor(random()*3)-1;
+  const shape = degreeShapes[motion].map((_,i)=>(degreeShapes[motion][(i+rotation)%4]+shift+scale.length)%scale.length);
   const events: RiffEvent[] = [];
   const onsets: number[] = [];
   let groupCursor = offsetUnits;
   let groupIndex = 0;
   while (groupCursor < totalUnits) {
     onsets.push(groupCursor);
+    if (density > .6 && random() < density*.65 && groupCursor+1 < totalUnits) onsets.push(groupCursor+1);
     groupCursor += pulses[groupIndex % Math.max(1, pulses.length)] ?? 2;
     groupIndex++;
   }
@@ -133,9 +136,9 @@ export function generateProgRiff({
     events.push({
       pitch,
       start: unit / 2,
-      duration: Math.min(0.72, available * 0.72),
+      duration: Math.min(1.2, available * (.4 + random()*.5)),
       accent: phrasePosition === 0 || cyclePosition === offsetUnits,
-      muted: false,
+      muted: random() < .28,
     });
   }
   return events.length

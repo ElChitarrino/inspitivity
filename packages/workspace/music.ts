@@ -1,4 +1,5 @@
-import { chordIntervals, notePitchClass } from "../music-theory/index.js";
+import { DRUM_PITCHES, drumPatternBeats, type DrumInstrument } from "../sequencing/index.js";
+import { decodeVoicing, notePitchClass } from "../music-theory/index.js";
 import type { Project, SongSection } from "./index.js";
 import type { GrooveEnergy } from "../sequencing/index.js";
 
@@ -56,20 +57,27 @@ export function buildSongPlan(project: Project) {
       if (layer === "chords") {
         let cursor = 0, i = 0;
         while (cursor < length) {
-          const [symbol, beat] = data[i++ % data.length].split("|");
+          const [symbol, beat, pitches] = data[i++ % data.length].split("|");
           const duration = Math.max(0.25, Number(beat) || 4), root = notePitchClass(symbol);
           if (root !== null) {
-            for (const interval of chordIntervals(symbol).slice(0,5)) add(layer, 48+root+interval, cursor, duration*0.9, 0.65);
-            add(layer, 36+root, cursor, duration*0.8, 0.5);
+            for (const pitch of decodeVoicing(symbol,pitches)) add(layer,pitch,cursor,duration*.9,.65);
           }
           cursor += duration;
         }
       } else if (layer === "drums") {
+        const cycle=drumPatternBeats(data,0);
+        if(cycle>0) {
+          for(let offset=0;offset<length;offset+=cycle) for(const encoded of data) {
+            const [instrument,step,velocity]=encoded.split("|");
+            add(layer,DRUM_PITCHES[instrument as DrumInstrument],offset+Number(step)/4,.15,Number(velocity)||.7);
+          }
+          continue;
+        }
         let offset = 0;
         for (const bar of bars) {
           for (const encoded of data) {
             const [instrument, step, velocity] = encoded.split("|");
-            const pitch = ({ kick:36, snare:38, hihat:42, crash:49, ride:51 } as Record<string,number>)[instrument];
+            const pitch = DRUM_PITCHES[instrument as DrumInstrument];
             const start = Number(step)/4;
             // Keep accents on their musical positions; truncate/extend bars, never stretch a 4/4 groove.
             if (start < bar.units) add(layer, pitch, offset+start, 0.15, Number(velocity) || 0.7);
@@ -81,7 +89,9 @@ export function buildSongPlan(project: Project) {
           const v = value.split("|");
           return layer === "melody" ? { pitch:Number(v[3]), start:Number(v[1]), duration:Number(v[2]), velocity:0.7 } : { pitch:Number(v[0]), start:Number(v[1]), duration:Number(v[2]), velocity:v[4] === "1" ? 0.3 : v[3] === "1" ? 0.8 : 0.55 };
         }).filter(n => [n.pitch,n.start,n.duration].every(Number.isFinite));
-        const cycle = Math.max(bars[0]?.units ?? 4, Math.ceil(Math.max(0,...notes.map(n=>n.start+n.duration))/(bars[0]?.units ?? 4))*(bars[0]?.units ?? 4));
+        // A saved phrase is its own loop. Repeat it intact until the section
+        // ends instead of stretching it to the first bar or dropping it early.
+        const cycle = Math.max(.125, ...notes.map(n => n.start + n.duration));
         for (let offset = 0; offset < length; offset += cycle) for (const n of notes) add(layer,n.pitch,offset+n.start,n.duration,n.velocity);
       }
     }

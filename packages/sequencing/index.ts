@@ -1,3 +1,4 @@
+import { seededRandom } from "../music-theory/index.js";
 export function beatDurationSeconds(bpm: number) {
   if (!Number.isFinite(bpm) || bpm <= 0)
     throw new RangeError("BPM must be greater than zero");
@@ -56,6 +57,9 @@ export const DRUM_INSTRUMENTS = [
   "hihat",
   "crash",
   "ride",
+  "openhat",
+  "tomhigh",
+  "tomlow",
 ] as const;
 export type DrumInstrument = (typeof DRUM_INSTRUMENTS)[number];
 export type DrumStyle =
@@ -67,174 +71,69 @@ export type DrumHit = {
   velocity: number;
 };
 
-type GrooveTemplate = {
-  steps?: number;
-  kick: number[];
-  snare: number[];
-  hats: number[];
-  ride?: number[];
-};
 
-// These are complete, playable one-bar grooves. Generation selects and gently
-// dresses a pattern; it never invents unrelated hits one step at a time.
-const GROOVE_TEMPLATES: Record<DrumStyle, GrooveTemplate[]> = {
-  steady: [
-    { kick: [0, 8, 10], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
-    { kick: [0, 6, 8, 14], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
-    { kick: [0, 7, 10], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
-  ],
-  syncopated: [
-    { kick: [0, 3, 7, 10], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
-    { kick: [0, 6, 9, 14], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
-    { kick: [0, 3, 8, 11, 14], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
-  ],
-  driving: [
-    { kick: [0, 3, 8, 10, 14], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14], ride: [0, 4, 8, 12] },
-    { kick: [0, 2, 7, 8, 11, 14], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14], ride: [0, 4, 8, 12] },
-    { kick: [0, 3, 6, 8, 10, 15], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14], ride: [0, 4, 8, 12] },
-  ],
-  djent: [
-    { kick: [0, 2, 3, 7, 8, 11, 14], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
-    { kick: [0, 3, 6, 8, 9, 14, 15], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
-    { kick: [0, 2, 5, 7, 10, 11, 15], snare: [4, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
-  ],
-  "odd meter": [
-    { kick: [0, 3, 8, 11], snare: [5, 13], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
-    { kick: [0, 6, 9, 14], snare: [4, 11], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
-    { kick: [0, 3, 7, 10, 14], snare: [5, 12], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
-  ],
-  linear: [
-    { kick: [0, 6, 10], snare: [4, 12], hats: [2, 8, 14] },
-    { kick: [0, 7, 11], snare: [4, 12], hats: [2, 6, 9, 14] },
-    { kick: [0, 3, 8, 14], snare: [4, 11], hats: [2, 6, 10, 13] },
-  ],
-};
+export const DRUM_PITCHES: Record<DrumInstrument, number> = { kick:36, snare:38, hihat:42, openhat:46, tomhigh:48, tomlow:45, crash:49, ride:51 };
+export const DRUM_LABELS: Record<DrumInstrument, string> = { kick:"Kick", snare:"Snare", hihat:"Hi-hat", openhat:"Open hat", tomhigh:"High tom", tomlow:"Low tom", crash:"Crash", ride:"Ride" };
 
-// Additional complete pockets: half-time, broken-beat and displaced backbeats.
-GROOVE_TEMPLATES.steady.push(
-  { kick: [0, 6, 10], snare: [8], hats: [0, 2, 4, 6, 8, 10, 12, 14] },
-  { kick: [0, 4, 8, 12], snare: [4, 12], hats: [2, 6, 10, 14] },
-  { kick: [2, 8, 11], snare: [4, 12], hats: [0, 3, 6, 8, 11, 14] },
-);
-GROOVE_TEMPLATES.syncopated.push(
-  { kick: [0, 5, 10], snare: [4, 12], hats: [0, 3, 6, 8, 11, 14] },
-  { kick: [2, 7, 10, 15], snare: [4, 12], hats: [0, 2, 5, 8, 10, 13] },
-  { kick: [0, 6, 11], snare: [8], hats: [0, 2, 6, 8, 10, 14] },
-);
-GROOVE_TEMPLATES.driving.push(
-  { kick: [0, 4, 8, 12], snare: [4, 12], hats: [0,2,4,6,8,10,12,14], ride: [2,6,10,14] },
-  { kick: [0, 2, 6, 10, 14], snare: [8], hats: [0,2,4,6,8,10,12,14] },
-  { kick: [0, 1, 6, 8, 9, 14], snare: [4, 12], hats: [0,2,4,6,8,10,12,14] },
-);
-GROOVE_TEMPLATES.djent.push(
-  { kick:[0,1,6,7,10,14,15], snare:[8], hats:[0,3,6,9,12,15] },
-  { kick:[0,3,4,10,11,14], snare:[4,12], hats:[0,2,6,8,10,14], ride:[3,7,11,15] },
-  { kick:[0,2,5,8,10,13], snare:[6,14], hats:[0,3,6,9,12,15] },
-);
-GROOVE_TEMPLATES.linear.push(
-  { kick:[0,5,10,15], snare:[4,11], hats:[2,3,7,9,13,14] },
-  { kick:[0,6,9,14], snare:[3,8,12], hats:[1,4,7,10,13,15] },
-  { kick:[0,3,10], snare:[6,14], hats:[2,5,8,11,13,15] },
-);
-const METER_POCKETS: Record<number, GrooveTemplate[]> = {
-  3: [{ steps:12, kick:[0,6], snare:[4], hats:[0,2,4,6,8,10] }, { steps:12, kick:[0,7], snare:[8], hats:[0,3,6,9] }],
-  5: [{ steps:20, kick:[0,8,14], snare:[4,12], hats:[0,2,4,6,8,10,12,14,16,18] }, { steps:20, kick:[0,6,12], snare:[8,16], hats:[0,3,6,8,10,12,14,16,18] }],
-  6: [{ steps:24, kick:[0,14], snare:[12], hats:[0,4,8,12,16,20] }, { steps:24, kick:[0,8,20], snare:[12], hats:[0,4,8,12,16,20] }],
-  7: [{ steps:28, kick:[0,12,20], snare:[8,24], hats:[0,4,8,12,16,20,24] }, { steps:28, kick:[0,8,16], snare:[12,24], hats:[0,4,8,12,16,20,24] }, { steps:28, kick:[0,8,20], snare:[4,16], hats:[0,4,8,12,16,20,24] }],
-  9: [{ steps:36, kick:[0,12,24], snare:[8,20,32], hats:[0,4,8,12,16,20,24,28,32] }, { steps:36, kick:[0,16,28], snare:[8,24], hats:[0,4,8,12,16,20,24,28,32] }],
-  11: [{ steps:44, kick:[0,12,24,32], snare:[8,20,36], hats:[0,4,8,12,16,20,24,28,32,36,40] }, { steps:44, kick:[0,8,20,32], snare:[12,28,40], hats:[0,4,8,12,16,20,24,28,32,36,40] }],
-};
-
-export function generateDrumLoop({
-  beatsPerBar = 4,
-  density = 0.6,
-  style = "steady",
-  energy = "balanced",
-  seed = Date.now(),
-}: {
-  beatsPerBar?: number;
-  density?: number;
-  style?: DrumStyle;
-  energy?: GrooveEnergy;
-  seed?: number;
+export function generateDrumLoop({ beatsPerBar=4, density=.6, style="steady", energy="balanced", seed=Date.now(), bars=1, fill=.55 }: {
+  beatsPerBar?:number; density?:number; style?:DrumStyle; energy?:GrooveEnergy; seed?:number; bars?:number; fill?:number;
 }): DrumHit[] {
-  const beats = Math.max(2, Math.min(12, Math.round(beatsPerBar)));
-  const steps = beats * 4;
-  const normalizedDensity = Math.max(0.1, Math.min(1, density));
-  const templates = METER_POCKETS[beats] ?? GROOVE_TEMPLATES[style];
-  const seedIndex = Math.abs(Math.trunc(seed));
-  const template = templates[seedIndex % templates.length];
-  const hits: DrumHit[] = [];
-  const add = (instrument: DrumInstrument, step: number, velocity: number) => {
-    const clampedStep = ((step % steps) + steps) % steps;
-    if (
-      !hits.some(
-        (hit) => hit.instrument === instrument && hit.step === clampedStep,
-      )
-    )
-      hits.push({
-        instrument,
-        step: clampedStep,
-        velocity: Math.max(0.2, Math.min(1, velocity)),
-      });
-  };
-  const mapStep = (step: number) => step % steps;
-  const detailLimit = Math.max(1, Math.round(normalizedDensity * 5));
-  const chooseDetails = (values: number[], keepAtLeast = 1) =>
-    values.filter(
-      (_, index) =>
-        index < keepAtLeast || ((index + seedIndex) % 5) < detailLimit,
-    );
-  const velocity = {
-    mellow: { kick: 0.72, snare: 0.68, hat: 0.38, ride: 0.34 },
-    balanced: { kick: 0.88, snare: 0.82, hat: 0.52, ride: 0.48 },
-    powerful: { kick: 1, snare: 0.94, hat: 0.66, ride: 0.62 },
-  }[energy];
-
-  const kickCount =
-    energy === "mellow"
-      ? Math.min(2, template.kick.length)
-      : energy === "balanced"
-        ? Math.max(2, Math.ceil(template.kick.length * normalizedDensity))
-        : template.kick.length;
-  template.kick
-    .slice(0, kickCount)
-    .forEach((step, index) =>
-      add("kick", mapStep(step), velocity.kick - (index ? 0.08 : 0)),
-    );
-  template.snare.forEach((step) => add("snare", mapStep(step), velocity.snare));
-
-  const hats =
-    energy === "mellow"
-      ? template.hats.filter((step) => step % 4 === 0)
-      : chooseDetails(template.hats, Math.min(4, template.hats.length));
-  hats.forEach((step) =>
-    add("hihat", mapStep(step), velocity.hat + (step % 4 === 0 ? 0.09 : 0)),
-  );
-  if (energy !== "mellow")
-    chooseDetails(template.ride ?? [], 0).forEach((step) =>
-      add("ride", mapStep(step), velocity.ride),
-    );
-
-  // A seed chooses one known-safe embellishment, rather than gambling on every step.
-  const variation = seedIndex % 3;
-  if (energy === "mellow") {
-    if (normalizedDensity > 0.7 && variation === 1)
-      add("hihat", mapStep(14), 0.3);
-  } else {
-    if (variation === 0 && normalizedDensity > 0.55)
-      add("snare", mapStep(11), energy === "powerful" ? 0.58 : 0.42);
-    if (variation === 1 && normalizedDensity > 0.65)
-      add("kick", mapStep(15), energy === "powerful" ? 0.86 : 0.66);
-    if (variation === 2 && normalizedDensity > 0.75)
-      add("hihat", mapStep(15), energy === "powerful" ? 0.58 : 0.44);
+  const beats=Math.max(2,Math.min(16,Math.round(beatsPerBar))), steps=beats*4;
+  const phraseBars=Math.max(1,Math.min(8,Math.round(bars)));
+  const activity=Math.max(.1,Math.min(1,density));
+  const random=seededRandom(seed), pick=<T,>(xs:T[])=>xs[Math.floor(random()*xs.length)];
+  const strength={mellow:.65,balanced:.84,powerful:1}[energy];
+  const busy=activity*(energy==="mellow"?.5:energy==="powerful"?1.2:1);
+  const halfTime=random() < (style==="djent"?.55:style==="driving"?.1:.22);
+  const oddGroups = beats===7 ? pick([[2,2,3],[3,2,2],[2,3,2]]) : beats===5 ? pick([[3,2],[2,3]]) : beats===9 ? pick([[3,3,3],[2,2,2,3]]) : beats===11 ? pick([[3,3,3,2],[2,3,3,3]]) : null;
+  let groupEnd=0;
+  const groupedBackbeats=oddGroups?.map(group=>{groupEnd+=group;return (groupEnd-1)*4;});
+  const backbeats=groupedBackbeats ?? (halfTime ? [Math.floor(beats/2)*4] : Array.from({length:beats},(_,b)=>b).filter(b=>b%2===1).map(b=>b*4));
+  const hatStride=energy==="mellow"?4:style==="driving"?2:pick(activity>.75?[1,2,2]:[2,2,4]);
+  const hatOffset=pick([0,0,1]);
+  const rideLead=random()<.3;
+  const grouping=style==="djent"||style==="odd meter" ? pick([[3,3,2],[3,2,3],[5,3],[3,4],[2,3,2]]) : [4];
+  const anchors:number[]=[]; let cursor=0,index=0;
+  while(cursor<steps){ anchors.push(cursor);cursor+=grouping[index++%grouping.length]; }
+  const baseKick=new Set<number>([0]);
+  for(let step=1;step<steps;step++) {
+    const accent=anchors.includes(step);
+    const chance=style==="driving" ? (step%4===0?.95:step%4===2?.4:.14) : style==="djent" ? (accent?.8:.12) : style==="syncopated"||style==="linear" ? (step%4===3?.45:.12) : (step%8===0?.8:step%4===2?.24:.07);
+    if(random()<chance*busy && !backbeats.includes(step))baseKick.add(step);
   }
-  if (energy === "powerful") add("crash", 0, 0.86);
+  const hits:DrumHit[]=[];
+  for(let bar=0;bar<phraseBars;bar++) {
+    const barHits:DrumHit[]=[];
+    const add=(instrument:DrumInstrument,step:number,velocity:number)=>{
+      if(step<0||step>=steps||barHits.some(h=>h.instrument===instrument&&h.step===step))return;
+      if(style==="linear" && barHits.some(h=>h.step===step))return;
+      barHits.push({instrument,step,velocity:Math.round(Math.max(.2,Math.min(1,velocity)) * 100)/100});
+    };
+    backbeats.forEach(step=>add("snare",step,strength*(.94+random()*.06)));
+    for(const step of baseKick) if(bar===0||step===0||random()>.12)add("kick",step,strength*(step===0?1:.72+random()*.22));
+    for(let step=0;step<steps;step++) {
+      const strong=step%4===0;
+      if(bar>0 && !backbeats.includes(step) && random()<busy*.12)add("kick",step,strength*(.6+random()*.3));
+      if(!strong && random()<busy*(style==="linear"?.23:.12))add("snare",step,.2+random()*.27);
+      if((step-hatOffset)%hatStride===0 && random()>(energy==="mellow"?.12:.04)) {
+        const instrument:DrumInstrument=rideLead?"ride":(!strong&&random()<.12?"openhat":"hihat");
+        add(instrument,step,strength*(strong?.63:.31+random()*.25));
+      }
+    }
+    // A phrase has a recognisable pulse, changing inner detail and a final turnaround.
+    if(bar===phraseBars-1 && energy!=="mellow" && random()<fill) {
+      const fillLength=pick([4,6,8]);
+      for(let step=Math.max(0,steps-fillLength);step<steps;step++) {
+        if(random()<.75*activity) add(step%3===0?"snare":step<steps-3?"tomhigh":"tomlow",step,strength*(.48+.45*(step-(steps-fillLength))/fillLength));
+      }
+    }
+    if(energy==="powerful" && bar===0)add("crash",0,.9);
+    for(const hit of barHits)hits.push({...hit,step:bar*steps+hit.step});
+  }
+  return hits.sort((a,b)=>a.step-b.step||DRUM_INSTRUMENTS.indexOf(a.instrument)-DRUM_INSTRUMENTS.indexOf(b.instrument));
+}
 
-  return hits.sort(
-    (a, b) =>
-      a.step - b.step ||
-      DRUM_INSTRUMENTS.indexOf(a.instrument) -
-        DRUM_INSTRUMENTS.indexOf(b.instrument),
-  );
+export function drumPatternBeats(data: string[], fallback: number): number {
+  const span=Number(data[0]?.split("|")[3]);
+  return Number.isFinite(span) && span>=1 && span<=128 ? span : fallback;
 }

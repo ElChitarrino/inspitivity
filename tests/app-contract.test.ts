@@ -69,6 +69,8 @@ test("arrangements expose section creation, ordering, and idea saving", () => {
   assert.match(source, /aria-label="Move up"/);
   assert.match(source, /aria-label="Move down"/);
   assert.match(source, /Save idea/);
+  assert.match(source, /Section length/);
+  assert.match(source, /\[4, 8, 12, 16\]/);
 });
 
 test("arrangement ideas reopen their saved notes, harmony, or melody for editing", () => {
@@ -235,10 +237,10 @@ test("the progression editor explains each chord's harmonic role", () => {
   assert.match(source, /Harmonic role:/);
 });
 
-test("drum loops are section-aware, editable, and restricted to the five-piece kit", () => {
+test("drum loops are section-aware, editable, and support the expanded kit", () => {
   assert.match(source, /function DrumTool/);
   assert.match(source, /DRUM_INSTRUMENTS\.map/);
-  assert.match(source, /Try another proven groove/);
+  assert.match(source, /Generate new phrase/);
   assert.match(source, /Following this section/);
   assert.match(source, /inferGrooveContext/);
   assert.match(source, /openSectionTool\(section\.id, "drums"\)/);

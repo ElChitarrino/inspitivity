@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chordIntervals, generateChordProgression, generateMelody, getScale, notePitchClass, type MelodyMood, type Mode, type Root } from "../packages/music-theory/index.js";
+import { voiceChord, decodeVoicing, chordIntervals, generateChordProgression, generateMelody, getScale, notePitchClass, type MelodyMood, type Mode, type Root } from "../packages/music-theory/index.js";
 
 test("scale engine returns the correct notes for major and modal scales", () => {
   assert.deepEqual(getScale("C", "major"), ["C", "D", "E", "F", "G", "A", "B"]);
@@ -96,4 +96,29 @@ test("four-chord templates offer at least eight different progressions per openi
     const choices = new Set(Array.from({length:24}, (_,seed) => generateChordProgression({ root:"E", mode:"minor", bars:4, complexity:"medium", opening, seed }).map(c=>c.name).join("|")));
     assert.ok(choices.size >= 8, opening);
   }
+});
+
+test("harmonic generation composes many distinct paths under unchanged settings", () => {
+  const progressions=Array.from({length:128},(_,seed)=>generateChordProgression({root:"E",mode:"minor",bars:4,complexity:"medium",seed}));
+  assert.ok(new Set(progressions.map(p=>p.map(c=>c.name).join("|"))).size>=90);
+  assert.ok(progressions.every(p=>p.length===4 && new Set(p.map(c=>c.degree)).size>=3));
+});
+
+test("each melodic shape changes pitches and onsets across generations", () => {
+  for(const shape of ["flow","hook","answer","floating"] as const) {
+    const signatures=Array.from({length:64},(_,seed)=>generateMelody({root:"E",mode:"minor",notes:16,seed,shape}).map(n=>`${n.pitch}:${n.start}`).join("|"));
+    assert.ok(new Set(signatures).size>=55,shape);
+  }
+});
+
+
+test("voicings vary inversion and spread while retaining chord tones",()=>{
+  const options=Array.from({length:128},(_,seed)=>voiceChord("Em9",seed));
+  assert.ok(new Set(options.map(p=>p.join(","))).size>=12);
+  for(const pitches of options) {
+    assert.ok(pitches.every(p=>p>=24&&p<=96&&[4,7,11,2,6].includes(p%12)));
+    assert.deepEqual(decodeVoicing("Em9",pitches.join(",")),pitches);
+    assert.equal(new Set(pitches).size,pitches.length);
+  }
+  assert.ok(decodeVoicing("Cmaj7","999,NaN").every(p=>p>=24&&p<=96));
 });

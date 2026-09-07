@@ -44,8 +44,11 @@ test("odd meter pockets have real grouped accents within their bar",()=>{
     assert.ok(hits.some(h=>h.instrument==="kick"&&h.step===0));
     assert.ok(hits.some(h=>h.instrument==="snare"&&h.step%4===0));
   }
-  const seven=generateDrumLoop({beatsPerBar:7,seed:0,energy:"powerful"});
-  assert.deepEqual(seven.filter(h=>h.instrument==="snare"&&h.velocity>.6).map(h=>h.step),[8,24]);
+  const seven=generateDrumLoop({beatsPerBar:7,seed:0,energy:"powerful",fill:0});
+  const accents=seven.filter(h=>h.instrument==="snare"&&h.velocity>.6).map(h=>h.step);
+  assert.equal(accents.length,3);
+  assert.ok(accents.every(step=>step%4===0 && step<28));
+  assert.equal(accents.at(-1),24);
 });
 test("controlled variations respect locked timing and pitches",()=>{
   const notes=[0,1,2,3].map((start,i)=>({pitch:60+i*2,start,duration:.8}));
@@ -59,9 +62,15 @@ test("song plan repeats saved layers, preserves displaced starts, and leaves mis
   const p=project();p.sections[0].ideas.push({id:"m",type:"melody",name:"Flute",detail:"",data:["E4|0.5|0.5|64"]});
   const plan=buildSongPlan(p);
   assert.equal(plan.quarters,8);assert.equal(plan.seconds,4);
-  assert.deepEqual(plan.events.filter(e=>e.layer==="melody").map(e=>e.start),[.5,4.5]);
+  assert.deepEqual(plan.events.filter(e=>e.layer==="melody").map(e=>e.start),[.5,1.5,2.5,3.5,4.5,5.5,6.5,7.5]);
   assert.equal(plan.events.some(e=>e.layer==="drums"),false);
   assert.ok(plan.events.every(e=>e.start+e.duration<=8));
+});
+test("short saved phrases repeat at their own loop length until a longer section ends",()=>{
+  const p=project(); p.sections[0].bars=4;
+  p.sections[0].ideas.push({id:"m",type:"melody",name:"Short flute phrase",detail:"",data:["E4|0.5|0.5|64","G4|1.5|0.5|67"]});
+  const starts=buildSongPlan(p).events.filter(event=>event.layer==="melody").map(event=>event.start);
+  assert.deepEqual(starts,[.5,1.5,2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5,10.5,11.5,12.5,13.5,14.5,15.5]);
 });
 test("song MIDI contains a conductor and separate named instrument tracks",()=>{
   const p=project();p.meter="7/8";p.sections[0].bars=1;
@@ -90,4 +99,21 @@ test("saved instrument selections survive serialization and reach every song sec
   assert.deepEqual([...new Set(events.filter(e => e.layer === "drums").map(e => e.voice))], ["prog metal", "rock"]);
   restored.sections[0].ideas[0].voice = "invalid";
   assert.equal(validProjects([restored]), false);
+});
+
+test("saved chord voicings reach playback and MIDI pitches unchanged",()=>{
+  const p=project();
+  p.sections[0].ideas[0].data=["Cmaj7|4|36,55,59,64,72"];
+  const plan=buildSongPlan(JSON.parse(JSON.stringify(p)));
+  assert.deepEqual(plan.events.filter(e=>e.layer==="chords"&&e.start===0).map(e=>e.pitch),[36,55,59,64,72]);
+});
+
+test("multi-bar drums retain empty space and repeat at the saved phrase boundary",()=>{
+  const p=project();p.sections[0].bars=8;
+  p.sections[0].ideas=[{id:"d",type:"drums",name:"Phrase",detail:"",data:["kick|0|1|16","tomlow|44|0.7|16"]}];
+  const events=buildSongPlan(p).events;
+  assert.deepEqual(events.filter(e=>e.pitch===36).map(e=>e.start),[0,16]);
+  assert.deepEqual(events.filter(e=>e.pitch===45).map(e=>e.start),[11,27]);
+  p.sections[0].meterMap=["7/8","4/4"];
+  assert.ok(buildSongPlan(p).events.every(e=>e.seconds<44*0.5));
 });
