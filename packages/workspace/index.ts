@@ -3,6 +3,7 @@ export type Idea = {
   type: "audio" | "chords" | "melody" | "drums" | "riff" | "transition" | "text";
   name: string;
   detail: string;
+  voice?: string;
   recordingId?: string;
   data?: string[];
 };
@@ -20,6 +21,7 @@ export function validProjects(value: unknown): value is Project[] {
       (!s.meterMap || (Array.isArray(s.meterMap) && s.meterMap.length <= 256 && s.meterMap.every(m => /^\d{1,2}\/(2|4|8|16)$/.test(String(m))))) &&
       Array.isArray(s.ideas) && s.ideas.length <= 500 && s.ideas.every(i => record(i) && str(i.id, 150) && str(i.name, 500) && str(i.detail) &&
         ["audio", "chords", "melody", "drums", "riff", "transition", "text"].includes(String(i.type)) &&
+        (i.voice === undefined || ["current", "rock", "prog metal", "distorted guitar", "air flute", "warm pad", "glass", "pluck", "analog pulse", "deep bass"].includes(String(i.voice))) &&
         (i.recordingId === undefined || str(i.recordingId, 150)) &&
         (i.data === undefined || (Array.isArray(i.data) && i.data.length <= 10000 && i.data.every(d => str(d, 1000)))))));
 }

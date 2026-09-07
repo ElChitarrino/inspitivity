@@ -106,6 +106,7 @@ export function chordIntervals(symbol: string) {
 // begin away from tonic, but they still prepare or imply a convincing return.
 const PROGRESSION_PATTERNS: Record<ProgressionOpening, number[][]> = {
   away: [
+    [3, 0, 5, 4], [5, 4, 3, 1], [1, 3, 0, 4], [2, 3, 5, 1], [4, 5, 2, 3], [3, 1, 5, 0],
     [5, 3, 0, 4],
     [1, 4, 5, 3],
     [3, 5, 1, 4],
@@ -113,11 +114,13 @@ const PROGRESSION_PATTERNS: Record<ProgressionOpening, number[][]> = {
     [5, 1, 3, 4],
   ],
   tonic: [
+    [0, 4, 5, 3], [0, 1, 5, 4], [0, 3, 1, 5], [0, 5, 3, 2], [0, 2, 5, 1],
     [0, 3, 4, 0],
     [0, 5, 1, 4],
     [0, 2, 3, 4],
   ],
   surprise: [
+    [3, 2, 5, 0], [5, 6, 3, 1], [1, 2, 4, 5], [4, 3, 0, 2], [2, 1, 6, 5],
     [2, 5, 3, 1],
     [4, 1, 5, 3],
     [6, 3, 1, 4],

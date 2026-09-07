@@ -126,6 +126,16 @@ GROOVE_TEMPLATES.driving.push(
   { kick: [0, 2, 6, 10, 14], snare: [8], hats: [0,2,4,6,8,10,12,14] },
   { kick: [0, 1, 6, 8, 9, 14], snare: [4, 12], hats: [0,2,4,6,8,10,12,14] },
 );
+GROOVE_TEMPLATES.djent.push(
+  { kick:[0,1,6,7,10,14,15], snare:[8], hats:[0,3,6,9,12,15] },
+  { kick:[0,3,4,10,11,14], snare:[4,12], hats:[0,2,6,8,10,14], ride:[3,7,11,15] },
+  { kick:[0,2,5,8,10,13], snare:[6,14], hats:[0,3,6,9,12,15] },
+);
+GROOVE_TEMPLATES.linear.push(
+  { kick:[0,5,10,15], snare:[4,11], hats:[2,3,7,9,13,14] },
+  { kick:[0,6,9,14], snare:[3,8,12], hats:[1,4,7,10,13,15] },
+  { kick:[0,3,10], snare:[6,14], hats:[2,5,8,11,13,15] },
+);
 const METER_POCKETS: Record<number, GrooveTemplate[]> = {
   3: [{ steps:12, kick:[0,6], snare:[4], hats:[0,2,4,6,8,10] }, { steps:12, kick:[0,7], snare:[8], hats:[0,3,6,9] }],
   5: [{ steps:20, kick:[0,8,14], snare:[4,12], hats:[0,2,4,6,8,10,12,14,16,18] }, { steps:20, kick:[0,6,12], snare:[8,16], hats:[0,3,6,8,10,12,14,16,18] }],

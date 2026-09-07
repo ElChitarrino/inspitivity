@@ -61,7 +61,7 @@ import { varyNotes } from "../packages/workspace/variation";
 import { VariationControls } from "./variation-controls";
 
 type IdeaDraft = Omit<Idea, "id" | "recordingId">;
-type SaveIdea = (type: Idea["type"], name: string, detail: string, data?: string[], chooseDestination?: boolean) => void;
+type SaveIdea = (type: Idea["type"], name: string, detail: string, data?: string[], chooseDestination?: boolean, voice?: string) => void;
 type Screen =
   | "home"
   | "projects"
@@ -80,7 +80,10 @@ type SynthVoice =
   | "glass"
   | "pluck"
   | "analog pulse"
-  | "deep bass";
+  | "deep bass"
+  | "distorted guitar";
+type DrumKit = "current" | "rock" | "prog metal";
+const freshSeed = () => Math.floor(Math.random() * 1000000000);
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -110,6 +113,7 @@ const SYNTH_VOICES: SynthVoice[] = [
   "pluck",
   "analog pulse",
   "deep bass",
+  "distorted guitar",
 ];
 const PATTERN_STARTS = [
   ["A 16th late", 0.25],
@@ -124,6 +128,7 @@ const MIDI_PROGRAMS: Record<SynthVoice, number> = {
   pluck: 84,
   "analog pulse": 80,
   "deep bass": 38,
+  "distorted guitar": 30,
 };
 const DRUM_MIDI_NOTES: Record<DrumInstrument, number> = {
   kick: 36,
@@ -354,7 +359,7 @@ const chordRole = (symbol: string, root: Root, mode: Mode) => {
 };
 
 function buildPlayableSketch(preset: SketchPreset): Project {
-  const seed = Date.now() % 100000;
+  const seed = freshSeed();
   const beatsPerBar = meterBeats(preset.meter);
   const sections = [
     { name: "Intro", bars: 4, color: "violet", density: 0.38, notes: 12 },
@@ -394,6 +399,7 @@ function buildPlayableSketch(preset: SketchPreset): Project {
         id: uid(),
         type: "chords",
         name: `${shape.name} harmony`,
+        voice: "distorted guitar",
         detail: chords.map((chord) => chord.name).join(" · "),
         data: chords.map((chord) => `${chord.name}|${chord.beats}`),
       },
@@ -822,6 +828,7 @@ function useAudioEngine() {
           release: 0.24,
           detune: 0,
         },
+        "distorted guitar": { type: "sawtooth" as OscillatorType, attack: 0.004, cutoff: 3800, release: 0.11, detune: 3 },
         "warm pad": { type: "sawtooth" as OscillatorType, attack: 0.12, cutoff: 1250, release: 0.42, detune: 7 },
         glass: { type: "sine" as OscillatorType, attack: 0.03, cutoff: 2400, release: 0.38, detune: 0 },
         pluck: { type: "triangle" as OscillatorType, attack: 0.004, cutoff: 2600, release: 0.12, detune: 0 },
@@ -829,7 +836,7 @@ function useAudioEngine() {
         "deep bass": { type: "sawtooth" as OscillatorType, attack: 0.012, cutoff: 520, release: 0.2, detune: 0 },
         click: { type: "sine" as OscillatorType, attack: 0.001, cutoff: 7000, release: 0.025, detune: 0 },
       } as const;
-      const profile = profiles[voice];
+      const profile = profiles[voice] ?? profiles.pluck;
       const oscillators = [0, ...(profile.detune ? [-profile.detune, profile.detune] : [])].map((detune) => {
         const oscillator = ctx.createOscillator();
         oscillator.type = profile.type;
@@ -858,7 +865,16 @@ function useAudioEngine() {
         0.0001,
         when + duration + profile.release,
       );
-      filter.connect(volume).connect(getGraph().input);
+      if (voice === "distorted guitar") {
+        const drive = ctx.createWaveShaper();
+        const curve = new Float32Array(2048);
+        for (let i=0; i<curve.length; i++) curve[i] = Math.tanh(5 * (2*i/(curve.length-1)-1));
+        drive.curve = curve; drive.oversample = "4x";
+        const cabinet = ctx.createBiquadFilter();
+        cabinet.type = "lowpass"; cabinet.frequency.value = 4200; cabinet.Q.value = 0.7;
+        const rumble = ctx.createBiquadFilter(); rumble.type = "highpass"; rumble.frequency.value = 85;
+        filter.connect(drive).connect(cabinet).connect(rumble).connect(volume).connect(getGraph().input);
+      } else filter.connect(volume).connect(getGraph().input);
       oscillators.forEach((oscillator) => {
         oscillator.start(when);
         oscillator.stop(when + duration + profile.release);
@@ -918,38 +934,41 @@ function useAudioEngine() {
       source.start(when);
       source.stop(when + duration);
     };
-    const drum = (instrument: DrumInstrument, start = 0, velocity = 1) => {
+    const drum = (instrument: DrumInstrument, start = 0, velocity = 1, kit: DrumKit = "current") => {
+      const rock = kit === "rock", metal = kit === "prog metal";
+      const tail = rock ? 1.5 : metal ? 0.72 : 1;
+      if (kit !== "current" && instrument === "kick") cymbalNoise(start, 0.025, velocity * (metal ? 0.09 : 0.04), 2800, 0.007);
       const ctx = get();
       const when = ctx.currentTime + start;
       if (instrument === "kick") {
         const oscillator = ctx.createOscillator();
         const volume = ctx.createGain();
         oscillator.type = "sine";
-        oscillator.frequency.setValueAtTime(150, when);
-        oscillator.frequency.exponentialRampToValueAtTime(43, when + 0.13);
+        oscillator.frequency.setValueAtTime(metal ? 210 : rock ? 170 : 150, when);
+        oscillator.frequency.exponentialRampToValueAtTime(metal ? 51 : rock ? 46 : 43, when + 0.13 * tail);
         volume.gain.setValueAtTime(0.26 * velocity, when);
-        volume.gain.exponentialRampToValueAtTime(0.0001, when + 0.18);
+        volume.gain.exponentialRampToValueAtTime(0.0001, when + 0.18 * tail);
         oscillator.connect(volume).connect(getGraph().input);
         sources.add(oscillator);
         oscillator.onended = () => sources.delete(oscillator);
         oscillator.start(when);
-        oscillator.stop(when + 0.19);
+        oscillator.stop(when + 0.19 * tail);
         return;
       }
       if (instrument === "snare") {
-        cymbalNoise(start, 0.19, 0.12 * velocity, 1200, 0.055);
-        tone(78, start, 0.07, 0.025 * velocity, "click");
+        cymbalNoise(start, 0.19 * tail, (rock ? 0.17 : metal ? 0.15 : 0.12) * velocity, metal ? 1800 : rock ? 900 : 1200, 0.055 * tail);
+        tone(metal ? 57 : rock ? 50 : 78, start, 0.07 * tail, (rock || metal ? 0.055 : 0.025) * velocity, "click");
         return;
       }
       if (instrument === "hihat") {
-        cymbalNoise(start, 0.13, 0.085 * velocity, 6800, 0.022);
+        cymbalNoise(start, 0.13 * tail, 0.085 * velocity, metal ? 8200 : rock ? 5800 : 6800, 0.022 * tail);
         return;
       }
       if (instrument === "crash") {
-        cymbalNoise(start, 0.95, 0.12 * velocity, 2500, 0.32);
+        cymbalNoise(start, 0.95 * tail, 0.12 * velocity, metal ? 3600 : 2500, 0.32 * tail);
         return;
       }
-      cymbalNoise(start, 0.52, 0.075 * velocity, 4200, 0.16);
+      cymbalNoise(start, 0.52 * tail, 0.075 * velocity, metal ? 5200 : 4200, 0.16 * tail);
       tone(82, start, 0.17, 0.014 * velocity, "click");
     };
     const diagnostics = () => {
@@ -1075,6 +1094,7 @@ function playDrumLoop(
   bars: number,
   beatsPerBar: number,
   beatSeconds: number,
+  kit: DrumKit = "current",
 ) {
   for (let bar = 0; bar < bars; bar++)
     hits.forEach((hit) =>
@@ -1082,6 +1102,7 @@ function playDrumLoop(
         hit.instrument,
         (startBeat + bar * beatsPerBar + hit.step / 4) * beatSeconds,
         hit.velocity,
+        kit,
       ),
     );
 }
@@ -1104,6 +1125,7 @@ function playDrumsForMeterMap(
           hit.instrument,
           (offset + hit.step / 4) * beatSeconds,
           hit.velocity,
+          (section.ideas.find(i => i.type === "drums")?.voice as DrumKit) || "current",
         ),
       );
     offset += beats;
@@ -1259,10 +1281,11 @@ export default function InspitivityApp() {
     detail: string,
     data?: string[],
     chooseDestination = false,
+    voice?: string,
   ) => {
     if (!selected) return;
     if (chooseDestination) {
-      setPendingSave({ type, name, detail, data });
+      setPendingSave({ type, name, detail, data, voice });
       return;
     }
     const existingId = editingIdea?.type === type ? editingIdea.id : savedDraftId.current;
@@ -1273,7 +1296,7 @@ export default function InspitivityApp() {
           ...section,
           ideas: section.ideas.map((idea) =>
             idea.id === existingId
-              ? { ...idea, type, name, detail, data }
+              ? { ...idea, type, name, detail, data, voice }
               : idea,
           ),
         })),
@@ -1286,7 +1309,7 @@ export default function InspitivityApp() {
       (section) => section.id === draftSectionId,
     );
     if (!destination) {
-      setPendingSave({ type, name, detail, data });
+      setPendingSave({ type, name, detail, data, voice });
       return;
     }
     const newId = uid();
@@ -1299,7 +1322,7 @@ export default function InspitivityApp() {
               ...section,
               ideas: [
                 ...section.ideas,
-                { id: newId, type, name, detail, data },
+                { id: newId, type, name, detail, data, voice },
               ],
             }
           : section,
@@ -1377,7 +1400,7 @@ export default function InspitivityApp() {
       const preview = previews[`${selected.id}/${scope}/${type}`];
       if (!preview) continue;
       const i=ideas.findIndex(idea=>idea.type===type);
-      const draft: Idea={ id:`context-${type}`, type, name:`${type} draft`, detail:"", data:preview.data };
+      const draft: Idea={ id:`context-${type}`, type, name:`${type} draft`, detail:"", data:preview.data, voice:preview.voice };
       if(i>=0) ideas[i]=draft; else ideas.push(draft);
     }
     return { ...section, ideas };
@@ -1951,6 +1974,7 @@ function ProjectView({
           (offset + chordBeat) * beat,
           duration * beat * 0.88,
           0.04,
+          (savedHarmony?.voice as SynthVoice) || "warm pad",
         );
         chordBeat += duration;
         chordIndex++;
@@ -2058,6 +2082,7 @@ function ProjectView({
         chordBeat * beat,
         duration * beat * 0.88,
         0.04,
+        (savedHarmony?.voice as SynthVoice) || "warm pad",
       );
       chordBeat += duration;
       chordIndex++;
@@ -2152,6 +2177,8 @@ function ProjectView({
             name,
             start * beat,
             beats * beat * 0.9,
+            0.045,
+            (idea.voice as SynthVoice) || "warm pad",
           );
           start += beats;
         },
@@ -2174,7 +2201,7 @@ function ProjectView({
       return;
     }
     if (idea.type === "drums") {
-      playDrumLoop(engine, decodeDrumIdea(idea), 0, 1, beatsPerBar, beat);
+      playDrumLoop(engine, decodeDrumIdea(idea), 0, 1, beatsPerBar, beat, (idea.voice as DrumKit) || "current");
       finishAt(beatsPerBar * beat * 1000);
       return;
     }
@@ -2545,7 +2572,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
       const draft = section.id === selectedSection?.id ? previews[`${project.id}/${scope}/${type}`] : undefined;
       if (draft) {
         const i=ideas.findIndex(idea => idea.type === type);
-        const idea: Idea = { id:`preview-${type}`, type, name:`${type} draft`, detail:"", data:draft.data };
+        const idea: Idea = { id:`preview-${type}`, type, name:`${type} draft`, detail:"", data:draft.data, voice:draft.voice };
         if (i >= 0) ideas[i]=idea; else ideas.push(idea);
       }
     }
@@ -2596,10 +2623,9 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
           const delay=Math.max(0,origin+event.seconds-engine.get().currentTime);
           if (event.layer === "drums") {
             const instrument=({36:"kick",38:"snare",42:"hihat",49:"crash",51:"ride"} as Record<number,DrumInstrument>)[event.pitch];
-            if (instrument) engine.drum(instrument,delay,event.velocity*settings.volume);
+            if (instrument) engine.drum(instrument,delay,event.velocity*settings.volume, (event.voice ?? "current") as DrumKit);
           } else {
-            const draft=latest.current.previews[`${latest.current.projectId}/${latest.current.scope}/${event.layer}`];
-            const voice=(draft?.voice ?? (event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : "analog pulse")) as SynthVoice;
+            const voice=(event.voice ?? (event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : "analog pulse")) as SynthVoice;
             engine.tone(event.pitch,delay,event.secondsDuration,.065*event.velocity*settings.volume,voice);
           }
         }
@@ -2847,15 +2873,15 @@ function ChordTool({
   toggleMetronome: () => void;
 }) {
   const { root, mode } = projectHarmony(project);
-  const initialCount = idea?.data?.length || section?.bars || 4;
-  const initialSeed = sectionIndex >= 0 ? sectionIndex + 1 : 1;
+  const initialCount = idea?.data?.length || 4;
+  const [initialSeed] = useState(freshSeed);
   const [count, setCount] = useDraftState("count", initialCount);
   const [defaultBeats, setDefaultBeats] = useDraftState("defaultBeats", 4);
   const [lengthVariation, setLengthVariation] = useDraftState("lengthVariation", 0);
   const [complexity, setComplexity] = useDraftState<Complexity>("complexity", "medium");
   const [harmonyColour, setHarmonyColour] = useDraftState<HarmonyColour>("harmonyColour", "diatonic");
   const [opening, setOpening] = useDraftState<ProgressionOpening>("opening", "away");
-  const [voice, setVoice] = useDraftState<SynthVoice>("voice", "warm pad");
+  const [voice, setVoice] = useDraftState<SynthVoice>("voice", (idea?.voice as SynthVoice) || "distorted guitar");
   const [seed, setSeed] = useDraftState("seed", initialSeed);
   const [chords, setChords] = useDraftState<ChordDraft[]>("chords", () =>
     idea
@@ -3166,6 +3192,7 @@ function ChordTool({
                 chords.map((c) => `${c.name} (${c.beats} beats)`).join(" · "),
                 chords.map((c) => `${c.name}|${c.beats}`),
                 chooseDestination,
+                voice,
               )
             }
           />
@@ -3235,7 +3262,7 @@ function MelodyTool({
   const [density, setDensity] = useDraftState("density", section ? 0.55 : 0.6);
   const [noteCount, setNoteCount] = useDraftState("noteCount", Math.min(30, defaultNoteCount));
   const [seed, setSeed] = useDraftState("seed", initialSeed);
-  const [voice, setVoice] = useDraftState<SynthVoice>("voice", "air flute");
+  const [voice, setVoice] = useDraftState<SynthVoice>("voice", (idea?.voice as SynthVoice) || "air flute");
   const [savedMelody, setSavedMelody] = useDraftState("savedMelody", () =>
     idea ? decodeMelodyIdea(idea) : null,
   );
@@ -3609,6 +3636,7 @@ function MelodyTool({
                   (n) => `${n.note}|${n.start}|${n.duration}|${n.pitch}`,
                 ),
                 chooseDestination,
+                voice,
               )
             }
           />
@@ -4023,7 +4051,8 @@ function DrumTool({
         ? 0.78
         : 0.6,
   );
-  const [seed, setSeed] = useDraftState("seed", sectionIndex >= 0 ? sectionIndex + 21 : 21);
+  const [seed, setSeed] = useDraftState("seed", freshSeed);
+  const [voice, setVoice] = useDraftState<DrumKit>("kit", (idea?.voice as DrumKit) || "current");
   const [savedLoop, setSavedLoop] = useDraftState<DrumHit[] | null>("savedLoop", () =>
     idea ? decodeDrumIdea(idea) : null,
   );
@@ -4035,8 +4064,8 @@ function DrumTool({
   const loop = savedLoop ?? generatedLoop;
   const beatSeconds = beatDurationSeconds(project.bpm);
   const play = useCallback(() => {
-    playDrumLoop(engine, loop, 0, 1, beatsPerBar, beatSeconds);
-  }, [engine, loop, beatsPerBar, beatSeconds]);
+    playDrumLoop(engine, loop, 0, 1, beatsPerBar, beatSeconds, voice);
+  }, [engine, loop, beatsPerBar, beatSeconds, voice]);
   const transport = useLoopTransport(
     play,
     progressionLoopDurationMs(beatsPerBar, project.bpm),
@@ -4053,7 +4082,7 @@ function DrumTool({
         next.push({ instrument, step, velocity: 0.7 });
         // Audition outside React's state updater so Strict Mode cannot play twice.
         void engine.unlock().then((ready) => {
-          if (ready) engine.drum(instrument, 0, 0.7);
+          if (ready) engine.drum(instrument, 0, 0.7, voice);
         });
       }
       setSavedLoop(next.sort(
@@ -4068,7 +4097,7 @@ function DrumTool({
     setSeed((current) => current + 1);
   };
   const steps = Array.from({ length: beatsPerBar * 4 }, (_, index) => index);
-  useDraftPreview({ type: "drums", data: loop.map(n => `${n.instrument}|${n.step}|${n.velocity}`) });
+  useDraftPreview({ type: "drums", data: loop.map(n => `${n.instrument}|${n.step}|${n.velocity}`), voice });
   return (
     <>
       <ToolHeader
@@ -4087,6 +4116,8 @@ function DrumTool({
       <DraftToolbar />
       <div className="tool-layout">
         <section className="control-panel drum-panel">
+          <Select label="Drum kit" value={voice} set={value => setVoice(value as DrumKit)} options={["current", "rock", "prog metal"]} />
+          <p className="drum-audition-hint">{voice === "prog metal" ? "Tight kick, crisp snare and bright cymbals. Try linear or djent grooves for syncopated prog accents." : voice === "rock" ? "Weighty kick, full snare and longer cymbal sustain." : "The original electronic kit."}</p>
           <ControlTitle n="1" title="Groove" />
           <Segment
             options={[
@@ -4232,6 +4263,7 @@ function DrumTool({
                   (hit) => `${hit.instrument}|${hit.step}|${hit.velocity}`,
                 ),
                 chooseDestination,
+                voice,
               )
             }
           />
@@ -4529,8 +4561,7 @@ function Settings({
       <div className="settings-card compact">
         <h3>About this prototype</h3>
         <p>
-          Musical generation runs on-device. Saved projects and recordings sync
-          privately to your account on this site; unsaved drafts stay on the device.
+          Musical generation runs on-device. Without sign-in, projects, recordings and drafts stay in this browser. Download a backup to transfer your work. When signed in, saved projects and recordings also sync privately to your account.
         </p>
       </div>
     </>

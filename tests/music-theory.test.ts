@@ -89,3 +89,11 @@ test("phrase shapes produce distinct rhythms and repeating hooks keep their puls
     assert.equal(melody.at(-1)!.pitch % 12, 4);
   }
 });
+
+
+test("four-chord templates offer at least eight different progressions per opening", () => {
+  for (const opening of ["away", "tonic", "surprise"] as const) {
+    const choices = new Set(Array.from({length:24}, (_,seed) => generateChordProgression({ root:"E", mode:"minor", bars:4, complexity:"medium", opening, seed }).map(c=>c.name).join("|")));
+    assert.ok(choices.size >= 8, opening);
+  }
+});

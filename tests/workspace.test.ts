@@ -76,3 +76,18 @@ test("song MIDI contains a conductor and separate named instrument tracks",()=>{
   assert.equal(count,2);assert.equal(pos,bytes.length);
   assert.ok(new TextDecoder().decode(bytes).includes("Verse"));
 });
+
+
+test("saved instrument selections survive serialization and reach every song section", () => {
+  const song = project();
+  song.sections[0].ideas[0].voice = "distorted guitar";
+  song.sections[0].ideas.push({ id:"d", type:"drums", name:"Kit", detail:"", voice:"prog metal", data:["kick|0|0.9"] });
+  song.sections.push({ ...song.sections[0], id:"s2", ideas:[{ id:"d2", type:"drums", name:"Rock", detail:"", voice:"rock", data:["snare|4|0.8"] }] });
+  const restored = JSON.parse(JSON.stringify(song));
+  assert.ok(validProjects([restored]));
+  const events = buildSongPlan(restored).events;
+  assert.ok(events.filter(e => e.layer === "chords").every(e => e.voice === "distorted guitar"));
+  assert.deepEqual([...new Set(events.filter(e => e.layer === "drums").map(e => e.voice))], ["prog metal", "rock"]);
+  restored.sections[0].ideas[0].voice = "invalid";
+  assert.equal(validProjects([restored]), false);
+});

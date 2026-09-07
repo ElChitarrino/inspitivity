@@ -90,7 +90,8 @@ export function useCloudProjects(initial: Project[]) {
     try {
       for (let attempt = 0; attempt < 3; attempt++) {
         const response = await fetch("/api/workspace", { cache: "no-store" });
-        if (!response.ok) throw new Error(response.status === 401 ? "Sign in again to sync · device copy kept" : "Sync unavailable · device copy kept");
+        if (response.status === 401) { setStatus("Device mode · ideas and recordings stay in this browser. Download a backup to transfer them."); return; }
+        if (!response.ok) throw new Error("Sync unavailable · device copy kept");
         const remote = await response.json();
         if (!validProjects(remote.projects) || !Number.isInteger(remote.revision)) throw new Error("Unexpected sync response · device copy kept");
         const captured = current.current;

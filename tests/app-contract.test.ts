@@ -251,7 +251,7 @@ test("chords, melody, and rhythm ask for a project and section unless opened ins
   assert.match(source, /aria-label="Destination project"/);
   assert.match(source, /aria-label="Destination section"/);
   assert.match(source, /Where should this idea go\?/);
-  assert.match(source, /setPendingSave\(\{ type, name, detail, data \}\)/);
+  assert.match(source, /setPendingSave\(\{ type, name, detail, data, voice \}\)/);
   assert.match(source, /Save a copy somewhere else/);
   assert.match(source, /"＋ Choose where to save…"/);
   assert.match(source, /ideas: \[\.\.\.target\.ideas, \{ id: uid\(\), \.\.\.draft \}\]/);
