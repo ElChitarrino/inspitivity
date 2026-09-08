@@ -658,7 +658,7 @@ function BottomNav({
   const destinations: [Screen, string, string][] = [
     ["home", "⌂", "Studio"], ["projects", "▱", "Projects"],
     ["drums", "▦", "Drums"], ["chords", "♯", "Chords"],
-    ["melody", "⌁", "Melody"], ["riff", "⇶", "Patterns"],
+    ["melody", "♥", "Melody"], ["riff", "⇶", "Patterns"],
     ["transition", "⇄", "Transitions"], ["metronome", "♩", "Metronome"],
     ["settings", "◎", "Settings"],
   ];
@@ -1658,7 +1658,7 @@ function Home({
         />
         <ToolButton
           tone="violet"
-          icon="⌁"
+          icon="♥"
           title="Melody Generator"
           copy="Shape a new motif"
           onClick={() => go("melody")}
@@ -1781,7 +1781,7 @@ function TrashIcon() {
 }
 const SECTION_ASSETS = [
   ["drums", "Drums", "▦"], ["chords", "Chords", "♯"],
-  ["melody", "Melody", "⌁"], ["riff", "Pattern", "⇶"], ["transition", "Transition", "⇄"],
+  ["melody", "Melody", "♥"], ["riff", "Pattern", "⇶"], ["transition", "Transition", "⇄"],
 ] as const;
 
 function ProjectView({
@@ -2082,7 +2082,7 @@ function ProjectView({
         action="+ Add section"
         onAction={() => setAdding(true)}
       />
-      <div className="arrangement-list arrangement-timeline" aria-label="Song sections, left to right" tabIndex={0}>
+      <div className="arrangement-list arrangement-timeline" aria-label="Song sections, top to bottom" tabIndex={0}>
         {project.sections.map((section, index) => (
           <article key={section.id} className={`section-card asset-section ${activeSectionIndex === index ? "playing" : ""}`}>
             <header className="asset-section-heading">
@@ -2121,8 +2121,8 @@ function ProjectView({
               {section.ideas.filter(i=>i.type==="text").map(idea=><div className="existing-note" key={idea.id}><button onClick={()=>openIdea(section.id,idea)}>{idea.detail}</button><button aria-label={`Remove ${idea.name}`} onClick={()=>removeIdea(section.id,idea.id)}><TrashIcon /></button></div>)}
             </details>}
             <footer className="section-order-controls">
-              <button onClick={()=>move(index,-1)} disabled={index===0} aria-label={`Move ${section.name} left`}>←</button>
-              <button onClick={()=>move(index,1)} disabled={index===project.sections.length-1} aria-label={`Move ${section.name} right`}>→</button>
+              <button onClick={()=>move(index,-1)} disabled={index===0} aria-label={`Move ${section.name} up`}>↑</button>
+              <button onClick={()=>move(index,1)} disabled={index===project.sections.length-1} aria-label={`Move ${section.name} down`}>↓</button>
               <button onClick={()=>removeSection(section.id)} disabled={project.sections.length===1} aria-label={`Remove ${section.name}`}><TrashIcon /></button>
             </footer>
           </article>
@@ -4375,7 +4375,7 @@ function CreateModal({
           />
           <ToolButton
             tone="violet"
-            icon="⌁"
+            icon="♥"
             title="New melody"
             copy="Shape a motif"
             onClick={() => choose("melody")}

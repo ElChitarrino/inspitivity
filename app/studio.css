@@ -182,9 +182,9 @@ input[type=range] { accent-color:var(--mint); min-height:32px; }
 .drum-edit-tools { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; font-size:14px; color:var(--muted); }
 .drum-edit-tools .segmented { margin:0; }
 @media(min-width:701px) { .control-panel>summary { border-bottom:1px solid var(--line); padding-bottom:14px; } }
-/* One horizontal section strip; each musical part owns a single asset slot. */
-.project-screen .arrangement-timeline { display:flex; align-items:flex-start; gap:16px; overflow-x:auto; padding:4px 2px 20px; scroll-snap-type:x proximity; scrollbar-color:#526b8d #131c29; }
-.arrangement-timeline .asset-section { display:flex; flex-direction:column; flex:0 0 310px; gap:16px; padding:20px; scroll-snap-align:start; background:#141c28; border:1px solid #364255; border-radius:12px; }
+/* Vertically stacked sections; each musical part owns a single asset slot. */
+.project-screen .arrangement-timeline { display:flex; flex-direction:column; align-items:stretch; gap:16px; padding:4px 2px 20px; }
+.arrangement-timeline .asset-section { display:flex; flex-direction:column; flex:none; width:100%; min-width:0; gap:16px; padding:20px; background:#141c28; border:1px solid #364255; border-radius:12px; }
 .asset-section::before { display:none; }
 .asset-section.playing { border-color:#93baff; box-shadow:inset 0 3px 0 #93baff; }
 .asset-section-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
@@ -196,7 +196,7 @@ input[type=range] { accent-color:var(--mint); min-height:32px; }
 .section-meter-settings { min-width:0; flex:1; }
 .section-meter-settings summary { padding:9px 0; cursor:pointer; font-size:13px; color:#a9bbd3; }
 .section-meter-settings .meter-map { margin:0; }
-.section-assets { display:grid; gap:9px; }
+.section-assets { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:9px; }
 .asset-tile { display:grid; grid-template-columns:minmax(0,1fr) 34px 30px; align-items:center; gap:5px; padding:10px 8px 10px 12px; border:1px solid #343d4b; border-radius:8px; background:#1a202a; color:#929baa; }
 .asset-tile.is-created { background:#1d3552; border-color:#416f9e; color:#d6e8ff; }
 .asset-open { display:flex; align-items:center; gap:10px; min-width:0; min-height:44px; padding:0; text-align:left; background:none; border:0; color:inherit; font-size:15px; font-weight:600; }
@@ -215,4 +215,4 @@ input[type=range] { accent-color:var(--mint); min-height:32px; }
 .existing-note { display:flex; align-items:flex-start; gap:8px; margin-top:8px; }
 .existing-note button { background:none; border:0; color:#a9b5c5; text-align:left; font-size:13px; line-height:1.5; }
 .existing-note button:first-child { flex:1; white-space:pre-wrap; overflow-wrap:anywhere; }
-@media(max-width:700px) { .arrangement-timeline .asset-section { flex-basis:min(310px,calc(100vw - 48px)); padding:16px; } .asset-tile { grid-template-columns:minmax(0,1fr) 40px 36px; } .app-shell .asset-play,.asset-trash { min-height:44px; width:100%; } }
+@media(max-width:700px) { .arrangement-timeline .asset-section { padding:16px; } .asset-tile { grid-template-columns:minmax(0,1fr) 40px 36px; } .app-shell .asset-play,.asset-trash { min-height:44px; width:100%; } }

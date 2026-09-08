@@ -64,10 +64,10 @@ test("the home screen can create a coherent playable sketch in one flow", () => 
   assert.match(source, /fitMelodyToChords/);
 });
 
-test("arrangement sections expose horizontal ordering and a single current length", () => {
+test("arrangement sections expose vertical ordering and a single current length", () => {
   assert.match(source, /arrangement-timeline/);
-  assert.match(source, /Move \$\{section.name\} left/);
-  assert.match(source, /Move \$\{section.name\} right/);
+  assert.match(source, /Move \$\{section.name\} up/);
+  assert.match(source, /Move \$\{section.name\} down/);
   assert.match(source, /value=\{section.bars\}/);
   assert.match(source, /Section length/);
 });
