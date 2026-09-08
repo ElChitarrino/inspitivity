@@ -1071,38 +1071,6 @@ function playDrumLoop(
     );
 }
 
-function playDrumsForMeterMap(
-  engine: ReturnType<typeof useAudioEngine>,
-  hits: DrumHit[],
-  startBeat: number,
-  section: SongSection,
-  fallbackMeter: string,
-  beatSeconds: number,
-) {
-  const idea=section.ideas.find(i=>i.type === "drums");
-  const cycle=drumPatternBeats(idea?.data ?? [],0);
-  if(cycle>0) {
-    const length=sectionBeatTotal(section,fallbackMeter);
-    for(let offset=0;offset<length;offset+=cycle) for(const hit of hits) if(offset+hit.step/4<length)
-      engine.drum(hit.instrument,(startBeat+offset+hit.step/4)*beatSeconds,hit.velocity,(idea?.voice as DrumKit)||"current");
-    return;
-  }
-  let offset = startBeat;
-  sectionMeterMap(section, fallbackMeter).forEach((meter) => {
-    const beats = meterBeats(meter);
-    hits
-      .filter((hit) => hit.step < beats * 4)
-      .forEach((hit) =>
-        engine.drum(
-          hit.instrument,
-          (offset + hit.step / 4) * beatSeconds,
-          hit.velocity,
-          (section.ideas.find(i => i.type === "drums")?.voice as DrumKit) || "current",
-        ),
-      );
-    offset += beats;
-  });
-}
 
 function playRiff(
   engine: ReturnType<typeof useAudioEngine>,
@@ -1122,38 +1090,6 @@ function playRiff(
   );
 }
 
-type RepeatableNote = { pitch: number; start: number; duration: number; velocity?: number };
-
-function repeatPattern<T extends RepeatableNote>(
-  notes: T[],
-  sectionBeats: number,
-  schedule: (note: T, offset: number, duration: number) => void,
-) {
-  const cycleBeats = Math.max(0.125, ...notes.map((note) => note.start + note.duration));
-  for (let offset = 0; offset < sectionBeats; offset += cycleBeats)
-    notes.forEach((note) => {
-      const remaining = sectionBeats - (offset + note.start);
-      if (remaining > 0) schedule(note, offset, Math.min(note.duration, remaining));
-    });
-}
-
-function playRepeatedMelody(
-  engine: ReturnType<typeof useAudioEngine>, melody: RepeatableNote[], startBeat: number,
-  sectionBeats: number, beatSeconds: number, voice: SynthVoice = "air flute",
-) {
-  repeatPattern(melody, sectionBeats, (note, offset, duration) =>
-    engine.tone(note.pitch, (startBeat + offset + note.start) * beatSeconds, duration * beatSeconds * 0.82, 0.04, voice),
-  );
-}
-
-function playRepeatedRiff(
-  engine: ReturnType<typeof useAudioEngine>, riff: RiffEvent[], startBeat: number,
-  sectionBeats: number, beatSeconds: number, voice: SynthVoice = "analog pulse",
-) {
-  repeatPattern(riff, sectionBeats, (note, offset, duration) =>
-    engine.tone(note.pitch, (startBeat + offset + note.start) * beatSeconds, duration * beatSeconds, note.muted ? 0.027 : note.accent ? 0.065 : 0.04, voice),
-  );
-}
 
 function useLoopTransport(
   playOnce: () => void,
@@ -1422,7 +1358,7 @@ export default function InspitivityApp() {
     <main className={`app-shell ${screen}-screen`}>
       <div className="studio-workspace">
       <div className="sync-status"><span role="status">{cloud.status}</span><button onClick={() => void cloud.sync()}>Sync now</button></div>
-      {selected && ["project", "drums", "chords", "melody", "riff"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} chooseSection={(id) => { setDraftSectionId(id); setEditingIdea(null); }} />}
+      {selected && ["project", "drums", "chords", "melody", "riff"].includes(screen) && <SharedSectionPlayer project={selected} previews={screen === "project" ? {} : previews} activeSectionId={draftSectionId} chooseSection={(id) => { setDraftSectionId(id); setEditingIdea(null); }} />}
       <DraftSession key={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} id={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} publish={publishPreview}>
       {screen === "home" && (
         <Home
@@ -1449,6 +1385,13 @@ export default function InspitivityApp() {
           record={() => setModal("record")}
           openSectionTool={openSectionTool}
           editIdea={editArrangementIdea}
+          clearAssetDraft={(sectionId,idea,removeDraft=false) => {
+            window.dispatchEvent(new Event("inspitivity-solo-preview"));
+            setPreviews(current=>Object.fromEntries(Object.entries(current).filter(([key])=>key!==`${selected.id}/${sectionId}/${idea.type}` && key!==`${selected.id}/scratch/${idea.type}`)));
+            if(removeDraft) for(const suffix of ["new",idea.id]) {
+              try { localStorage.removeItem(`inspitivity-draft-v1:${selected.id}/${sectionId}/${idea.type}/${suffix}`); } catch { /* device storage unavailable */ }
+            }
+          }}
         />
       )}
       {screen === "chords" && selected && (
@@ -1833,6 +1776,14 @@ function Projects({
   );
 }
 
+function TrashIcon() {
+  return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7" /></svg>;
+}
+const SECTION_ASSETS = [
+  ["drums", "Drums", "▦"], ["chords", "Chords", "♯"],
+  ["melody", "Melody", "⌁"], ["riff", "Pattern", "⇶"], ["transition", "Transition", "⇄"],
+] as const;
+
 function ProjectView({
   project,
   update,
@@ -1840,6 +1791,7 @@ function ProjectView({
   record,
   openSectionTool,
   editIdea,
+  clearAssetDraft,
 }: {
   project: Project;
   update: (fn: (p: Project) => Project) => void;
@@ -1850,6 +1802,7 @@ function ProjectView({
     tool: "chords" | "melody" | "drums" | "riff" | "transition",
   ) => void;
   editIdea: (sectionId: string, idea: Idea) => void;
+  clearAssetDraft: (sectionId: string, idea: Idea, removeDraft?: boolean) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [ideaSection, setIdeaSection] = useState<string | null>(null);
@@ -1897,6 +1850,7 @@ function ProjectView({
   }, [engine]);
   const removeSection = (sectionId: string) => {
     if (project.sections.length === 1) return;
+    project.sections.find(s=>s.id===sectionId)?.ideas.forEach(idea=>clearAssetDraft(sectionId,idea,true));
     stopArrangement();
     stopIdea();
     update((p) => ({
@@ -1905,7 +1859,9 @@ function ProjectView({
     }));
   };
   const removeIdea = (sectionId: string, ideaId: string) => {
-    stopIdea();
+    stopArrangement(); stopIdea();
+    const removed=project.sections.find(s=>s.id===sectionId)?.ideas.find(i=>i.id===ideaId);
+    if(removed)clearAssetDraft(sectionId,removed,true);
     update((p) => ({
       ...p,
       sections: p.sections.map((section) =>
@@ -1941,206 +1897,35 @@ function ProjectView({
         };
       }),
     }));
-  const playArrangement = async () => {
+  const playSavedSections = async (sections: SongSection[], firstIndex: number) => {
     window.dispatchEvent(new Event("inspitivity-solo-preview"));
-    if (arrangementPlaying) {
-      stopArrangement();
-      return;
+    stopArrangement(); stopIdea();
+    if (!(await engine.unlock())) { setAudioStatus("Audio blocked by this browser"); return; }
+    const plan=buildSongPlan({...project,sections});
+    if(!plan.events.length) { setAudioStatus("Create a drum, chord, melody or pattern asset to hear this section."); return; }
+    for(const event of plan.events) {
+      if(event.layer === "drums") {
+        const instrument=Object.entries(DRUM_PITCHES).find(([,pitch])=>pitch===event.pitch)?.[0] as DrumInstrument | undefined;
+        if(instrument)engine.drum(instrument,event.seconds,event.velocity,(event.voice as DrumKit)||"current");
+      } else engine.tone(event.pitch,event.seconds,event.secondsDuration,.045*event.velocity,(event.voice as SynthVoice)||(event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : "analog pulse"));
     }
-    if (!(await engine.unlock())) {
-      setAudioStatus("Audio blocked by this browser");
-      return;
-    }
-    setAudioStatus("Starting sound…");
-    engine.stopAll();
-    const { root, mode } = projectHarmony(project);
-    const beat = beatDurationSeconds(project.bpm);
-    const beatsPerBar = Number(project.meter.split("/")[0]) || 4;
-    let offset = 0;
-    setActiveSectionIndex(0);
-    project.sections.forEach((section, sectionIndex) => {
-      const sectionBeats = sectionBeatTotal(section, project.meter);
-      const sectionOffset = offset;
-      sectionTimers.current.push(
-        window.setTimeout(
-          () => setActiveSectionIndex(sectionIndex),
-          sectionOffset * beat * 1000,
-        ),
-      );
-      const savedHarmony = section.ideas.find((idea) => idea.type === "chords");
-      const harmony = savedHarmony
-        ? savedHarmony.data?.length
-          ? savedHarmony.data
-          : savedHarmony.detail.split(" · ")
-        : generateChordProgression({
-            root,
-            mode,
-            bars: Math.max(1, Math.ceil(sectionBeats / 4)),
-            complexity: "medium",
-            seed: sectionIndex + 1,
-          }).map((chord) => `${chord.name}|4`);
-      let chordBeat = 0;
-      let chordIndex = 0;
-      while (chordBeat < sectionBeats) {
-        const [name, savedBeats, savedPitches] =
-          harmony[chordIndex % harmony.length].split("|");
-        const duration = Math.min(
-          Number(savedBeats) || 4,
-          sectionBeats - chordBeat,
-        );
-        playChord(
-          engine,
-          name,
-          (offset + chordBeat) * beat,
-          duration * beat * 0.88,
-          0.04,
-          (savedHarmony?.voice as SynthVoice) || "warm pad",
-          decodeVoicing(name,savedPitches),
-        );
-        chordBeat += duration;
-        chordIndex++;
-      }
-      const savedMelody = section.ideas.find((idea) => idea.type === "melody");
-      const melody = savedMelody?.data?.length
-        ? savedMelody.data.map((value, index) => {
-            const [name, start, duration, pitch] = value.split("|");
-            return {
-              pitch: Number(pitch) || 60 + (notePitchClass(name) ?? 0),
-              start: Number(start) || index * 0.5,
-              duration: Number(duration) || 0.45,
-            };
-          })
-        : generateMelody({
-            root,
-            mode,
-            notes: Math.max(8, Math.floor(sectionBeats * 1.5)),
-            density: 0.55,
-            mood: "calm",
-            seed: sectionIndex + 11,
-          });
-      playRepeatedMelody(engine, melody, offset, sectionBeats, beat, (savedMelody?.voice as SynthVoice) || "air flute");
-      const savedDrums = section.ideas.find((idea) => idea.type === "drums");
-      const drums = savedDrums
-        ? decodeDrumIdea(savedDrums)
-        : generateDrumLoop({
-            beatsPerBar,
-            density: 0.58,
-            style: sectionIndex % 2 ? "driving" : "steady",
-            energy: inferGrooveContext(project, section).energy,
-            seed: sectionIndex + 31,
-          });
-      playDrumsForMeterMap(engine, drums, offset, section, project.meter, beat);
-      const savedRiff = section.ideas.find((idea) => idea.type === "riff");
-      if (savedRiff) playRepeatedRiff(engine, decodeRiffIdea(savedRiff), offset, sectionBeats, beat, (savedRiff.voice as SynthVoice) || "analog pulse");
-      offset += sectionBeats;
+    let offset=0;
+    sections.forEach((section,index)=>{
+      const sectionIndex=firstIndex+index;
+      sectionTimers.current.push(window.setTimeout(()=>setActiveSectionIndex(sectionIndex),offset*1000));
+      offset+=sectionBeatTotal(section,project.meter)*beatDurationSeconds(project.bpm);
     });
-    setArrangementPlaying(true);
-    window.setTimeout(() => {
-      const status = engine.diagnostics();
-      setAudioStatus(
-        status.state === "running" && status.peak > 1
-          ? "Audio signal active"
-          : `Audio output ${status.state}`,
-      );
-    }, 300);
-    arrangementTimer.current = window.setTimeout(
-      () => {
-        arrangementTimer.current = null;
-        sectionTimers.current = [];
-        setArrangementPlaying(false);
-        setActiveSectionIndex(null);
-      },
-      offset * beat * 1000,
-    );
+    setArrangementPlaying(true);setActiveSectionIndex(firstIndex);
+    setAudioStatus("Playing saved assets · empty parts stay silent");
+    arrangementTimer.current=window.setTimeout(()=>{stopArrangement();setAudioStatus(null);},plan.seconds*1000);
   };
-  const playSection = async (section: SongSection, sectionIndex: number) => {
-    window.dispatchEvent(new Event("inspitivity-solo-preview"));
-    if (arrangementPlaying && activeSectionIndex === sectionIndex) {
-      stopArrangement();
-      return;
-    }
-    stopArrangement();
-    stopIdea();
-    if (!(await engine.unlock())) return;
-    const { root, mode } = projectHarmony(project);
-    const beat = beatDurationSeconds(project.bpm);
-    const beatsPerBar = Number(project.meter.split("/")[0]) || 4;
-    const sectionBeats = sectionBeatTotal(section, project.meter);
-    const savedHarmony = section.ideas.find((idea) => idea.type === "chords");
-    const harmony = savedHarmony
-      ? savedHarmony.data?.length
-        ? savedHarmony.data
-        : savedHarmony.detail.split(" · ")
-      : generateChordProgression({
-          root,
-          mode,
-          bars: Math.max(1, Math.ceil(sectionBeats / 4)),
-          complexity: "medium",
-          seed: sectionIndex + 1,
-        }).map((chord) => `${chord.name}|4`);
-    let chordBeat = 0;
-    let chordIndex = 0;
-    while (chordBeat < sectionBeats) {
-      const [name, savedBeats, savedPitches] =
-        harmony[chordIndex % harmony.length].split("|");
-      const duration = Math.min(
-        Number(savedBeats) || 4,
-        sectionBeats - chordBeat,
-      );
-      playChord(
-        engine,
-        name,
-        chordBeat * beat,
-        duration * beat * 0.88,
-        0.04,
-        (savedHarmony?.voice as SynthVoice) || "warm pad",
-          decodeVoicing(name,savedPitches),
-      );
-      chordBeat += duration;
-      chordIndex++;
-    }
-    const savedMelody = section.ideas.find((idea) => idea.type === "melody");
-    const melody = savedMelody?.data?.length
-      ? savedMelody.data.map((value, index) => {
-          const [name, start, duration, pitch] = value.split("|");
-          return {
-            pitch: Number(pitch) || 60 + (notePitchClass(name) ?? 0),
-            start: Number(start) || index * 0.5,
-            duration: Number(duration) || 0.45,
-          };
-        })
-      : generateMelody({
-          root,
-          mode,
-          notes: Math.max(8, Math.floor(sectionBeats * 1.5)),
-          density: 0.55,
-          mood: "calm",
-          seed: sectionIndex + 11,
-        });
-    playRepeatedMelody(engine, melody, 0, sectionBeats, beat, (savedMelody?.voice as SynthVoice) || "air flute");
-    const savedDrums = section.ideas.find((idea) => idea.type === "drums");
-    const drums = savedDrums
-      ? decodeDrumIdea(savedDrums)
-      : generateDrumLoop({
-          beatsPerBar,
-          density: 0.58,
-          style: sectionIndex % 2 ? "driving" : "steady",
-          energy: inferGrooveContext(project, section).energy,
-          seed: sectionIndex + 31,
-        });
-    playDrumsForMeterMap(engine, drums, 0, section, project.meter, beat);
-    const savedRiff = section.ideas.find((idea) => idea.type === "riff");
-    if (savedRiff) playRepeatedRiff(engine, decodeRiffIdea(savedRiff), 0, sectionBeats, beat, (savedRiff.voice as SynthVoice) || "analog pulse");
-    setArrangementPlaying(true);
-    setActiveSectionIndex(sectionIndex);
-    arrangementTimer.current = window.setTimeout(
-      () => {
-        arrangementTimer.current = null;
-        setArrangementPlaying(false);
-        setActiveSectionIndex(null);
-      },
-      sectionBeats * beat * 1000,
-    );
+  const playArrangement = async () => {
+    if(arrangementPlaying) { stopArrangement(); return; }
+    await playSavedSections(project.sections,0);
+  };
+  const playSection = async (section: SongSection, index: number) => {
+    if(arrangementPlaying && activeSectionIndex===index) { stopArrangement(); return; }
+    await playSavedSections([section],index);
   };
   useEffect(() => {
     const stop = () => { stopArrangement(); stopIdea(); };
@@ -2198,7 +1983,7 @@ function ProjectView({
         const duration = Number(savedDuration) || 0.45;
         const pitch = Number(savedPitch) || 60 + (notePitchClass(name) ?? 0);
         endBeat = Math.max(endBeat, start + duration);
-        engine.tone(pitch, start * beat, duration * beat, 0.055, "air flute");
+        engine.tone(pitch, start * beat, duration * beat, 0.055, (idea.voice as SynthVoice)||"air flute");
       });
       finishAt(endBeat * beat * 1000);
       return;
@@ -2210,7 +1995,7 @@ function ProjectView({
     }
     if (idea.type === "riff") {
       const riff = decodeRiffIdea(idea);
-      playRiff(engine, riff, 0, beat);
+      playRiff(engine, riff, 0, beat, (idea.voice as SynthVoice)||"analog pulse");
       finishAt(
         Math.max(...riff.map((note) => note.start + note.duration)) *
           beat *
@@ -2297,166 +2082,49 @@ function ProjectView({
         action="+ Add section"
         onAction={() => setAdding(true)}
       />
-      <div className="arrangement-list">
+      <div className="arrangement-list arrangement-timeline" aria-label="Song sections, left to right" tabIndex={0}>
         {project.sections.map((section, index) => (
-          <article
-            key={section.id}
-            className={`section-card ${section.color} ${activeSectionIndex === index ? "playing" : ""}`}
-          >
-            <div className="drag">⠿</div>
-            <div className="section-count">
-              {String(index + 1).padStart(2, "0")}
+          <article key={section.id} className={`section-card asset-section ${activeSectionIndex === index ? "playing" : ""}`}>
+            <header className="asset-section-heading">
+              <div><span className="section-position">SECTION {String(index+1).padStart(2,"0")}</span><h3>{section.name}</h3></div>
+              <PlayButton compact playing={arrangementPlaying && activeSectionIndex === index} label={section.name} onClick={() => void playSection(section,index)} />
+            </header>
+            <div className="asset-section-meta">
+              <label className="section-length"><span className="sr-only">Section length</span>
+                <select aria-label={`${section.name} length`} value={section.bars} onChange={e=>{stopArrangement();setSectionBars(section.id,Number(e.target.value));}}>
+                  {[...new Set([section.bars,4,8,12,16,24,32])].sort((a,b)=>a-b).map(bars=><option key={bars} value={bars}>{bars} bars</option>)}
+                </select>
+              </label>
+              <details className="section-meter-settings"><summary>{[...new Set(sectionMeterMap(section,project.meter))].join(" / ")}</summary>
+                <div className="meter-map">{sectionMeterMap(section,project.meter).map((meter,barIndex)=><button key={barIndex} onClick={()=>cycleSectionMeter(section.id,barIndex)} aria-label={`Bar ${barIndex+1}: ${meter}. Change meter`}>{barIndex+1}: {meter}</button>)}</div>
+              </details>
             </div>
-            <div className="section-main">
-              <header>
-                <div>
-                  <h3>{section.name}</h3>
-                  <span>
-                    {section.bars} bars · {section.ideas.length} ideas
-                  </span>
-                  <div className="section-length" aria-label={`${section.name} length`}>
-                    <small>Section length</small>
-                    {[4, 8, 12, 16].map((bars) => (
-                      <button key={bars} className={section.bars === bars ? "active" : ""}
-                        aria-pressed={section.bars === bars} onClick={() => setSectionBars(section.id, bars)}>
-                        {bars} bars
-                      </button>
-                    ))}
-                  </div>
-                  <div
-                    className="meter-map"
-                    aria-label={`${section.name} meter map`}
-                  >
-                    <small>Meter map</small>
-                    {sectionMeterMap(section, project.meter).map(
-                      (meter, barIndex) => (
-                        <button
-                          key={barIndex}
-                          onClick={() =>
-                            cycleSectionMeter(section.id, barIndex)
-                          }
-                          aria-label={`Bar ${barIndex + 1}: ${meter}. Change meter`}
-                          title="Change this bar's meter"
-                        >
-                          {meter}
-                        </button>
-                      ),
-                    )}
-                  </div>
-                </div>
-                <div className="section-header-actions">
-                  <PlayButton playing={arrangementPlaying && activeSectionIndex === index}
-                    label={section.name} onClick={() => void playSection(section, index)} />
-                  <div className="section-builders">
-                    <button
-                      onClick={() => openSectionTool(section.id, "drums")}
-                    >
-                      ● Drums
-                    </button>
-                    <button
-                      onClick={() => openSectionTool(section.id, "chords")}
-                    >
-                      ♯ Chords
-                    </button>
-                    <button
-                      onClick={() => openSectionTool(section.id, "melody")}
-                    >
-                      ⌁ Melody
-                    </button>
-                    <button onClick={() => openSectionTool(section.id, "riff")}>
-                      ⇶ Pattern
-                    </button>
-                    <button
-                      onClick={() => openSectionTool(section.id, "transition")}
-                    >
-                      ⇄ Transition
-                    </button>
-                  </div>
-                  <div className="order-controls">
-                    <button
-                      onClick={() => move(index, -1)}
-                      aria-label="Move up"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      onClick={() => move(index, 1)}
-                      aria-label="Move down"
-                    >
-                      ↓
-                    </button>
-                    <button
-                      className="delete-button"
-                      onClick={() => removeSection(section.id)}
-                      aria-label={`Remove ${section.name}`}
-                      disabled={project.sections.length === 1}
-                    >
-                      ⌫
-                    </button>
-                  </div>
-                </div>
-              </header>
-              {section.ideas.length > 0 && (
-                <div className="idea-chips">
-                  {section.ideas.map((idea) => (
-                    <article key={idea.id} className="idea-card">
-                      {idea.type === "audio" ? (
-                        <span className="idea-type-icon">●</span>
-                      ) : (
-                        <button
-                          className="idea-edit-icon"
-                          aria-label={`Edit ${idea.name}`}
-                          onClick={() => openIdea(section.id, idea)}
-                        >
-                          {idea.type === "chords"
-                            ? "♯"
-                            : idea.type === "melody"
-                              ? "⌁"
-                              : idea.type === "drums"
-                                ? "●"
-                                : idea.type === "riff"
-                                  ? "⇶"
-                                  : idea.type === "transition"
-                                    ? "⇄"
-                                    : "✎"}
-                        </button>
-                      )}
-                      <button
-                        className="idea-open"
-                        onClick={() => openIdea(section.id, idea)}
-                        aria-label={`Open ${idea.name}`}
-                      >
-                        <strong>{idea.name}</strong>
-                        <small>{idea.detail}</small>
-                      </button>
-                      <div className="idea-actions">
-                        {idea.type !== "text" && idea.type !== "transition" && (
-                          <PlayButton compact playing={playingIdeaId === idea.id}
-                            label={idea.name} onClick={() => void playIdea(idea)} />
-                        )}
-                        <button
-                          className="delete-button"
-                          onClick={() => removeIdea(section.id, idea.id)}
-                          aria-label={`Remove ${idea.name}`}
-                        >
-                          ⌫
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-              <button
-                className="add-idea"
-                onClick={() => {
-                  setEditingNoteId(null);
-                  setNote("");
-                  setIdeaSection(section.id);
-                }}
-              >
-                + Add idea
-              </button>
+            <div className="section-assets">
+              {([...SECTION_ASSETS,...(section.ideas.some(i=>i.type==="audio") ? [["audio","Recording","●"] as const] : [])]).map(([type,label,icon])=>{
+                const assets=section.ideas.filter(i=>i.type===type),idea=assets[0];
+                const playable=!!idea && type!=="transition";
+                return <div key={type} className={`asset-tile ${idea ? "is-created" : "is-empty"}`}>
+                  <button className="asset-open" aria-label={`${idea ? "Edit" : "Create"} ${label} in ${section.name}`} onClick={()=>idea ? openIdea(section.id,idea) : type!=="audio" && openSectionTool(section.id,type)}>
+                    <span aria-hidden="true">{icon}</span><span>{label}<small>{idea ? type==="transition" ? "Arrangement instruction" : "Created" : "Not created"}</small></span>
+                  </button>
+                  <PlayButton compact className="asset-play" playing={!!idea && playingIdeaId===idea.id} disabled={!playable} label={`${label} in ${section.name}`} hint={type==="transition" ? "Transitions are arrangement instructions, with no standalone audio" : !idea ? "Create this asset first" : undefined} onClick={()=>idea && void playIdea(idea)} />
+                  <button className="asset-trash" disabled={!idea} aria-label={`Remove ${label} from ${section.name}`} onClick={()=>idea && removeIdea(section.id,idea.id)}><TrashIcon /></button>
+                  {assets.length>1 && <select className="asset-takes" aria-label={`${label} saved version in ${section.name}`} value={idea.id} onChange={e=>{
+                    const chosen=assets.find(i=>i.id===e.target.value);if(!chosen)return;
+                    stopArrangement();stopIdea();clearAssetDraft(section.id,idea);
+                    update(p=>({...p,sections:p.sections.map(s=>s.id===section.id?{...s,ideas:[chosen,...s.ideas.filter(i=>i.id!==chosen.id)]}:s)}));
+                  }}>{assets.map((asset,i)=><option key={asset.id} value={asset.id}>{i+1}. {asset.name}</option>)}</select>}
+                </div>;
+              })}
             </div>
+            {section.ideas.some(i=>i.type==="text") && <details className="section-notes"><summary>Existing notes · {section.ideas.filter(i=>i.type==="text").length}</summary>
+              {section.ideas.filter(i=>i.type==="text").map(idea=><div className="existing-note" key={idea.id}><button onClick={()=>openIdea(section.id,idea)}>{idea.detail}</button><button aria-label={`Remove ${idea.name}`} onClick={()=>removeIdea(section.id,idea.id)}><TrashIcon /></button></div>)}
+            </details>}
+            <footer className="section-order-controls">
+              <button onClick={()=>move(index,-1)} disabled={index===0} aria-label={`Move ${section.name} left`}>←</button>
+              <button onClick={()=>move(index,1)} disabled={index===project.sections.length-1} aria-label={`Move ${section.name} right`}>→</button>
+              <button onClick={()=>removeSection(section.id)} disabled={project.sections.length===1} aria-label={`Remove ${section.name}`}><TrashIcon /></button>
+            </footer>
           </article>
         ))}
       </div>
@@ -2671,17 +2339,19 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
   </section>;
 }
 
-function PlayButton({ playing, onClick, label, compact = false, className = "" }: {
+function PlayButton({ playing, onClick, label, compact = false, className = "", disabled = false, hint }: {
   playing: boolean;
   onClick: () => void;
   label: string;
   compact?: boolean;
   className?: string;
+  disabled?: boolean;
+  hint?: string;
 }) {
   return <button type="button"
     className={`play-control ${playing ? "playing" : ""} ${compact ? "compact" : ""} ${className}`}
-    onClick={onClick} aria-label={`${playing ? "Stop" : "Play"} ${label}`}
-    aria-pressed={playing} title={`${playing ? "Stop" : "Play"} ${label}`}>
+    onClick={onClick} disabled={disabled} aria-label={`${playing ? "Stop" : "Play"} ${label}`}
+    aria-pressed={playing} title={hint ?? `${playing ? "Stop" : "Play"} ${label}`}>
     <span className="play-symbol" aria-hidden="true">{playing ? "■" : "▶"}</span>
     {!compact && <span>{playing ? "Stop" : "Play"}</span>}
   </button>;
@@ -3716,7 +3386,7 @@ function RiffTool({
   const [density, setDensity] = useDraftState("density", 0.72);
   const [startOffset, setStartOffset] = useDraftState("startOffset", 0.5);
   const [motion, setMotion] = useDraftState<PatternMotion>("motion", "orbit");
-  const [voice, setVoice] = useDraftState<SynthVoice>("voice", "analog pulse");
+  const [voice, setVoice] = useDraftState<SynthVoice>("voice", (idea?.voice as SynthVoice)||"analog pulse");
   const [seed, setSeed] = useDraftState("seed", () => freshSeed() + Math.max(0,sectionIndex));
   const [savedRiff, setSavedRiff] = useDraftState<RiffEvent[] | null>("savedRiff", () =>
     idea ? decodeRiffIdea(idea) : null,
@@ -3903,6 +3573,8 @@ function RiffTool({
                   (note) =>
                     `${note.pitch}|${note.start}|${note.duration}|${note.accent ? 1 : 0}|${note.muted ? 1 : 0}`,
                 ),
+                false,
+                voice,
               )
             }
           >

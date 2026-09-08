@@ -47,7 +47,7 @@ test("mobile playback explicitly unlocks and masters the Web Audio graph", () =>
   assert.match(source, /sharedAudioGraph/);
   assert.match(source, /sharedNativeAudioUnlock\.play/);
   assert.match(source, /const diagnostics = \(\) =>/);
-  assert.match(source, /Audio signal active/);
+  assert.match(source, /Playing saved assets/);
   assert.match(source, /createDynamicsCompressor/);
   assert.match(source, /createConvolver/);
   assert.match(source, /engine\.unlock/);
@@ -64,31 +64,24 @@ test("the home screen can create a coherent playable sketch in one flow", () => 
   assert.match(source, /fitMelodyToChords/);
 });
 
-test("arrangements expose section creation, ordering, and idea saving", () => {
-  assert.match(source, /\+ Add section/);
-  assert.match(source, /aria-label="Move up"/);
-  assert.match(source, /aria-label="Move down"/);
-  assert.match(source, /Save idea/);
+test("arrangement sections expose horizontal ordering and a single current length", () => {
+  assert.match(source, /arrangement-timeline/);
+  assert.match(source, /Move \$\{section.name\} left/);
+  assert.match(source, /Move \$\{section.name\} right/);
+  assert.match(source, /value=\{section.bars\}/);
   assert.match(source, /Section length/);
-  assert.match(source, /\[4, 8, 12, 16\]/);
 });
 
-test("arrangement ideas reopen their saved notes, harmony, or melody for editing", () => {
-  assert.match(source, /idea-edit-icon/);
-  assert.match(source, /Edit \$\{idea\.name\}/);
+test("each asset slot opens its typed editor and retains existing notes separately", () => {
+  assert.match(source, /SECTION_ASSETS/);
+  assert.match(source, /is-created/);
+  assert.match(source, /is-empty/);
+  assert.match(source, /openSectionTool\(section.id,type\)/);
+  assert.match(source, /openIdea\(section.id,idea\)/);
+  assert.match(source, /Existing notes/);
   assert.match(source, /decodeChordDrafts/);
   assert.match(source, /decodeMelodyIdea/);
   assert.match(source, /Update note/);
-  assert.match(source, /Save changes in/);
-});
-
-test("arrangement cards themselves reopen their saved editor and sections expose entry controls", () => {
-  assert.match(source, /const openIdea/);
-  assert.match(source, /className="idea-card"/);
-  assert.match(source, /onClick=\{\(\) => openIdea\(section\.id, idea\)\}/);
-  assert.match(source, /section-header-actions/);
-  assert.match(source, /♯ Chords/);
-  assert.match(source, /⌁ Melody/);
 });
 
 test("music tools return to the arrangement when they were opened from a project section", () => {
@@ -113,48 +106,20 @@ test("arrangement sections and ideas can be removed", () => {
   assert.match(source, /aria-label=\{`Remove \$\{idea\.name\}`\}/);
 });
 
-test("arrangement playback controls share the play and stop component", () => {
-  assert.match(source, /playingIdeaId/);
-  assert.match(source, /<PlayButton compact playing=\{playingIdeaId === idea\.id\}/);
-  assert.match(source, /aria-pressed=\{playing\}/);
-  assert.match(source, /const stopIdea/);
+test("asset tiles expose playback and deletion, with unavailable audio disabled", () => {
+  assert.match(source, /<PlayButton compact className="asset-play"/);
+  assert.match(source, /disabled=\{!playable\}/);
+  assert.match(source, /className="asset-trash"/);
+  assert.match(source, /clearAssetDraft\(sectionId,removed,true\)/);
 });
 
-test("an arrangement can play its section harmony, melody, and saved drum loop as one sketch", () => {
-  assert.match(source, /label="song"/);
-  assert.match(source, /function playArrangement|const playArrangement/);
-  assert.match(source, /generateChordProgression/);
-  assert.match(source, /generateMelody/);
-  assert.match(
-    source,
-    /const savedDrums = section\.ideas\.find\(\(idea\) => idea\.type === "drums"\)/,
-  );
-  assert.match(
-    source,
-    /playDrumsForMeterMap\(engine, drums, offset, section, project\.meter, beat\)/,
-  );
-});
-
-test("arrangement playback highlights its active section and opens section-specific music drafts", () => {
-  assert.match(source, /activeSectionIndex/);
-  assert.match(source, /setActiveSectionIndex\(sectionIndex\)/);
-  assert.match(source, /section-builders/);
-  assert.match(source, /openSectionTool\(section\.id, "chords"\)/);
-  assert.match(source, /openSectionTool\(section\.id, "melody"\)/);
-  assert.match(source, /Editing \{section\.name\}/);
-});
-
-test("each arrangement section can be auditioned with its saved or generated sketch", () => {
-  assert.match(source, /const playSection/);
-  assert.match(source, /playSection\(section, index\)/);
-  assert.match(
-    source,
-    /<PlayButton playing=\{arrangementPlaying && activeSectionIndex === index\}/,
-  );
-  assert.match(
-    source,
-    /playDrumsForMeterMap\(engine, drums, 0, section, project\.meter, beat\)/,
-  );
+test("song and section audition use the saved musical plan without generating missing parts", () => {
+  const player=source.slice(source.indexOf("const playSavedSections"),source.indexOf("const playIdea"));
+  assert.match(player,/buildSongPlan/);
+  assert.doesNotMatch(player,/generateChordProgression|generateMelody|generateDrumLoop/);
+  assert.match(source,/playSavedSections\(project.sections,0\)/);
+  assert.match(source,/playSavedSections\(\[section\],index\)/);
+  assert.match(source,/setActiveSectionIndex\(sectionIndex\)/);
 });
 
 test("the metronome supports 9/8 projects", () => {
@@ -243,7 +208,7 @@ test("drum loops are section-aware, editable, and support the expanded kit", () 
   assert.match(source, /Generate new phrase/);
   assert.match(source, /Following this section/);
   assert.match(source, /inferGrooveContext/);
-  assert.match(source, /openSectionTool\(section\.id, "drums"\)/);
+  assert.match(source, /openSectionTool\(section.id,type\)/);
   assert.match(source, /decodeDrumIdea/);
   assert.match(source, /Loop drum loop/);
 });
@@ -270,8 +235,8 @@ test("progressive workflows include meter maps, synth patterns, transformations,
     "Harmony colour",
   ])
     assert.match(source, new RegExp(feature));
-  assert.match(source, /openSectionTool\(section\.id, "riff"\)/);
-  assert.match(source, /openSectionTool\(section\.id, "transition"\)/);
+  assert.match(source, /openSectionTool\(section.id,type\)/);
+  assert.match(source, /openSectionTool\(section.id,type\)/);
   assert.match(
     source,
     /"steady",\s*"syncopated",\s*"driving",\s*"djent",\s*"odd meter",\s*"linear"/,
