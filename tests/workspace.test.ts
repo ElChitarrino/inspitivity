@@ -25,6 +25,10 @@ test("sync preserves independent device changes and is idempotent",()=>{
 });
 test("workspace validation rejects malformed or oversized musical records",()=>{
   assert.ok(validProjects([project()]));
+  const mixed=project();mixed.sections[0].mix={drums:{muted:false,solo:false,volume:.72}};
+  assert.ok(validProjects([mixed]));
+  mixed.sections[0].mix.drums!.volume=1.1;
+  assert.equal(validProjects([mixed]),false);
   assert.equal(validProjects([{...project(),bpm:0}]),false);
   assert.equal(validProjects([project(),project()]),false);
   assert.equal(validProjects([{...project(),sections:[{...project().sections[0],ideas:[{type:"audio"}]}]}]),false);
@@ -64,6 +68,7 @@ test("song plan repeats saved layers, preserves displaced starts, and leaves mis
   assert.equal(plan.quarters,8);assert.equal(plan.seconds,4);
   assert.deepEqual(plan.events.filter(e=>e.layer==="melody").map(e=>e.start),[.5,1.5,2.5,3.5,4.5,5.5,6.5,7.5]);
   assert.equal(plan.events.some(e=>e.layer==="drums"),false);
+  assert.ok(plan.events.every(e=>e.sectionId==="s"));
   assert.ok(plan.events.every(e=>e.start+e.duration<=8));
 });
 test("short saved phrases repeat at their own loop length until a longer section ends",()=>{

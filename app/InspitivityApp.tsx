@@ -62,7 +62,7 @@ import {
 import { useCloudProjects, saveRecording, getRecording, downloadBackup, restoreBackup } from "./workspace-storage";
 import { DraftSession, DraftToolbar, useDraftState, useDraftPreview, type DraftPreview } from "./draft-session";
 import { sectionFeel, buildSongPlan, type SongLayer } from "../packages/workspace/music";
-import type { Idea, SongSection, Project } from "../packages/workspace";
+import type { Idea, SongSection, Project, TrackMix } from "../packages/workspace";
 import { varyNotes } from "../packages/workspace/variation";
 import { VariationControls } from "./variation-controls";
 import { isTheme, resolveInitialTheme, type Theme } from "../packages/theme";
@@ -92,6 +92,25 @@ type SynthVoice =
   | "distorted guitar";
 type DrumKit = "current" | "rock" | "prog metal";
 const freshSeed = () => Math.floor(Math.random() * 1000000000);
+const LAYER_LABELS = [
+  ["drums", "Drums"],
+  ["chords", "Chords"],
+  ["melody", "Melody"],
+  ["riff", "Pattern"],
+] as const satisfies readonly (readonly [SongLayer, string])[];
+const DEFAULT_SECTION_MIX: Record<SongLayer, TrackMix> = {
+  drums: { muted: false, solo: false, volume: 0.72 },
+  chords: { muted: false, solo: false, volume: 0.78 },
+  melody: { muted: false, solo: false, volume: 0.78 },
+  riff: { muted: false, solo: false, volume: 0.72 },
+};
+const sectionMix = (section?: SongSection): Record<SongLayer, TrackMix> =>
+  Object.fromEntries(
+    LAYER_LABELS.map(([layer]) => [
+      layer,
+      { ...DEFAULT_SECTION_MIX[layer], ...section?.mix?.[layer] },
+    ]),
+  ) as Record<SongLayer, TrackMix>;
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -683,7 +702,7 @@ function BottomNav({
     ["settings", "◎", "Settings"],
   ];
   return <nav className="studio-nav" aria-label="Main navigation">
-    <button className="studio-brand" aria-label="Inspitivity studio" onClick={() => go("home")}><span className="brand-mark">i</span><span>inspitivity<small>SONGWRITING STUDIO</small></span></button>
+    <button className="studio-brand" aria-label="Inspitivity studio" onClick={() => go("home")}><span className="brand-mark"><img src="/icon-192.png" alt="" /></span><span>inspitivity<small>SONGWRITING STUDIO</small></span></button>
     <button className="studio-create" aria-label="Create new" onClick={create}><b>＋</b><span>Create new</span></button>
     <div className="studio-destinations">{destinations.map(([target, icon, label]) =>
       <button key={target} aria-label={label} aria-current={screen === target || target === "projects" && screen === "project" ? "page" : undefined}
@@ -1393,7 +1412,7 @@ export default function InspitivityApp() {
     <main className={`app-shell ${screen}-screen`}>
       <div className="studio-workspace">
       <div className="sync-status"><span role="status">{cloud.status}</span><button onClick={() => void cloud.sync()}>Sync now</button></div>
-      {selected && ["project", "drums", "chords", "melody", "riff"].includes(screen) && <SharedSectionPlayer project={selected} previews={screen === "project" ? {} : previews} activeSectionId={draftSectionId} chooseSection={(id) => { setDraftSectionId(id); setEditingIdea(null); }} />}
+      {selected && ["drums", "chords", "melody", "riff"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} chooseSection={(id) => { setDraftSectionId(id); setEditingIdea(null); }} updateProject={updateSelected} />}
       <DraftSession key={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} id={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} publish={publishPreview}>
       {screen === "home" && (
         <Home
@@ -1957,6 +1976,27 @@ function ProjectView({
         };
       }),
     }));
+  const updateSectionMix = (
+    sectionId: string,
+    layer: SongLayer,
+    settings: Partial<TrackMix>,
+  ) => {
+    stopArrangement();
+    update((p) => ({
+      ...p,
+      sections: p.sections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              mix: {
+                ...section.mix,
+                [layer]: { ...sectionMix(section)[layer], ...settings },
+              },
+            }
+          : section,
+      ),
+    }));
+  };
   const playSavedSections = async (sections: SongSection[], firstIndex: number) => {
     window.dispatchEvent(new Event("inspitivity-solo-preview"));
     stopArrangement(); stopIdea();
@@ -1964,10 +2004,17 @@ function ProjectView({
     const plan=buildSongPlan({...project,sections});
     if(!plan.events.length) { setAudioStatus("Create a drum, chord, melody or pattern asset to hear this section."); return; }
     for(const event of plan.events) {
+      const mix = sectionMix(sections.find((section) => section.id === event.sectionId));
+      const settings = mix[event.layer];
+      const hasSolo = Object.values(mix).some((layer) => layer.solo);
+      if (settings.muted || (hasSolo && !settings.solo) || settings.volume <= 0) continue;
       if(event.layer === "drums") {
         const instrument=Object.entries(DRUM_PITCHES).find(([,pitch])=>pitch===event.pitch)?.[0] as DrumInstrument | undefined;
-        if(instrument)engine.drum(instrument,event.seconds,event.velocity,(event.voice as DrumKit)||"current");
-      } else engine.tone(event.pitch,event.seconds,event.secondsDuration,.045*event.velocity,(event.voice as SynthVoice)||(event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : "analog pulse"));
+        if(instrument)engine.drum(instrument,event.seconds,event.velocity*settings.volume*.9,(event.voice as DrumKit)||"current");
+      } else {
+        const baseGain = event.layer === "chords" ? .052 : event.layer === "melody" ? .058 : .055;
+        engine.tone(event.pitch,event.seconds,event.secondsDuration,baseGain*event.velocity*settings.volume,(event.voice as SynthVoice)||(event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : "analog pulse"));
+      }
     }
     let offset=0;
     sections.forEach((section,index)=>{
@@ -2177,6 +2224,41 @@ function ProjectView({
                 </div>;
               })}
             </div>
+            <details className="section-mixer embedded-mixer">
+              <summary>Mix tracks</summary>
+              <div className="mixer-grid">
+                {LAYER_LABELS.map(([layer, label]) => {
+                  const settings = sectionMix(section)[layer];
+                  return (
+                    <div className="mixer-channel" key={layer}>
+                      <b>{label}</b>
+                      <button
+                        aria-label={`Mute ${label} in ${section.name}`}
+                        aria-pressed={settings.muted}
+                        onClick={() => updateSectionMix(section.id, layer, { muted: !settings.muted })}
+                      >Mute</button>
+                      <button
+                        aria-label={`Solo ${label} in ${section.name}`}
+                        aria-pressed={settings.solo}
+                        onClick={() => updateSectionMix(section.id, layer, { solo: !settings.solo })}
+                      >Solo</button>
+                      <label className="track-volume">
+                        <span>{Math.round(settings.volume * 100)}%</span>
+                        <input
+                          type="range"
+                          aria-label={`${label} volume in ${section.name}`}
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={settings.volume}
+                          onChange={(event) => updateSectionMix(section.id, layer, { volume: Number(event.target.value) })}
+                        />
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
             {section.ideas.some(i=>i.type==="text") && <details className="section-notes"><summary>Existing notes · {section.ideas.filter(i=>i.type==="text").length}</summary>
               {section.ideas.filter(i=>i.type==="text").map(idea=><div className="existing-note" key={idea.id}><button onClick={()=>openIdea(section.id,idea)}>{idea.detail}</button><button aria-label={`Remove ${idea.name}`} onClick={()=>removeIdea(section.id,idea.id)}><TrashIcon /></button></div>)}
             </details>}
@@ -2294,34 +2376,33 @@ function ProjectView({
   );
 }
 
-function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection }: {
-  project: Project; previews: Record<string, DraftPreview>; activeSectionId: string | null; chooseSection: (id: string) => void;
+function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection, updateProject }: {
+  project: Project;
+  previews: Record<string, DraftPreview>;
+  activeSectionId: string | null;
+  chooseSection: (id: string) => void;
+  updateProject: (fn: (project: Project) => Project) => void;
 }) {
   const engine = useAudioEngine();
-  const [wholeSong, setWholeSong] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
-  const [mix, setMix] = useState<Record<SongLayer, { muted: boolean; solo: boolean; volume: number }>>({
-    drums: { muted:false,solo:false,volume:.8 }, chords: { muted:false,solo:false,volume:.65 }, melody: { muted:false,solo:false,volume:.8 }, riff: { muted:false,solo:false,volume:.6 },
-  });
   const selectedSection = project.sections.find(s => s.id === activeSectionId) ?? project.sections[0];
-  const previewProject = useMemo(() => ({ ...project, sections: (wholeSong ? project.sections : selectedSection ? [selectedSection] : []).map(section => {
-    const scope = activeSectionId ?? "scratch";
-    const ideas = [...section.ideas];
-    for (const type of ["drums", "chords", "melody", "riff"] as const) {
-      const draft = section.id === selectedSection?.id ? previews[`${project.id}/${scope}/${type}`] : undefined;
-      if (draft) {
-        const i=ideas.findIndex(idea => idea.type === type);
-        const idea: Idea = { id:`preview-${type}`, type, name:`${type} draft`, detail:"", data:draft.data, voice:draft.voice };
-        if (i >= 0) ideas[i]=idea; else ideas.push(idea);
-      }
-    }
-    return { ...section, ideas };
-  }) }), [project, wholeSong, selectedSection, previews, activeSectionId]);
+  const mix = sectionMix(selectedSection);
+  const previewProject = useMemo(() => ({ ...project, sections: selectedSection ? [{
+    ...selectedSection,
+    ideas: (["drums", "chords", "melody", "riff"] as const).reduce((ideas, type) => {
+      const draft = previews[`${project.id}/${activeSectionId ?? "scratch"}/${type}`];
+      if (!draft) return ideas;
+      const next = [...ideas], index = next.findIndex(idea => idea.type === type);
+      const idea: Idea = { id:`preview-${type}`, type: type as SongLayer, name:`${type} draft`, detail:"", data:draft.data, voice:draft.voice };
+      if (index >= 0) next[index] = idea; else next.push(idea);
+      return next;
+    }, [...selectedSection.ideas]),
+  }] : [] }), [project, selectedSection, previews, activeSectionId]);
   const plan = useMemo(() => buildSongPlan(previewProject), [previewProject]);
-  const latest = useRef({ plan, mix, previews, projectId:project.id, scope:activeSectionId ?? "scratch" });
-  useEffect(() => { latest.current={ plan, mix, previews, projectId:project.id, scope:activeSectionId ?? "scratch" }; }, [plan,mix,previews,project.id,activeSectionId]);
+  const latest = useRef({ plan, mix });
+  useEffect(() => { latest.current = { plan, mix }; }, [plan, mix]);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null), generation = useRef(0);
   const stop = useCallback(() => {
     generation.current++;
@@ -2331,7 +2412,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
   useEffect(() => {
     window.addEventListener("inspitivity-solo-preview",stop);
     return () => { window.removeEventListener("inspitivity-solo-preview",stop); stop(); };
-  }, [stop, project.id, selectedSection?.id, wholeSong]);
+  }, [stop, project.id, selectedSection?.id]);
   const start = async () => {
     stop();
     const token = generation.current;
@@ -2344,7 +2425,6 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
       const schedule = () => {
         const now=engine.get().currentTime;
         if (now > origin+cyclePlan.seconds) {
-          // Skip missed cycles when a background tab is throttled; never play a burst of late notes.
           origin += Math.max(1,Math.floor((now-origin)/Math.max(.1,cyclePlan.seconds)))*cyclePlan.seconds;
           cyclePlan=latest.current.plan; index=0;
         }
@@ -2364,10 +2444,11 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
           const delay=Math.max(0,origin+event.seconds-engine.get().currentTime);
           if (event.layer === "drums") {
             const instrument=(Object.entries(DRUM_PITCHES).find(([,pitch])=>pitch===event.pitch)?.[0] as DrumInstrument | undefined);
-            if (instrument) engine.drum(instrument,delay,event.velocity*settings.volume, (event.voice ?? "current") as DrumKit);
+            if (instrument) engine.drum(instrument,delay,event.velocity*settings.volume*.9, (event.voice ?? "current") as DrumKit);
           } else {
             const voice=(event.voice ?? (event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : "analog pulse")) as SynthVoice;
-            engine.tone(event.pitch,delay,event.secondsDuration,.065*event.velocity*settings.volume,voice);
+            const baseGain = event.layer === "chords" ? .052 : event.layer === "melody" ? .058 : .055;
+            engine.tone(event.pitch,delay,event.secondsDuration,baseGain*event.velocity*settings.volume,voice);
           }
         }
         setProgress(Math.max(0,Math.min(1,(now-origin)/Math.max(.1,cyclePlan.seconds))));
@@ -2375,23 +2456,32 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
       schedule(); timer.current=setInterval(schedule,25);
     } catch { setMessage("Audio could not start. Tap Play again."); stop(); }
   };
-  const updateMix=(layer:SongLayer, update:Partial<(typeof mix)[SongLayer]>) => setMix(current=>({...current,[layer]:{...current[layer],...update}}));
-  return <section className="section-player" aria-label="Shared song player">
-    <div className="section-player-heading"><div><p className="eyebrow">HEAR THE IDEA TOGETHER</p><b>{project.name}</b></div>
-      <label>Preview<select aria-label="Preview section" value={wholeSong ? "__song" : selectedSection?.id ?? ""} onChange={e => { stop(); setWholeSong(e.target.value === "__song"); if(e.target.value !== "__song") chooseSection(e.target.value); }}>
-        {project.sections.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}<option value="__song">Whole song</option>
+  const updateMix = (layer: SongLayer, settings: Partial<TrackMix>) => {
+    stop();
+    updateProject(current => ({
+      ...current,
+      sections: current.sections.map(section => section.id === selectedSection?.id ? {
+        ...section,
+        mix: { ...section.mix, [layer]: { ...sectionMix(section)[layer], ...settings } },
+      } : section),
+    }));
+  };
+  return <section className="section-player" aria-label="Current section player">
+    <div className="section-player-heading"><div><p className="eyebrow">CURRENT SECTION</p><b>{selectedSection?.name}</b></div>
+      <label>Section<select aria-label="Current section" value={selectedSection?.id ?? ""} onChange={e => { stop(); chooseSection(e.target.value); }}>
+        {project.sections.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
       </select></label>
-      <PlayButton playing={playing} label={wholeSong ? "song preview" : "section preview"} onClick={() => playing ? stop() : void start()} />
+      <PlayButton playing={playing} label="section preview" onClick={() => playing ? stop() : void start()} />
     </div>
     <progress aria-label="Playback position" max={1} value={progress} />
-    <details className="section-mixer"><summary>Mix layers · mute, solo & volume</summary><div className="mixer-grid">
-      {([ ["drums","Drums"], ["chords","Chords"], ["melody","Melody"], ["riff","Pattern"] ] as const).map(([layer,label])=><div className="mixer-channel" key={layer}><b>{label}</b>
+    <details className="section-mixer"><summary>Mix tracks</summary><div className="mixer-grid">
+      {LAYER_LABELS.map(([layer,label])=><div className="mixer-channel" key={layer}><b>{label}</b>
         <button aria-label={`Mute ${label}`} aria-pressed={mix[layer].muted} onClick={()=>updateMix(layer,{muted:!mix[layer].muted})}>Mute</button>
         <button aria-label={`Solo ${label}`} aria-pressed={mix[layer].solo} onClick={()=>updateMix(layer,{solo:!mix[layer].solo})}>Solo</button>
-        <input type="range" aria-label={`${label} volume`} min="0" max="1" step="0.05" value={mix[layer].volume} onChange={e=>updateMix(layer,{volume:Number(e.target.value)})} />
+        <label className="track-volume"><span>{Math.round(mix[layer].volume*100)}%</span><input type="range" aria-label={`${label} volume`} min="0" max="1" step="0.05" value={mix[layer].volume} onChange={e=>updateMix(layer,{volume:Number(e.target.value)})} /></label>
       </div>)}
     </div></details>
-    <p>{message || "Loops saved parts plus your current drafts. Missing layers stay silent. Edits enter on the next loop."}</p>
+    <p>{message || "Loops saved parts plus your current drafts. Missing layers stay silent. Mix settings are saved with this section."}</p>
     <button className="export-button" onClick={() => {
       const song=buildSongPlan(project);
       const tracks=([ ["drums","Drums",9,0], ["chords","Chords",0,89], ["melody","Melody",1,73], ["riff","Pattern",2,81] ] as const).map(([layer,name,channel,program])=>({name,channel,program,notes:song.events.filter(e=>e.layer===layer)}));

@@ -25,7 +25,7 @@ export function sectionFeel(project: Project, section?: SongSection): { energy: 
 }
 
 export type SongLayer = "drums" | "chords" | "melody" | "riff";
-export type SongEvent = { voice?: string; layer: SongLayer; pitch: number; start: number; duration: number; velocity: number; seconds: number; secondsDuration: number };
+export type SongEvent = { sectionId: string; voice?: string; layer: SongLayer; pitch: number; start: number; duration: number; velocity: number; seconds: number; secondsDuration: number };
 export type SongMarker = { start: number; seconds: number; meter: string; bpm: number; name?: string };
 export function buildSongPlan(project: Project) {
   const events: SongEvent[] = [], markers: SongMarker[] = [];
@@ -48,7 +48,7 @@ export function buildSongPlan(project: Project) {
     const add = (layer: SongLayer, pitch: number, start: number, duration: number, velocity: number) => {
       if (![pitch,start,duration,velocity].every(Number.isFinite) || start < 0 || start >= length || duration <= 0) return;
       const end = Math.min(length, start+duration);
-      events.push({ voice: section.ideas.find(i => i.type === layer)?.voice, layer, pitch, start: quarterOffset+toQuarter(start), duration: toQuarter(end)-toQuarter(start), velocity, seconds: secondOffset+start*unitSeconds, secondsDuration: (end-start)*unitSeconds });
+      events.push({ sectionId: section.id, voice: section.ideas.find(i => i.type === layer)?.voice, layer, pitch, start: quarterOffset+toQuarter(start), duration: toQuarter(end)-toQuarter(start), velocity, seconds: secondOffset+start*unitSeconds, secondsDuration: (end-start)*unitSeconds });
     };
     for (const layer of ["chords", "melody", "riff", "drums"] as const) {
       const idea = section.ideas.find(i => i.type === layer);

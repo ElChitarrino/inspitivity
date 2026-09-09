@@ -16,8 +16,8 @@ export const metadata: Metadata = {
   title: "Inspitivity — Your songwriting partner",
   description: "A local-first songwriting workspace for capturing, shaping, and arranging musical ideas.",
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: "/icon-192.png",
+    shortcut: "/icon-192.png",
     apple: "/icon-192.png",
   },
   manifest: "/manifest.webmanifest",

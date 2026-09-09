@@ -38,7 +38,7 @@ test("the songwriting workspace is installable on a phone", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.match(serviceWorker, /inspitivity-shell-v3/);
+  assert.match(serviceWorker, /inspitivity-shell-v4/);
 });
 
 test("mobile playback explicitly unlocks and masters the Web Audio graph", () => {
@@ -70,6 +70,22 @@ test("arrangement sections expose vertical ordering and a single current length"
   assert.match(source, /Move \$\{section.name\} down/);
   assert.match(source, /value=\{section.bars\}/);
   assert.match(source, /Section length/);
+});
+
+test("arrangement sections own playback and persistent per-track mixing", async () => {
+  const theme = await readFile(resolve(process.cwd(), "app/theme.css"), "utf8");
+  assert.match(source, /Mix tracks/);
+  assert.match(source, /DEFAULT_SECTION_MIX/);
+  assert.match(source, /mix: \{ \.\.\.section\.mix/);
+  assert.match(source, /event\.sectionId/);
+  assert.match(source, /\["drums", "chords", "melody", "riff"\]\.includes\(screen\)/);
+  assert.match(theme, /\.project-screen \.topbar\{position:sticky/);
+});
+
+test("the supplied Inspitivity artwork is used for navigation and installed-app icons", async () => {
+  const layout = await readFile(resolve(process.cwd(), "app/layout.tsx"), "utf8");
+  assert.match(source, /<img src="\/icon-192\.png" alt=""/);
+  assert.match(layout, /icon: "\/icon-192\.png"/);
 });
 
 test("each asset slot opens its typed editor and retains existing notes separately", () => {
