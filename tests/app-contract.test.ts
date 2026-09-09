@@ -205,7 +205,7 @@ test("project tempo and key are shared by every musical tool", () => {
   );
 });
 
-test("chords and melodies can add a synchronized project-tempo click while listening", () => {
+test("chords, melody, drums, and patterns can add a synchronized project-tempo click while listening", () => {
   assert.match(source, /function scheduleClickTrack/);
   assert.match(source, /Enable click during listening/);
   assert.match(
@@ -214,6 +214,9 @@ test("chords and melodies can add a synchronized project-tempo click while liste
   );
   assert.doesNotMatch(source, /useWorkspaceMetronome/);
   assert.match(source, /metronomeEnabled=\{toolMetronomeEnabled\}/);
+  const drumTool = source.slice(source.indexOf("function DrumTool"), source.indexOf("function Metronome"));
+  assert.match(drumTool, /scheduleClickTrack\(engine, phraseBeats, beatSeconds, drumMeter\)/);
+  assert.match(drumTool, /metronomeEnabled=\{metronomeEnabled\}/);
 });
 
 test("melody notes preserve the phrase while pitch and duration are edited by drag", () => {

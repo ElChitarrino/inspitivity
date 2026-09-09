@@ -1497,6 +1497,8 @@ export default function InspitivityApp({ account, signOutPath }: {
           back={backFromMusicTool}
           save={saveIdea}
           go={navigate}
+          metronomeEnabled={toolMetronomeEnabled}
+          toggleMetronome={() => setToolMetronomeEnabled((enabled) => !enabled)}
         />
       )}
       {screen === "riff" && selected && (
@@ -3762,6 +3764,8 @@ function TransitionTool({
   back,
   save,
   go,
+  metronomeEnabled,
+  toggleMetronome,
 }: {
   idea?: Idea;
   project: Project;
@@ -3875,6 +3879,8 @@ function DrumTool({
   back,
   save,
   go,
+  metronomeEnabled,
+  toggleMetronome,
 }: {
   idea?: Idea;
   project: Project;
@@ -3884,10 +3890,13 @@ function DrumTool({
   back: () => void;
   save: SaveIdea;
   go: (s: Screen) => void;
+  metronomeEnabled: boolean;
+  toggleMetronome: () => void;
 }) {
-  const beatsPerBar = section
-    ? meterBeats(sectionMeterMap(section, project.meter)[0])
-    : meterBeats(project.meter);
+  const drumMeter = section
+    ? sectionMeterMap(section, project.meter)[0]
+    : project.meter;
+  const beatsPerBar = meterBeats(drumMeter);
   const grooveContext = useMemo(
     () => inferGrooveContext(project, section),
     [project, section],
@@ -3927,7 +3936,9 @@ function DrumTool({
   const beatSeconds = beatDurationSeconds(project.bpm);
   const play = useCallback(() => {
     playDrumLoop(engine, loop, 0, 1, phraseBeats, beatSeconds, voice);
-  }, [engine, loop, phraseBeats, beatSeconds, voice]);
+    if (metronomeEnabled)
+      scheduleClickTrack(engine, phraseBeats, beatSeconds, drumMeter);
+  }, [engine, loop, phraseBeats, beatSeconds, voice, metronomeEnabled, drumMeter]);
   const transport = useLoopTransport(
     play,
     progressionLoopDurationMs(phraseBeats, project.bpm),
@@ -3970,7 +3981,12 @@ function DrumTool({
         go={go}
         active="drums"
       />
-      <ProjectContext project={project} update={updateProject} />
+      <ProjectContext
+        project={project}
+        update={updateProject}
+        metronomeEnabled={metronomeEnabled}
+        toggleMetronome={toggleMetronome}
+      />
       {section && (
         <p className="destination-name">
           Editing {section.name} · repeats for {section.bars} bars
@@ -4050,7 +4066,7 @@ function DrumTool({
                 {idea ? "Editing saved drum loop" : "Your drum loop"}
               </p>
               <h2>
-                {energy} {style} pocket · {project.meter}
+                {energy} {style} pocket · {drumMeter}
               </h2>
             </div>
             <PlayButton playing={transport.mode !== "stopped"} label="drum loop"
@@ -4125,7 +4141,7 @@ function DrumTool({
               save(
                 "drums",
                 `${energy} ${style} drum loop`,
-                `${loop.length} hits · ${project.meter}`,
+                `${loop.length} hits · ${drumMeter}`,
                 loop.map(
                   (hit) => `${hit.instrument}|${hit.step}|${hit.velocity}|${phraseBeats}`,
                 ),
@@ -4142,7 +4158,7 @@ function DrumTool({
                 createMidiFile({
                   name: `${project.name} drums`,
                   bpm: project.bpm,
-                  meter: project.meter,
+                  meter: drumMeter,
                   notes: loop.map((hit) => ({ pitch: DRUM_MIDI_NOTES[hit.instrument], start: hit.step / 4, duration: 0.12, velocity: hit.velocity, channel: 9 })),
                   program: 0,
                 }),
