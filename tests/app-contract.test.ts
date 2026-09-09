@@ -28,6 +28,18 @@ test("projects and recordings retain an offline copy alongside private cloud syn
   assert.match(source, /navigator\.mediaDevices\.getUserMedia/);
 });
 
+test("the app requires a ChatGPT account and scopes every local cache to it", async () => {
+  const page = await readFile(resolve(process.cwd(), "app/page.tsx"), "utf8");
+  const auth = await readFile(resolve(process.cwd(), "app/chatgpt-auth.ts"), "utf8");
+  const storage = await readFile(resolve(process.cwd(), "app/workspace-storage.ts"), "utf8");
+  assert.match(page, /requireChatGPTUser\("\/"\)/);
+  assert.match(page, /account=\{\{ userId: user\.userId/);
+  assert.match(auth, /oai-authenticated-user-id/);
+  assert.match(storage, /inspitivity-projects:\$\{accountKey\}/);
+  assert.match(storage, /inspitivity-legacy-owner-v1/);
+  assert.match(storage, /Synced across your devices/);
+});
+
 test("the songwriting workspace is installable on a phone", async () => {
   const layout = await readFile(resolve(process.cwd(), "app/layout.tsx"), "utf8");
   const manifest = await readFile(resolve(process.cwd(), "app/manifest.ts"), "utf8");
@@ -38,7 +50,8 @@ test("the songwriting workspace is installable on a phone", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.match(serviceWorker, /inspitivity-shell-v4/);
+  assert.match(serviceWorker, /inspitivity-shell-v5/);
+  assert.match(serviceWorker, /cache\.delete\("\/"\)/);
 });
 
 test("mobile playback explicitly unlocks and masters the Web Audio graph", () => {

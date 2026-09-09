@@ -61,3 +61,8 @@ html[data-theme="crimson"] .piano-note{background:var(--mint)}
 .mixer-channel:has(button[aria-pressed="true"]){border:1px solid color-mix(in srgb,var(--mint) 55%,var(--line))}
 
 @media(max-width:700px){.project-screen .topbar{margin-inline:-15px;padding:10px 15px}.embedded-mixer .mixer-grid{grid-template-columns:1fr}.track-volume{grid-template-columns:42px minmax(0,1fr)}}
+
+.account-sync{display:grid;gap:3px;min-width:0}.account-sync b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-size:14px}.account-sync span{font-size:12px}.account-actions{display:flex;align-items:center;gap:10px;flex:none}.account-actions a{color:var(--muted);font-size:12px;text-decoration:none}.account-actions a:hover,.account-actions a:focus-visible{color:var(--ink);text-decoration:underline}
+@media(max-width:700px){.account-actions{gap:5px}.account-actions a{padding:8px 2px}.account-sync b{font-size:13px}}
+
+.account-gate{min-height:100dvh;display:grid;place-content:center;justify-items:start;gap:12px;width:min(520px,calc(100% - 32px));margin:auto}.account-gate img{width:64px;height:64px;border-radius:14px}.account-gate h1{margin:4px 0;font-size:clamp(32px,7vw,54px);letter-spacing:-.05em}.account-gate>p:not(.eyebrow){margin:0 0 12px;color:var(--muted);font-size:16px;line-height:1.6}.account-gate .primary-button{display:inline-flex;text-decoration:none;margin:0;padding:14px 18px;border-radius:9px}

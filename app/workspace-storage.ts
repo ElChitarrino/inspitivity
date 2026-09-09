@@ -38,12 +38,16 @@ export async function getRecording(id: string) {
   return blob;
 }
 const jsonEqual = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-const storageKey = "inspitivity-projects";
-const baseKey = "inspitivity-cloud-base-v1";
-export function useCloudProjects(initial: Project[]) {
+const legacyStorageKey = "inspitivity-projects";
+const legacyBaseKey = "inspitivity-cloud-base-v1";
+const legacyOwnerKey = "inspitivity-legacy-owner-v1";
+export function useCloudProjects(initial: Project[], accountId: string) {
+  const accountKey = encodeURIComponent(accountId);
+  const storageKey = `inspitivity-projects:${accountKey}`;
+  const baseKey = `inspitivity-cloud-base-v1:${accountKey}`;
   const [projects, renderProjects] = useState(initial);
   const [ready, setReady] = useState(false);
-  const [status, setStatus] = useState("Opening your device copy…");
+  const [status, setStatus] = useState("Opening your account…");
   const current = useRef(initial);
   const base = useRef<Project[]>([]);
   const busy = useRef(false);
@@ -66,22 +70,29 @@ export function useCloudProjects(initial: Project[]) {
     mounted.current = true;
     const timer = window.setTimeout(() => {
       try {
-        const stored = localStorage.getItem(storageKey);
+        const legacyOwner = localStorage.getItem(legacyOwnerKey);
+        const canClaimLegacy = !legacyOwner || legacyOwner === accountId;
+        const scoped = localStorage.getItem(storageKey);
+        const stored = scoped ?? (canClaimLegacy ? localStorage.getItem(legacyStorageKey) : null);
         if (stored) {
           hadLocal.current = true;
           const parsed: unknown = JSON.parse(stored);
           if (!validProjects(parsed)) throw new Error("Invalid device data");
           current.current = parsed;
           renderProjects(parsed);
+          if (!scoped) {
+            localStorage.setItem(legacyOwnerKey, accountId);
+            localStorage.setItem(storageKey, stored);
+          }
         }
-        const savedBase: unknown = JSON.parse(localStorage.getItem(baseKey) ?? "[]");
+        const savedBase: unknown = JSON.parse(localStorage.getItem(baseKey) ?? (canClaimLegacy ? localStorage.getItem(legacyBaseKey) : null) ?? "[]");
         if (validProjects(savedBase)) base.current = savedBase;
         readyRef.current = true;
         setReady(true);
       } catch { setStatus("Could not read your device copy. Export or recover it before syncing."); }
     }, 0);
     return () => { mounted.current = false; clearTimeout(timer); };
-  }, []);
+  }, [accountId, baseKey, storageKey]);
   const sync = useCallback(async () => {
     if (!readyRef.current || busy.current) return;
     if (!navigator.onLine) { setStatus("Offline · changes kept on this device"); return; }
@@ -90,7 +101,7 @@ export function useCloudProjects(initial: Project[]) {
     try {
       for (let attempt = 0; attempt < 3; attempt++) {
         const response = await fetch("/api/workspace", { cache: "no-store" });
-        if (response.status === 401) { setStatus("Device mode · ideas and recordings stay in this browser. Download a backup to transfer them."); return; }
+        if (response.status === 401) { setStatus("Your session expired · sign in again to sync"); return; }
         if (!response.ok) throw new Error("Sync unavailable · device copy kept");
         const remote = await response.json();
         if (!validProjects(remote.projects) || !Number.isInteger(remote.revision)) throw new Error("Unexpected sync response · device copy kept");

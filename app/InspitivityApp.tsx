@@ -1182,8 +1182,11 @@ function useLoopTransport(
   return { mode, start, stop };
 }
 
-export default function InspitivityApp() {
-  const [projects, setProjects, cloud] = useCloudProjects(STARTER_PROJECTS);
+export default function InspitivityApp({ account, signOutPath }: {
+  account: { userId: string; displayName: string; email: string };
+  signOutPath: string;
+}) {
+  const [projects, setProjects, cloud] = useCloudProjects(STARTER_PROJECTS, account.userId);
   const [theme, setTheme] = useTheme();
   const [previews, setPreviews] = useState<Record<string, DraftPreview>>({});
   const phoneInstall = usePhoneInstall();
@@ -1411,7 +1414,10 @@ export default function InspitivityApp() {
   return (
     <main className={`app-shell ${screen}-screen`}>
       <div className="studio-workspace">
-      <div className="sync-status"><span role="status">{cloud.status}</span><button onClick={() => void cloud.sync()}>Sync now</button></div>
+      <div className="sync-status">
+        <div className="account-sync"><b>{account.displayName}</b><span role="status">{cloud.status}</span></div>
+        <div className="account-actions"><button onClick={() => void cloud.sync()}>Sync now</button><a href={signOutPath} target="_top">Sign out</a></div>
+      </div>
       {selected && ["drums", "chords", "melody", "riff"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} chooseSection={(id) => { setDraftSectionId(id); setEditingIdea(null); }} updateProject={updateSelected} />}
       <DraftSession key={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} id={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} publish={publishPreview}>
       {screen === "home" && (
@@ -4451,9 +4457,9 @@ function Settings({
         </div>
       </div>
       <div className="settings-card compact">
-        <h3>About this prototype</h3>
+        <h3>Account and storage</h3>
         <p>
-          Musical generation runs on-device. Without sign-in, projects, recordings and drafts stay in this browser. Download a backup to transfer your work. When signed in, saved projects and recordings also sync privately to your account.
+          Projects and recordings are stored privately under your signed-in ChatGPT account and synchronized across devices. This device also keeps a local working copy for resilience. Drafts that have not been saved remain on this device.
         </p>
       </div>
     </>

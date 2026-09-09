@@ -1,4 +1,4 @@
-const CACHE = "inspitivity-shell-v4";
+const CACHE = "inspitivity-shell-v5";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
@@ -38,6 +38,11 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   // Private song data must never be served from an old service-worker cache.
   if (url.pathname.startsWith("/api/")) return;
+
+  if (["/signin-with-chatgpt", "/signout-with-chatgpt", "/callback"].includes(url.pathname)) {
+    event.respondWith(caches.open(CACHE).then((cache) => cache.delete("/")).then(() => fetch(request)));
+    return;
+  }
 
   if (request.mode === "navigate") {
     event.respondWith(
