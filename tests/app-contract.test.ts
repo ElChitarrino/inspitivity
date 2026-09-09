@@ -106,6 +106,22 @@ test("arrangement sections and ideas can be removed", () => {
   assert.match(source, /aria-label=\{`Remove \$\{idea\.name\}`\}/);
 });
 
+test("projects can be deleted only after explicit confirmation", () => {
+  assert.match(source, /ConfirmProjectDelete/);
+  assert.match(source, /Delete project/);
+  assert.match(source, /projectToDelete/);
+  assert.match(source, /projects\.filter/);
+  assert.match(source, /role="alertdialog"/);
+});
+
+test("settings expose both persistent app themes", async () => {
+  const layout = await readFile(resolve(process.cwd(), "app/layout.tsx"), "utf8");
+  assert.match(source, /Black \/ Red \/ White/);
+  assert.match(source, /Electric Green/);
+  assert.match(source, /localStorage\.setItem\("inspitivity-theme"/);
+  assert.match(layout, /inspitivity-theme/);
+});
+
 test("asset tiles expose playback and deletion, with unavailable audio disabled", () => {
   assert.match(source, /<PlayButton compact className="asset-play"/);
   assert.match(source, /disabled=\{!playable\}/);

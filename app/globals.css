@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "./drums.css" layer(legacy);
 @import "./studio.css" layer(studio);
+@import "./theme.css";
 @layer legacy, studio;
 @layer legacy {
 

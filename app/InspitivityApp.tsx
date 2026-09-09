@@ -65,6 +65,7 @@ import { sectionFeel, buildSongPlan, type SongLayer } from "../packages/workspac
 import type { Idea, SongSection, Project } from "../packages/workspace";
 import { varyNotes } from "../packages/workspace/variation";
 import { VariationControls } from "./variation-controls";
+import { isTheme, resolveInitialTheme, type Theme } from "../packages/theme";
 
 type IdeaDraft = Omit<Idea, "id" | "recordingId">;
 type SaveIdea = (type: Idea["type"], name: string, detail: string, data?: string[], chooseDestination?: boolean, voice?: string) => void;
@@ -96,6 +97,25 @@ type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
+
+function useTheme() {
+  const [theme, setThemeState] = useState<Theme>("crimson");
+  useEffect(() => {
+    const nextTheme = resolveInitialTheme(
+      localStorage.getItem("inspitivity-theme"),
+      localStorage.getItem("inspitivity-projects") !== null,
+    );
+    document.documentElement.dataset.theme = nextTheme;
+    setThemeState(nextTheme);
+  }, []);
+  const setTheme = useCallback((nextTheme: Theme) => {
+    if (!isTheme(nextTheme)) return;
+    localStorage.setItem("inspitivity-theme", nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+    setThemeState(nextTheme);
+  }, []);
+  return [theme, setTheme] as const;
+}
 
 type SketchPreset = {
   id: "emotive" | "neo-soul" | "prog" | "heavy";
@@ -1145,6 +1165,7 @@ function useLoopTransport(
 
 export default function InspitivityApp() {
   const [projects, setProjects, cloud] = useCloudProjects(STARTER_PROJECTS);
+  const [theme, setTheme] = useTheme();
   const [previews, setPreviews] = useState<Record<string, DraftPreview>>({});
   const phoneInstall = usePhoneInstall();
   const [screen, setScreen] = useState<Screen>("home");
@@ -1153,6 +1174,7 @@ export default function InspitivityApp() {
     null,
   );
   const [toast, setToast] = useState("");
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [editingIdea, setEditingIdea] = useState<Idea | null>(null);
   const [pendingSave, setPendingSave] = useState<IdeaDraft | null>(null);
   const savedDraftId = useRef<string | null>(null);
@@ -1199,6 +1221,19 @@ export default function InspitivityApp() {
     setSelectedId(project.id);
     setModal(null);
     setScreen("project");
+  };
+  const confirmDeleteProject = () => {
+    if (!projectToDelete) return;
+    const remaining = projects.filter(
+      (project) => project.id !== projectToDelete.id,
+    );
+    setProjects(remaining);
+    if (selectedId === projectToDelete.id) {
+      setSelectedId(remaining[0]?.id ?? "");
+      setScreen("projects");
+    }
+    notify(`Deleted ${projectToDelete.name}`);
+    setProjectToDelete(null);
   };
   const launchSketch = (preset: SketchPreset) => {
     const project = buildPlayableSketch(preset);
@@ -1375,6 +1410,7 @@ export default function InspitivityApp() {
           projects={projects}
           openProject={openProject}
           create={() => setModal("project")}
+          deleteProject={setProjectToDelete}
         />
       )}
       {screen === "project" && selected && (
@@ -1385,6 +1421,7 @@ export default function InspitivityApp() {
           record={() => setModal("record")}
           openSectionTool={openSectionTool}
           editIdea={editArrangementIdea}
+          deleteProject={() => setProjectToDelete(selected)}
           clearAssetDraft={(sectionId,idea,removeDraft=false) => {
             window.dispatchEvent(new Event("inspitivity-solo-preview"));
             setPreviews(current=>Object.fromEntries(Object.entries(current).filter(([key])=>key!==`${selected.id}/${sectionId}/${idea.type}` && key!==`${selected.id}/scratch/${idea.type}`)));
@@ -1475,6 +1512,8 @@ export default function InspitivityApp() {
       {screen === "settings" && (
         <Settings
           projects={projects}
+          theme={theme}
+          setTheme={setTheme}
           phoneInstall={phoneInstall}
           notify={notify}
           backUp={async () => {
@@ -1531,6 +1570,13 @@ export default function InspitivityApp() {
           idea={pendingSave}
           close={() => setPendingSave(null)}
           save={saveIdeaTo}
+        />
+      )}
+      {projectToDelete && (
+        <ConfirmProjectDelete
+          project={projectToDelete}
+          close={() => setProjectToDelete(null)}
+          confirm={confirmDeleteProject}
         />
       )}
       {toast && (
@@ -1739,10 +1785,12 @@ function Projects({
   projects,
   openProject,
   create,
+  deleteProject,
 }: {
   projects: Project[];
   openProject: (id: string) => void;
   create: () => void;
+  deleteProject: (project: Project) => void;
 }) {
   return (
     <>
@@ -1753,23 +1801,33 @@ function Projects({
       </div>
       <div className="projects-list">
         {projects.map((p, index) => (
-          <button key={p.id} onClick={() => openProject(p.id)}>
-            <span className={`project-avatar ${COLORS[index % COLORS.length]}`}>
-              <Wave tone={COLORS[index % COLORS.length]} bars={5} />
-            </span>
-            <div>
-              <h3>{p.name}</h3>
-              <p>
-                {p.sections.length} sections · {p.bpm} BPM · {p.key}
-              </p>
-              <div className="mini-arrangement">
-                {p.sections.map((s) => (
-                  <i key={s.id} style={{ flex: s.bars }} />
-                ))}
+          <article className="project-row" key={p.id}>
+            <button className="project-open" onClick={() => openProject(p.id)}>
+              <span className={`project-avatar ${COLORS[index % COLORS.length]}`}>
+                <Wave tone={COLORS[index % COLORS.length]} bars={5} />
+              </span>
+              <div>
+                <h3>{p.name}</h3>
+                <p>
+                  {p.sections.length} sections · {p.bpm} BPM · {p.key}
+                </p>
+                <div className="mini-arrangement">
+                  {p.sections.map((s) => (
+                    <i key={s.id} style={{ flex: s.bars }} />
+                  ))}
+                </div>
               </div>
-            </div>
-            <b>→</b>
-          </button>
+              <b>→</b>
+            </button>
+            <button
+              className="project-delete-button"
+              onClick={() => deleteProject(p)}
+              aria-label={`Delete ${p.name}`}
+              title={`Delete ${p.name}`}
+            >
+              <TrashIcon />
+            </button>
+          </article>
         ))}
       </div>
     </>
@@ -1791,6 +1849,7 @@ function ProjectView({
   record,
   openSectionTool,
   editIdea,
+  deleteProject,
   clearAssetDraft,
 }: {
   project: Project;
@@ -1802,6 +1861,7 @@ function ProjectView({
     tool: "chords" | "melody" | "drums" | "riff" | "transition",
   ) => void;
   editIdea: (sectionId: string, idea: Idea) => void;
+  deleteProject: () => void;
   clearAssetDraft: (sectionId: string, idea: Idea, removeDraft?: boolean) => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -2131,6 +2191,7 @@ function ProjectView({
       <div className="project-actions">
         <button className="capture-action" onClick={record}>● Record idea</button>
         <button onClick={() => setAdding(true)}>＋ Add section</button>
+        <button className="danger-action" onClick={deleteProject}><TrashIcon /> Delete project</button>
       </div>
       {adding && (
         <div className="modal-layer">
@@ -4192,6 +4253,8 @@ function Settings({
   backUp,
   phoneInstall,
   notify,
+  theme,
+  setTheme,
 }: {
   projects: Project[];
   backUp: () => void | Promise<void>;
@@ -4199,6 +4262,8 @@ function Settings({
   syncStatus: string;
   phoneInstall: ReturnType<typeof usePhoneInstall>;
   notify: (message: string) => void;
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
 }) {
   const installOnPhone = async () => {
     const installed = await phoneInstall.install();
@@ -4208,6 +4273,33 @@ function Settings({
   return (
     <>
       <Topbar title="Settings" subtitle="Your ideas, on every device" />
+      <div className="settings-card compact theme-settings">
+        <p className="eyebrow">Appearance</p>
+        <h2>Theme</h2>
+        <p>Choose how Inspitivity looks on this device.</p>
+        <div className="theme-grid" role="radiogroup" aria-label="Theme">
+          <button
+            className={`theme-choice crimson-preview ${theme === "crimson" ? "active" : ""}`}
+            onClick={() => setTheme("crimson")}
+            role="radio"
+            aria-checked={theme === "crimson"}
+          >
+            <span className="theme-swatch"><i /><i /><i /></span>
+            <b>Black / Red / White</b>
+            <small>Focused · heavier</small>
+          </button>
+          <button
+            className={`theme-choice electric-preview ${theme === "electric" ? "active" : ""}`}
+            onClick={() => setTheme("electric")}
+            role="radio"
+            aria-checked={theme === "electric"}
+          >
+            <span className="theme-swatch"><i /><i /><i /></span>
+            <b>Electric Green</b>
+            <small>Creative · exploratory</small>
+          </button>
+        </div>
+      </div>
       <div className="settings-card">
         <span className="settings-icon">◎</span>
         <h2>Your ideas stay yours.</h2>
@@ -4275,6 +4367,40 @@ function Settings({
         </p>
       </div>
     </>
+  );
+}
+
+function ConfirmProjectDelete({
+  project,
+  close,
+  confirm,
+}: {
+  project: Project;
+  close: () => void;
+  confirm: () => void;
+}) {
+  return (
+    <div className="modal-layer" role="presentation">
+      <div
+        className="modal small confirm-delete"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delete-project-title"
+        aria-describedby="delete-project-copy"
+      >
+        <button className="modal-close" onClick={close} aria-label="Close">×</button>
+        <p className="eyebrow danger-text">Delete project</p>
+        <h2 id="delete-project-title">Delete “{project.name}”?</h2>
+        <p id="delete-project-copy">
+          This removes the project and its arrangement from your devices. This
+          cannot be undone after sync.
+        </p>
+        <div className="confirm-actions">
+          <button className="secondary-button" onClick={close}>Cancel</button>
+          <button className="danger-button" onClick={confirm}>Delete project</button>
+        </div>
+      </div>
+    </div>
   );
 }
 

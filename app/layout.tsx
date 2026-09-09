@@ -41,7 +41,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="crimson" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("inspitivity-theme");var valid=t==="electric"||t==="crimson";if(!valid)t=localStorage.getItem("inspitivity-projects")!==null?"electric":"crimson";document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme="crimson"}})();`,
+          }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
