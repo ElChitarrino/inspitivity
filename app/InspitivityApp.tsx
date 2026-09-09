@@ -13,6 +13,7 @@ import {
   voiceChord,
   decodeVoicing,
   type VoicingStyle,
+  type HarmonicTension,
   Complexity,
   generateChordProgression,
   generateMelody,
@@ -23,6 +24,7 @@ import {
   notePitchClass,
   ProgressionOpening,
   Root,
+  seededRandom,
 } from "../packages/music-theory";
 import { createMidiFile, type MidiNoteEvent } from "../packages/midi";
 import {
@@ -63,7 +65,7 @@ import { useCloudProjects, saveRecording, getRecording, downloadBackup, restoreB
 import { DraftSession, DraftToolbar, useDraftState, useDraftPreview, type DraftPreview } from "./draft-session";
 import { sectionFeel, buildSongPlan, type SongLayer } from "../packages/workspace/music";
 import type { Idea, SongSection, Project, TrackMix, SectionEnergy } from "../packages/workspace";
-import { varyNotes } from "../packages/workspace/variation";
+import { varyIdeaData, varyNotes } from "../packages/workspace/variation";
 import { VariationControls } from "./variation-controls";
 import { isTheme, resolveInitialTheme, type Theme } from "../packages/theme";
 
@@ -139,6 +141,8 @@ function useTheme() {
       localStorage.getItem("inspitivity-projects") !== null,
     );
     document.documentElement.dataset.theme = nextTheme;
+    // Theme storage is an external source; sync it once after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setThemeState(nextTheme);
   }, []);
   const setTheme = useCallback((nextTheme: Theme) => {
@@ -164,6 +168,7 @@ type SketchPreset = {
   energy: GrooveEnergy;
   colour: HarmonyColour;
   opening: ProgressionOpening;
+  tension: HarmonicTension;
 };
 
 const SYNTH_VOICES: SynthVoice[] = [
@@ -232,6 +237,7 @@ const SKETCH_PRESETS: SketchPreset[] = [
     energy: "mellow",
     colour: "diatonic",
     opening: "away",
+    tension: "smooth",
   },
   {
     id: "neo-soul",
@@ -247,6 +253,7 @@ const SKETCH_PRESETS: SketchPreset[] = [
     energy: "balanced",
     colour: "diatonic",
     opening: "away",
+    tension: "balanced",
   },
   {
     id: "prog",
@@ -262,6 +269,7 @@ const SKETCH_PRESETS: SketchPreset[] = [
     energy: "balanced",
     colour: "quartal",
     opening: "surprise",
+    tension: "balanced",
   },
   {
     id: "heavy",
@@ -277,6 +285,7 @@ const SKETCH_PRESETS: SketchPreset[] = [
     energy: "powerful",
     colour: "pedal point",
     opening: "surprise",
+    tension: "bold",
   },
 ];
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -324,8 +333,10 @@ const makeChordDrafts = (
   colour: HarmonyColour = "diatonic",
   opening: ProgressionOpening = "away",
   voicing: VoicingStyle = "mixed",
+  tension: HarmonicTension = "balanced",
+  preferredPitchClasses: number[] = [],
 ): ChordDraft[] =>
-  generateChordProgression({ root, mode, bars: count, complexity, seed, opening }).map(
+  generateChordProgression({ root, mode, bars: count, complexity, seed, opening, tension, preferredPitchClasses }).map(
     (chord, index) => {
       const wiggle = Math.round(
         (variation / 100) * Math.max(1, defaultBeats - 1),
@@ -359,6 +370,45 @@ const decodeMelodyIdea = (idea: Idea) =>
       };
     },
   );
+const sectionPitchContext = (section?: SongSection, omitType?: Idea["type"]) => {
+  if (!section) return [];
+  const weighted: number[] = [];
+  for (const item of section.ideas) {
+    if (item.type === omitType || !item.data?.length) continue;
+    if (item.type === "melody")
+      item.data.forEach((value, index) => {
+        const pitch = Number(value.split("|")[3]);
+        if (Number.isFinite(pitch)) weighted.push(pitch % 12, ...(index % 4 === 0 ? [pitch % 12] : []));
+      });
+    if (item.type === "riff" || item.type === "bass")
+      item.data.forEach((value) => {
+        const pitch = Number(value.split("|")[0]);
+        if (Number.isFinite(pitch)) weighted.push(pitch % 12);
+      });
+  }
+  return weighted.map((pitch) => (pitch + 12) % 12);
+};
+const sectionRhythmicAnchors = (section?: SongSection, omitType?: Idea["type"]) => {
+  if (!section) return [];
+  const starts: number[] = [];
+  for (const item of section.ideas) {
+    if (item.type === omitType || !item.data?.length || !["melody","riff","bass"].includes(item.type)) continue;
+    item.data.forEach((value,index) => {
+      const fields=value.split("|");
+      const start=Number(item.type === "melody" ? fields[1] : fields[1]);
+      const accented=item.type === "melody" ? index%4===0 : fields[3] === "1";
+      if(Number.isFinite(start) && accented) starts.push(start);
+    });
+  }
+  return [...new Set(starts)].sort((a,b)=>a-b);
+};
+const complementaryMelodyDensity = (section: SongSection | undefined, meter: string) => {
+  if(!section) return .6;
+  const beats=Math.max(1,sectionBeatTotal(section,meter));
+  const events=section.ideas.filter(item=>["riff","bass"].includes(item.type)).reduce((sum,item)=>sum+(item.data?.length??0),0);
+  const activity=events/beats;
+  return activity>.9 ? .42 : activity<.3 ? .68 : .55;
+};
 const isDrumInstrument = (value: string): value is DrumInstrument =>
   (DRUM_INSTRUMENTS as readonly string[]).includes(value);
 const decodeDrumIdea = (idea: Idea): DrumHit[] =>
@@ -408,7 +458,7 @@ const generateBassLine = (
     .map((value) => { const [symbol, beats] = value.split("|"); return { symbol, beats: Math.max(.25, Number(beats) || 4) }; });
   const rootAt = (beat: number) => {
     const cycle = harmony.reduce((sum, chord) => sum + chord.beats, 0) || length;
-    let cursor = 0, position = beat % cycle;
+    let cursor = 0; const position = beat % cycle;
     for (const chord of harmony) { cursor += chord.beats; if (position < cursor) return bassRootPitch(chord.symbol); }
     return bassRootPitch(fallbackRoot);
   };
@@ -482,106 +532,79 @@ const chordRole = (symbol: string, root: Root, mode: Mode) => {
   return `${minor ? numeral.toLowerCase() : numeral}${diminished ? "°" : ""} · ${role}`;
 };
 
+function reinforceDrumAccents(hits: DrumHit[], starts: number[], phraseSteps: number) {
+  const next = hits.map((hit) => ({ ...hit }));
+  starts.slice(0, 6).forEach((start) => {
+    const step = Math.round(start * 4);
+    if (step >= 0 && step < phraseSteps && !next.some((hit) => hit.instrument === "kick" && hit.step === step))
+      next.push({ instrument:"kick", step, velocity:.78 });
+  });
+  return next.sort((a,b) => a.step-b.step);
+}
+
 function buildPlayableSketch(preset: SketchPreset): Project {
   const seed = freshSeed();
+  const random = seededRandom(seed);
+  const pick = <T,>(values: T[]) => values[Math.floor(random() * values.length)];
   const beatsPerBar = meterBeats(preset.meter);
-  const sections = [
-    { name: "Intro", bars: 4, color: "violet", density: 0.38, notes: 12 },
-    { name: "Verse", bars: 4, color: "mint", density: 0.54, notes: 20 },
-    { name: "Hook", bars: 4, color: "amber", density: 0.68, notes: 26 },
-  ].map((shape, sectionIndex): SongSection => {
+  const forms: Record<SketchPreset["id"], Array<Array<{ name:string; color:string; energy:number }>>> = {
+    emotive: [
+      [{name:"Intro",color:"violet",energy:.32},{name:"Verse",color:"mint",energy:.48},{name:"Bloom",color:"amber",energy:.64}],
+      [{name:"Verse",color:"blue",energy:.4},{name:"Lift",color:"violet",energy:.58},{name:"Release",color:"mint",energy:.34},{name:"Outro",color:"amber",energy:.24}],
+    ],
+    "neo-soul": [
+      [{name:"Pocket A",color:"mint",energy:.48},{name:"Turn",color:"violet",energy:.58},{name:"Hook",color:"amber",energy:.66}],
+      [{name:"Intro",color:"blue",energy:.36},{name:"Verse",color:"mint",energy:.52},{name:"Lift",color:"violet",energy:.62},{name:"Return",color:"amber",energy:.54}],
+    ],
+    prog: [
+      [{name:"Theme A",color:"violet",energy:.44},{name:"Development",color:"blue",energy:.6},{name:"Return",color:"amber",energy:.7}],
+      [{name:"Intro",color:"mint",energy:.36},{name:"Theme",color:"violet",energy:.54},{name:"Contrast",color:"blue",energy:.46},{name:"Climax",color:"coral",energy:.76}],
+    ],
+    heavy: [
+      [{name:"Intro",color:"blue",energy:.34},{name:"Riff A",color:"violet",energy:.62},{name:"Impact",color:"coral",energy:.82}],
+      [{name:"Pulse",color:"mint",energy:.5},{name:"Riff A",color:"violet",energy:.7},{name:"Contrast",color:"blue",energy:.42},{name:"Return",color:"coral",energy:.86}],
+    ],
+  };
+  const form = pick(forms[preset.id]);
+  const sections = form.map((formSection, sectionIndex): SongSection => {
     const sectionSeed = seed + sectionIndex * 17;
+    const finalSection = sectionIndex === form.length - 1;
+    const bars = pick(preset.id === "emotive" ? [4,4,6,8] : [4,4,8]);
+    const density = Math.max(.25, Math.min(.9, formSection.energy + (random()-.5)*.12));
+    const chordCount = pick(preset.id === "neo-soul" || preset.id === "prog" ? [4,4,5,6] : [3,4,4,5]);
     const chords = makeChordDrafts(
-      preset.root,
-      preset.mode,
-      4,
+      preset.root, preset.mode, chordCount,
       preset.id === "neo-soul" || preset.id === "prog" ? "advanced" : "medium",
-      sectionSeed,
-      beatsPerBar,
-      sectionIndex === 2 ? 12 : 0,
-      preset.colour,
-      sectionIndex === 2 ? "tonic" : preset.opening,
+      sectionSeed, beatsPerBar, finalSection ? pick([0,8,14]) : pick([0,0,6]),
+      preset.colour, finalSection && random() > .45 ? "tonic" : preset.opening,
+      pick(["mixed","open","drop 2"] as VoicingStyle[]), preset.tension,
     );
-    const rawMelody = generateMelody({
-      root: preset.root,
-      mode: preset.mode,
-      notes: shape.notes,
-      density: shape.density,
-      mood: sectionIndex === 0 ? "calm" : preset.mood,
-      seed: sectionSeed + 7,
-    });
-    const melody = fitMelodyToChords(rawMelody, chords);
-    const drums = generateDrumLoop({
-      beatsPerBar,
-      density: shape.density,
-      style: sectionIndex === 0 ? "steady" : preset.groove,
-      energy: sectionIndex === 0 ? "mellow" : preset.energy,
-      seed: sectionSeed + 13,
-      bars: 4,
-    });
+    const melody = fitMelodyToChords(generateMelody({
+      root:preset.root, mode:preset.mode,
+      notes:Math.round(10+density*pick([18,22,26])), density,
+      mood:sectionIndex===0 ? "calm" : preset.mood, seed:sectionSeed+7,
+      shape:pick(sectionIndex===0 ? ["floating","flow"] : finalSection ? ["hook","answer","flow"] : ["flow","answer"]),
+    }),chords);
+    const addRiff = (preset.id === "prog" || preset.id === "heavy") && (finalSection || random() > .58);
+    const riff = addRiff ? fitMelodyToChords(generateProgRiff({
+      root:preset.root, mode:preset.mode, beats:beatsPerBar,
+      cycle:preset.id === "heavy" ? pick([5,7]) : pick([5,7,9]),
+      grouping:preset.id === "heavy" ? "3+2+2" : "2+2+3",
+      density:preset.id === "heavy" ? .72 : .52, seed:sectionSeed+23,
+      startOffset:pick([.25,.5,1]), motion:preset.id === "heavy" ? "anchor" : "orbit",
+    }).map((note)=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),chords) : [];
+    let drums = generateDrumLoop({ beatsPerBar, density, style:sectionIndex===0 ? "steady" : preset.groove, energy:sectionIndex===0 ? "mellow" : preset.energy, seed:sectionSeed+13, bars });
+    drums = reinforceDrumAccents(drums,(riff.length ? riff : melody).filter((_,index)=>index%4===0).map(note=>note.start),beatsPerBar*bars*4);
     const ideas: Idea[] = [
-      {
-        id: uid(),
-        type: "chords",
-        name: `${shape.name} harmony`,
-        voice: "distorted guitar",
-        detail: chords.map((chord) => chord.name).join(" · "),
-        data: chords.map(encodeChord),
-      },
-      {
-        id: uid(),
-        type: "melody",
-        name: `${shape.name} motif`,
-        detail: melody.map((note) => note.note).join(" · "),
-        data: melody.map(
-          (note) => `${note.note}|${note.start}|${note.duration}|${note.pitch}`,
-        ),
-      },
-      {
-        id: uid(),
-        type: "drums",
-        name: `${shape.name} pocket`,
-        detail: `${drums.length} hits · ${preset.meter}`,
-        data: drums.map(
-          (hit) => `${hit.instrument}|${hit.step}|${hit.velocity}|${beatsPerBar*4}`,
-        ),
-      },
+      { id:uid(),type:"chords",name:`${formSection.name} harmony`,voice:preset.id==="heavy"?"distorted guitar":preset.id==="emotive"?"glass":"warm pad",detail:chords.map(chord=>chord.name).join(" · "),data:chords.map(encodeChord) },
+      { id:uid(),type:"melody",name:`${formSection.name} motif`,detail:melody.map(note=>note.note).join(" · "),data:melody.map(note=>`${note.note}|${note.start}|${note.duration}|${note.pitch}`) },
+      { id:uid(),type:"drums",name:`${formSection.name} pocket`,detail:`${drums.length} hits · ${preset.meter}`,data:drums.map(hit=>`${hit.instrument}|${hit.step}|${hit.velocity}|${beatsPerBar*4}`) },
     ];
-    if ((preset.id === "prog" || preset.id === "heavy") && sectionIndex === 2) {
-      const riff = generateProgRiff({
-        root: preset.root,
-        mode: preset.mode,
-        beats: beatsPerBar,
-        cycle: preset.id === "heavy" ? 5 : 7,
-        grouping: preset.id === "heavy" ? "3+2+2" : "2+2+3",
-        density: preset.id === "heavy" ? 0.72 : 0.52,
-        seed: sectionSeed + 23,
-        startOffset: 0.5,
-        motion: preset.id === "heavy" ? "anchor" : "orbit",
-      });
-      ideas.push({
-        id: uid(),
-        type: "riff",
-        name: "Hook pulse",
-        detail: `${riff.length} notes · ${preset.meter}`,
-        data: riff.map(
-          (note) =>
-            `${note.pitch}|${note.start}|${note.duration}|${note.accent ? 1 : 0}|${note.muted ? 1 : 0}`,
-        ),
-      });
-    }
-    const section: SongSection = {
-      id: uid(),
-      name: shape.name,
-      bars: shape.bars,
-      color: shape.color,
-      ideas,
-      meterMap: Array.from({ length: shape.bars }, () => preset.meter),
-      energy: sectionIndex === 0 ? "mellow" : preset.energy,
-    };
+    if(riff.length) ideas.push({ id:uid(),type:"riff",name:`${formSection.name} pulse`,detail:`${riff.length} notes · ${preset.meter}`,data:riff.map(note=>`${note.pitch}|${note.start}|${note.duration}|${note.accent?1:0}|${note.muted?1:0}`) });
+    const section: SongSection = { id:uid(),name:formSection.name,bars,color:formSection.color,ideas,meterMap:Array.from({length:bars},()=>preset.meter),energy:sectionIndex===0?"mellow":preset.energy };
     const sketchContext: Project = { id:"preview",name:preset.label,bpm:preset.bpm,meter:preset.meter,key:formatProjectKey(preset.root,preset.mode),updated:0,sections:[section] };
-    const bass = generateBassLine(sketchContext,section,sectionIndex === 0 ? "sustained" : "groove",true,sectionSeed+29);
-    ideas.push({ id:uid(),type:"bass",name:`${shape.name} bass`,detail:`${bass.length} notes · chord and kick aware`,data:bass.map(encodeBassEvent),voice:"deep bass" });
+    const bass = generateBassLine(sketchContext,section,sectionIndex===0?"sustained":"groove",true,sectionSeed+29);
+    ideas.push({ id:uid(),type:"bass",name:`${formSection.name} bass`,detail:`${bass.length} notes · chord and kick aware`,data:bass.map(encodeBassEvent),voice:"deep bass" });
     section.mix=automaticSectionMix(section);
     return section;
   });
@@ -782,6 +805,8 @@ function BottomNav({
   go: (s: Screen) => void;
   create: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const groups: { label: string; destinations: [Screen, string, string][] }[] = [
     { label: "Workspace", destinations: [["home", "⌂", "Studio"], ["projects", "▱", "Projects"]] },
     { label: "Create parts", destinations: [
@@ -795,21 +820,27 @@ function BottomNav({
   ];
   const mobilePrimary = new Set<Screen>(["home", "projects", "metronome", "settings"]);
   const creating = ["drums", "chords", "bass", "melody", "riff", "transition"].includes(screen);
-  return <nav className="studio-nav" aria-label="Main navigation">
-    <button className="studio-brand" aria-label="Inspitivity studio" onClick={() => go("home")}><span className="brand-mark"><img src="/icon-192.png" alt="" /></span><span>inspitivity<small>SONGWRITING STUDIO</small></span></button>
-    <button className="studio-create" aria-label="Create new" onClick={create}><b>＋</b><span>Create new</span></button>
+  const navigateFromMenu = (target: Screen) => { setOpen(false); go(target); };
+  return <>
+    <button className="studio-nav-toggle" aria-label={open ? "Close navigation" : "Open navigation"} aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? "×" : "☰"}</button>
+    <button className={`studio-nav-backdrop ${open ? "is-open" : ""}`} aria-label="Close navigation" tabIndex={open ? 0 : -1} onClick={() => setOpen(false)} />
+    <nav className={`studio-nav ${open ? "is-open" : ""} ${collapsed ? "is-collapsed" : ""}`} aria-label="Main navigation">
+    <button className="studio-nav-collapse" aria-label={collapsed ? "Expand navigation" : "Collapse navigation"} aria-expanded={!collapsed} onClick={() => setCollapsed(value => !value)}>{collapsed ? "→" : "←"}</button>
+    <button className="studio-brand" aria-label="Inspitivity studio" onClick={() => navigateFromMenu("home")}><span className="brand-mark"><img src="/icon-192.png" alt="" /></span><span>inspitivity<small>SONGWRITING STUDIO</small></span></button>
+    <button className="studio-create" aria-label="Create new" onClick={() => { setOpen(false); create(); }}><b>＋</b><span>Create new</span></button>
     <div className="studio-destinations">
       <button className="studio-mobile-create" aria-label="Create" aria-current={creating ? "page" : undefined} onClick={create}><b aria-hidden="true">＋</b><span>Create</span></button>
       {groups.map(group => <div className="nav-group" key={group.label}>
         <span className="nav-group-label">{group.label}</span>
         {group.destinations.map(([target, icon, label]) =>
           <button className={`nav-${target} ${mobilePrimary.has(target) ? "" : "nav-mobile-hidden"}`} key={target} aria-label={label} aria-current={screen === target || target === "projects" && screen === "project" ? "page" : undefined}
-            onClick={() => go(target)}><b aria-hidden="true">{icon}</b><span>{label}</span></button>
+            onClick={() => navigateFromMenu(target)}><b aria-hidden="true">{icon}</b><span>{label}</span></button>
         )}
       </div>)}
     </div>
     <span className="studio-nav-foot">A space for your next song.</span>
-  </nav>;
+    </nav>
+  </>;
 }
 
 type SharedAudioGraph = {
@@ -1166,29 +1197,42 @@ function fitMelodyToChords<
   return melody.map((note) => {
     const beat = ((note.start % totalBeats) + totalBeats) % totalBeats;
     const onStrongBeat = Math.abs(beat - Math.round(beat)) < 0.08;
-    if (!onStrongBeat) return note;
     let cursor = 0;
+    let chordStart = 0;
     const chord =
       chords.find((item) => {
+        chordStart = cursor;
         cursor += item.beats;
         return beat < cursor;
       }) ?? chords[chords.length - 1];
     const rootPitch = notePitchClass(chord.name);
     if (rootPitch === null) return note;
-    const pitchClasses = new Set(
-      chordIntervals(chord.name).map((interval) => (rootPitch + interval) % 12),
-    );
-    let fittedPitch = note.pitch;
-    for (let distance = 0; distance <= 6; distance++) {
-      const candidates = distance ? [note.pitch - distance, note.pitch + distance] : [note.pitch];
-      const match = candidates.find((pitch) => pitchClasses.has(((pitch % 12) + 12) % 12));
-      if (match !== undefined) {
-        fittedPitch = match;
-        break;
-      }
-    }
+    const intervals = chordIntervals(chord.name);
+    const pitchClasses = new Set(intervals.map((interval) => (rootPitch + interval) % 12));
+    const relativePitch = ((note.pitch-rootPitch)%12+12)%12;
+    const sustainedDissonance = note.duration >= .75 && [1,6,11].includes(relativePitch);
+    if (!onStrongBeat && !sustainedDissonance) return note;
+    if (pitchClasses.has(((note.pitch%12)+12)%12)) return note;
+    const atChordChange = Math.abs(beat-chordStart)<.08;
+    const candidates = Array.from({length:25},(_,index)=>note.pitch+index-12).filter(pitch=>pitchClasses.has(((pitch%12)+12)%12));
+    const fittedPitch = candidates.sort((a,b) => {
+      const score = (pitch:number) => Math.abs(pitch-note.pitch) + (!atChordChange && pitch%12===rootPitch ? 1.5 : 0);
+      return score(a)-score(b);
+    })[0] ?? note.pitch;
     return { ...note, pitch: fittedPitch, note: midiNoteName(fittedPitch) };
   });
+}
+
+function fitMelodyToSection<
+  T extends { pitch:number; note:string; start:number; duration:number; velocity:number },
+>(melody:T[],chords:ChordDraft[],section?:SongSection) {
+  const fitted=fitMelodyToChords(melody,chords);
+  const accompaniment=(section?.ideas ?? []).filter(item=>item.type==="bass"||item.type==="riff").flatMap(item=>(item.data ?? []).map(value=>Number(value.split("|")[0])).filter(Number.isFinite));
+  if(!accompaniment.length || !fitted.length) return fitted;
+  const accompanimentTop=Math.max(...accompaniment);
+  const melodyAverage=fitted.reduce((sum,note)=>sum+note.pitch,0)/fitted.length;
+  const lift=melodyAverage-accompanimentTop<9 ? 12 : 0;
+  return fitted.map(note=>lift && note.pitch+12<=96 ? {...note,pitch:note.pitch+12,note:midiNoteName(note.pitch+12)} : note);
 }
 
 function playDrumLoop(
@@ -2107,13 +2151,7 @@ function ProjectView({
     const index = p.sections.findIndex((section) => section.id === sectionId);
     if (index < 0) return p;
     const source = p.sections[index];
-    const varyData = (idea: Idea) => !variation || !idea.data ? idea.data : idea.data.map((value, itemIndex) => {
-      const fields=value.split("|");
-      if (idea.type === "drums") fields[2]=String(Math.max(.2,Math.min(1,(Number(fields[2])||.7)*(itemIndex%3===0?1.08:.92))));
-      if (idea.type === "bass" || idea.type === "riff") fields[3]=itemIndex%4===3 ? (fields[3] === "1" ? "0" : "1") : fields[3];
-      if (idea.type === "melody" && itemIndex%4===2) fields[2]=String(Math.max(.2,(Number(fields[2])||.45)*.8));
-      return fields.join("|");
-    });
+    const varyData = (idea: Idea) => !variation || !idea.data ? idea.data : varyIdeaData(idea.type,idea.data,Date.now()+idea.id.length);
     const copy: SongSection = { ...source, id:uid(), name:variation ? `${source.name} variation` : `${source.name} copy`, repeats:1, ideas:source.ideas.map((idea)=>({ ...idea,id:uid(),name:variation?`${idea.name} variation`:idea.name,data:varyData(idea) })) };
     const sections=[...p.sections]; sections.splice(index+1,0,copy); return { ...p,sections };
   });
@@ -2343,7 +2381,7 @@ function ProjectView({
         action="+ Add section"
         onAction={() => setAdding(true)}
       />
-      <div className="arrangement-list arrangement-timeline" aria-label="Song sections, top to bottom" tabIndex={0}>
+      <div className="arrangement-list arrangement-timeline" aria-label="Song sections, top to bottom">
         {project.sections.map((section, index) => (
           <article key={section.id} className={`section-card asset-section ${activeSectionIndex === index ? "playing" : ""}`}>
             <header className="asset-section-heading">
@@ -2851,19 +2889,21 @@ function ChordTool({
   const { root, mode } = projectHarmony(project);
   const initialCount = idea?.data?.length || 4;
   const [initialSeed] = useState(() => freshSeed() + Math.max(0, sectionIndex));
+  const supportPitchClasses = useMemo(() => sectionPitchContext(section,"chords"),[section]);
   const [count, setCount] = useDraftState("count", initialCount);
   const [defaultBeats, setDefaultBeats] = useDraftState("defaultBeats", 4);
   const [lengthVariation, setLengthVariation] = useDraftState("lengthVariation", 0);
   const [complexity, setComplexity] = useDraftState<Complexity>("complexity", "medium");
   const [harmonyColour, setHarmonyColour] = useDraftState<HarmonyColour>("harmonyColour", "diatonic");
   const [opening, setOpening] = useDraftState<ProgressionOpening>("opening", "away");
+  const [tension, setTension] = useDraftState<HarmonicTension>("harmonicTension", "balanced");
   const [voice, setVoice] = useDraftState<SynthVoice>("voice", (idea?.voice as SynthVoice) || "distorted guitar");
   const [voicing, setVoicing] = useDraftState<VoicingStyle>("voicing", "mixed");
   const [seed, setSeed] = useDraftState("seed", initialSeed);
   const [chords, setChords] = useDraftState<ChordDraft[]>("chords", () =>
     idea
       ? decodeChordDrafts(idea)
-      : makeChordDrafts(root, mode, initialCount, "medium", initialSeed),
+      : makeChordDrafts(root, mode, initialCount, "medium", initialSeed,4,0,"diatonic","away","mixed","balanced",supportPitchClasses),
   );
   const [previousChords, setPreviousChords] = useDraftState<ChordDraft[] | null>("previousChords", null);
   const engine = useAudioEngine();
@@ -2883,6 +2923,8 @@ function ChordTool({
         harmonyColour,
         opening,
         voicing,
+        tension,
+        supportPitchClasses,
       ),
     );
   };
@@ -2937,7 +2979,7 @@ function ChordTool({
       />
       {section && (
         <p className="destination-name">
-          Editing {section.name} · {section.bars} bars
+          Editing {section.name} · {section.bars} bars{supportPitchClasses.length ? " · supporting its melody, bass and pattern" : ""}
         </p>
       )}
       <DraftToolbar />
@@ -2956,7 +2998,7 @@ function ChordTool({
                 setComplexity(level); setDefaultBeats(beats); setVoice(sound);
                 setHarmonyColour("diatonic"); setLengthVariation(0);
                 setSeed(seed + 1);
-                setChords(makeChordDrafts(root, mode, count, level, seed + 1, beats, 0, "diatonic", opening));
+                setChords(makeChordDrafts(root, mode, count, level, seed + 1, beats, 0, "diatonic", opening, voicing, tension, supportPitchClasses));
               }}>{label}</button>
             ))}
           </div>
@@ -3036,13 +3078,15 @@ function ChordTool({
               "pedal point",
             ]}
           />
+          <ControlTitle n="7" title="Harmonic tension" />
+          <Segment options={["smooth","balanced","bold"]} value={tension} set={(value)=>setTension(value as HarmonicTension)} />
           </details>
           <Select label="Chord voicing" value={voicing} options={["mixed", "close", "open", "drop 2"]} set={value => {
             transport.stop(); setVoicing(value as VoicingStyle); setSeed(seed+1);
             setChords(chords.map((c,i)=>({...c,pitches:voiceChord(c.name,seed+1+i*997,value as VoicingStyle)})));
           }} />
           <button className="secondary-button wide" onClick={()=>{transport.stop();setSeed(seed+1);setChords(chords.map((c,i)=>({...c,pitches:voiceChord(c.name,seed+1+i*997,voicing)})));}}>↻ Revoice these chords</button>
-          <ControlTitle n="7" title="Preview sound" />
+          <ControlTitle n="8" title="Preview sound" />
           <Select
             label="Instrument"
             value={voice}
@@ -3059,10 +3103,11 @@ function ChordTool({
         <section className="result-panel">
           <VariationControls value={chords} apply={value=>{transport.stop();setChords(value);}} vary={(kind,locks)=>{
             setSeed(seed+1);
-            const candidate=makeChordDrafts(root,mode,chords.length,complexity,seed+1,defaultBeats,lengthVariation,harmonyColour,opening);
+            const candidate=makeChordDrafts(root,mode,chords.length,complexity,seed+97,defaultBeats,lengthVariation,harmonyColour,opening,voicing,tension,supportPitchClasses);
+            const changeCount=kind==="subtle"?1:Math.max(2,Math.ceil(chords.length/3));
             return chords.map((chord,index)=>({...chord,
-              name:!locks.notes && index===(seed+1)%chords.length ? candidate[index].name : chord.name,
-              pitches:!locks.notes && index===(seed+1)%chords.length ? candidate[index].pitches : chord.pitches,
+              name:!locks.notes && index>=chords.length-changeCount && candidate[index].name!==chord.name ? candidate[index].name : chord.name,
+              pitches:!locks.notes && index>=chords.length-changeCount ? candidate[index].pitches : chord.pitches,
               beats:locks.rhythm ? chord.beats : kind==="space" ? Math.min(8,chord.beats*2) : kind==="energy" ? Math.max(1,chord.beats/2) : chord.beats
             }));
           }} />
@@ -3245,7 +3290,7 @@ function MelodyTool({
   const [shape, setShape] = useDraftState<PhraseShape>("shape", () =>
     (["flow", "hook", "answer", "floating"] as const).find(value => idea?.name.split(" ").includes(value)) ?? "flow",
   );
-  const [density, setDensity] = useDraftState("density", section ? 0.55 : 0.6);
+  const [density, setDensity] = useDraftState("density", () => complementaryMelodyDensity(section,project.meter));
   const [noteCount, setNoteCount] = useDraftState("noteCount", Math.min(30, defaultNoteCount));
   const [seed, setSeed] = useDraftState("seed", initialSeed);
   const [voice, setVoice] = useDraftState<SynthVoice>("voice", (idea?.voice as SynthVoice) || "air flute");
@@ -3264,11 +3309,12 @@ function MelodyTool({
   }, [section, project.sections, root, mode, initialSeed]);
   const generatedMelody = useMemo(
     () =>
-      fitMelodyToChords(
+      fitMelodyToSection(
         generateMelody({ root, mode, notes: noteCount, density, mood, seed, shape }),
         supportingChords,
+        section,
       ),
-    [root, mode, noteCount, density, mood, seed, shape, supportingChords],
+    [root, mode, noteCount, density, mood, seed, shape, supportingChords,section],
   );
   const melody = savedMelody ?? generatedMelody;
   const bpm = project.bpm;
@@ -3421,7 +3467,7 @@ function MelodyTool({
       />
       {section && (
         <p className="destination-name">
-          Editing {section.name} · {section.bars} bars
+          Editing {section.name} · {section.bars} bars · following its harmony and leaving room for its bass/pattern
         </p>
       )}
       <DraftToolbar />
@@ -3965,8 +4011,6 @@ function TransitionTool({
   back,
   save,
   go,
-  metronomeEnabled,
-  toggleMetronome,
 }: {
   idea?: Idea;
   project: Project;
@@ -4123,6 +4167,7 @@ function DrumTool({
   const [visibleBar, setVisibleBar] = useState(0);
   const [editVelocity, setEditVelocity] = useState(.75);
   const phraseBeats = bars*beatsPerBar;
+  const supportingAnchors = useMemo(() => sectionRhythmicAnchors(section,"drums"),[section]);
   const activeBar = Math.min(visibleBar,bars-1);
   const [seed, setSeed] = useDraftState("seed", () => freshSeed() + Math.max(0, sectionIndex));
   const [voice, setVoice] = useDraftState<DrumKit>("kit", (idea?.voice as DrumKit) || "current");
@@ -4131,8 +4176,8 @@ function DrumTool({
   );
   const engine = useAudioEngine();
   const generatedLoop = useMemo(
-    () => generateDrumLoop({ beatsPerBar, density, style, energy, seed, bars, fill }),
-    [beatsPerBar, density, style, energy, seed, bars, fill],
+    () => reinforceDrumAccents(generateDrumLoop({ beatsPerBar, density, style, energy, seed, bars, fill }),supportingAnchors,phraseBeats*4),
+    [beatsPerBar, density, style, energy, seed, bars, fill,supportingAnchors,phraseBeats],
   );
   const loop = savedLoop ?? generatedLoop;
   const beatSeconds = beatDurationSeconds(project.bpm);

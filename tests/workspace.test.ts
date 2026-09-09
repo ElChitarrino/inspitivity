@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { mergeProjects, validProjects, type Project } from "../packages/workspace/index.js";
 import { sectionFeel, buildSongPlan } from "../packages/workspace/music.js";
-import { varyNotes } from "../packages/workspace/variation.js";
+import { varyIdeaData, varyNotes } from "../packages/workspace/variation.js";
 import { generateDrumLoop } from "../packages/sequencing/index.js";
 import { createMultitrackMidi } from "../packages/midi/index.js";
 
@@ -70,6 +70,15 @@ test("controlled variations respect locked timing and pitches",()=>{
   assert.notDeepEqual(locked.map(n=>n.pitch),notes.map(n=>n.pitch));
   assert.deepEqual(varyNotes(notes,"space",{rhythm:true,notes:true},[0,2,4],2),notes);
   assert.equal(varyNotes(notes,"space",{rhythm:false,notes:true},[0,2,4],2).length,3);
+});
+test("section variations audibly transform saved parts instead of cloning them",()=>{
+  const melody=["C4|0|0.5|60","D4|0.5|0.5|62","E4|1|0.5|64","G4|1.5|0.5|67","A4|2|0.5|69"];
+  const chords=["Cmaj7|4|48,52,55,59","Am7|4|45,48,52,55","Fmaj7|4|41,45,48,52","G7|4|43,47,50,53"];
+  const variedMelody=varyIdeaData("melody",melody,9);
+  const variedChords=varyIdeaData("chords",chords,9);
+  assert.notDeepEqual(variedMelody,melody);
+  assert.ok(variedMelody.filter((value,index)=>value!==melody[index]).length>=2);
+  assert.notDeepEqual(variedChords,chords);
 });
 test("song plan repeats saved layers, preserves displaced starts, and leaves missing parts silent",()=>{
   const p=project();p.sections[0].ideas.push({id:"m",type:"melody",name:"Flute",detail:"",data:["E4|0.5|0.5|64"]});

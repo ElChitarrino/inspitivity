@@ -104,6 +104,24 @@ test("harmonic generation composes many distinct paths under unchanged settings"
   assert.ok(progressions.every(p=>p.length===4 && new Set(p.map(c=>c.degree)).size>=3));
 });
 
+test("default harmony avoids diminished chords while bold tension keeps them intentional",()=>{
+  const defaults=Array.from({length:128},(_,seed)=>generateChordProgression({root:"C",mode:"major",bars:6,complexity:"advanced",opening:"surprise",seed})).flat();
+  const bold=Array.from({length:128},(_,seed)=>generateChordProgression({root:"C",mode:"major",bars:6,complexity:"advanced",opening:"surprise",tension:"bold",seed})).flat();
+  assert.equal(defaults.some(chord=>/dim|°/.test(chord.name)),false);
+  assert.ok(bold.some(chord=>/dim|°/.test(chord.name)));
+});
+
+test("section pitch context biases new harmony without removing variation",()=>{
+  const target=[4,9];
+  const score=(withContext:boolean,seed:number)=>generateChordProgression({root:"C",mode:"major",bars:6,complexity:"medium",seed,preferredPitchClasses:withContext?target:[]}).reduce((sum,chord)=>{
+    const root=notePitchClass(chord.name)??0;
+    return sum+chordIntervals(chord.name).filter(interval=>target.includes((root+interval)%12)).length;
+  },0);
+  const supported=Array.from({length:64},(_,seed)=>score(true,seed)).reduce((a,b)=>a+b,0);
+  const unrelated=Array.from({length:64},(_,seed)=>score(false,seed)).reduce((a,b)=>a+b,0);
+  assert.ok(supported>unrelated);
+});
+
 test("each melodic shape changes pitches and onsets across generations", () => {
   for(const shape of ["flow","hook","answer","floating"] as const) {
     const signatures=Array.from({length:64},(_,seed)=>generateMelody({root:"E",mode:"minor",notes:16,seed,shape}).map(n=>`${n.pitch}:${n.start}`).join("|"));

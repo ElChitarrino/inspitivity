@@ -74,12 +74,13 @@ test("home omits the duplicate creative-tools directory", () => {
   assert.doesNotMatch(source, /title="Creative tools"/);
 });
 
-test("navigation groups related work and keeps a five-item mobile dock", () => {
+test("navigation groups related work and becomes an expandable mobile drawer", () => {
   assert.match(source, /label: "Workspace"/);
   assert.match(source, /label: "Create parts"/);
-  assert.match(source, /className="studio-mobile-create"/);
-  assert.match(theme, /grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/);
-  assert.match(theme, /\.nav-mobile-hidden\{display:none!important\}/);
+  assert.match(source, /className="studio-nav-toggle"/);
+  assert.match(source, /studio-nav-backdrop/);
+  assert.match(theme, /\.studio-nav\.is-collapsed/);
+  assert.match(theme, /\.studio-nav\.is-open\{transform:translateX\(0\)\}/);
   assert.match(source, /aria-label="Project tools"/);
 });
 
@@ -119,8 +120,13 @@ test("the songwriting workspace is installable on a phone", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.match(serviceWorker, /inspitivity-shell-v7/);
+  assert.match(serviceWorker, /inspitivity-shell-v8/);
   assert.match(serviceWorker, /cache\.delete\("\/"\)/);
+});
+
+test("native select values and options remain readable in both dark themes", () => {
+  assert.match(theme, /\.app-shell select\{color:#fff;color-scheme:dark\}/);
+  assert.match(theme, /\.app-shell select option\{color:#fff;background:#111317\}/);
 });
 
 test("mobile playback explicitly unlocks and masters the Web Audio graph", () => {
@@ -144,6 +150,9 @@ test("the home screen can create a coherent playable sketch in one flow", () => 
   assert.match(source, /Progressive lift/);
   assert.match(source, /Heavy tension/);
   assert.match(source, /fitMelodyToChords/);
+  assert.match(source, /const forms: Record<SketchPreset/);
+  assert.match(source, /reinforceDrumAccents/);
+  assert.match(source, /sectionPitchContext/);
 });
 
 test("arrangement sections expose vertical ordering and a single current length", () => {

@@ -13,6 +13,7 @@ export type Complexity = "simple" | "medium" | "advanced";
 export type MelodyMood = "calm" | "bright" | "melancholic" | "dark";
 export type PhraseShape = "flow" | "hook" | "answer" | "floating";
 export type ProgressionOpening = "away" | "tonic" | "surprise";
+export type HarmonicTension = "smooth" | "balanced" | "bold";
 
 const PITCH_CLASS: Record<Root, number> = {
   C: 0,
@@ -111,6 +112,8 @@ export function generateChordProgression({
   complexity,
   seed = Date.now(),
   opening = "away",
+  tension = "balanced",
+  preferredPitchClasses = [],
 }: {
   root: Root;
   mode: Mode;
@@ -118,14 +121,43 @@ export function generateChordProgression({
   complexity: Complexity;
   seed?: number;
   opening?: ProgressionOpening;
+  tension?: HarmonicTension;
+  preferredPitchClasses?: number[];
 }) {
   const scale = getScale(root, mode);
   const random = seededRandom(seed);
   const pick = <T,>(values: T[]) => values[Math.floor(random() * values.length)];
+  const triad = (degree: number) => {
+    const size = MODES[mode].length;
+    const normalized = ((degree % size) + size) % size;
+    const intervalAt = (offset: number) =>
+      MODES[mode][(normalized + offset) % size] +
+      (normalized + offset >= size ? 12 : 0) -
+      MODES[mode][normalized];
+    return { degree: normalized, third: intervalAt(2), fifth: intervalAt(4) };
+  };
+  const isDiminished = (degree: number) => triad(degree).fifth === 6;
+  const usable = (degrees: number[]) => {
+    const normalized = [...new Set(degrees.map((degree) => degree % scale.length))];
+    return tension === "bold" ? normalized : normalized.filter((degree) => !isDiminished(degree));
+  };
+  const support = new Set(preferredPitchClasses.map((pitch) => ((pitch % 12) + 12) % 12));
+  const pickSupported = (degrees: number[]) => {
+    const choices = usable(degrees);
+    if (!support.size || choices.length < 2) return pick(choices);
+    const weighted = choices.flatMap((degree) => {
+      const harmony = triad(degree);
+      const chordRoot = notePitchClass(scale[harmony.degree]) ?? 0;
+      const overlap = [0, harmony.third, harmony.fifth].filter((interval) => support.has((chordRoot + interval) % 12)).length;
+      return Array.from({ length: 1 + overlap * 2 }, () => degree);
+    });
+    return pick(weighted);
+  };
   // Weighted harmonic movement: fifths, relative chords and modal steps.
   // Each phrase is composed from its preceding chord, never selected from a list.
   const paths = [[3,4,5,1,2], [4,4,6,3,5], [5,3,1,4], [0,1,4,5,2], [0,0,5,3], [1,3,4,0,2], [0,2,4,1]];
-  let previous = opening === "tonic" ? 0 : pick(opening === "away" ? [1,2,3,4,5] : [1,2,3,4,5,6]);
+  const openingPool = opening === "away" ? [1,2,3,4,5] : [1,2,3,4,5,6];
+  let previous = opening === "tonic" ? 0 : pickSupported(openingPool);
   const used = new Set<number>();
   const minorLike = [
     "minor",
@@ -137,20 +169,15 @@ export function generateChordProgression({
   return Array.from({ length: bars }, (_, index) => {
     let degree = previous;
     if (index > 0) {
-      let candidates = paths[previous].filter(d => d % scale.length !== previous);
+      let candidates = paths[previous % paths.length].filter(d => d % scale.length !== previous);
+      if (random() < .42) candidates = candidates.concat(Array.from({length:scale.length},(_,degree)=>degree));
       if (index === bars-1 && opening !== "surprise") candidates = candidates.concat([0,4,5]);
       if (used.size < Math.min(3,bars) && index > 1) candidates = candidates.filter(d => !used.has(d % scale.length));
-      degree = pick(candidates.length ? candidates : paths[previous]) % scale.length;
+      const available = usable(candidates.length ? candidates : paths[previous % paths.length]);
+      degree = pickSupported(available.length ? available : [0,1,2,3,4,5,6]) % scale.length;
     }
     previous = degree; used.add(degree);
-    const third =
-      MODES[mode][(degree + 2) % MODES[mode].length] +
-      (degree + 2 >= MODES[mode].length ? 12 : 0) -
-      MODES[mode][degree];
-    const fifth =
-      MODES[mode][(degree + 4) % MODES[mode].length] +
-      (degree + 4 >= MODES[mode].length ? 12 : 0) -
-      MODES[mode][degree];
+    const { third, fifth } = triad(degree);
     let quality = fifth === 6 ? "dim" : third === 3 ? "m" : "";
     if (degree === 0 && minorLike) quality = "m";
     const seventh = (MODES[mode][(degree+6)%scale.length] + (degree+6 >= scale.length ? 12 : 0) - MODES[mode][degree]) % 12;
