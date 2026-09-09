@@ -1,4 +1,4 @@
-const CACHE = "inspitivity-shell-v6";
+const CACHE = "inspitivity-shell-v7";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",

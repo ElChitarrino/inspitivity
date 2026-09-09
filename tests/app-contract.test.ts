@@ -74,6 +74,21 @@ test("home omits the duplicate creative-tools directory", () => {
   assert.doesNotMatch(source, /title="Creative tools"/);
 });
 
+test("navigation groups related work and keeps a five-item mobile dock", () => {
+  assert.match(source, /label: "Workspace"/);
+  assert.match(source, /label: "Create parts"/);
+  assert.match(source, /className="studio-mobile-create"/);
+  assert.match(theme, /grid-template-columns:repeat\(5,minmax\(0,1fr\)\)/);
+  assert.match(theme, /\.nav-mobile-hidden\{display:none!important\}/);
+  assert.match(source, /aria-label="Project tools"/);
+});
+
+test("project action dock uses clear icon-only recording and deletion actions", () => {
+  assert.match(source, /className="capture-action icon-action" aria-label="Record idea"/);
+  assert.match(source, /className="danger-action icon-action" aria-label="Delete project"/);
+  assert.match(theme, /\.project-actions \.icon-action\{display:grid;width:44px/);
+});
+
 test("projects and recordings retain an offline copy alongside private cloud sync", async () => {
   const storage = await readFile(resolve(process.cwd(), "app/workspace-storage.ts"), "utf8");
   assert.match(storage, /inspitivity-projects/);
@@ -104,7 +119,7 @@ test("the songwriting workspace is installable on a phone", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.match(serviceWorker, /inspitivity-shell-v6/);
+  assert.match(serviceWorker, /inspitivity-shell-v7/);
   assert.match(serviceWorker, /cache\.delete\("\/"\)/);
 });
 
@@ -136,7 +151,7 @@ test("arrangement sections expose vertical ordering and a single current length"
   assert.match(source, /Move \$\{section.name\} up/);
   assert.match(source, /Move \$\{section.name\} down/);
   assert.match(source, /value=\{section.bars\}/);
-  assert.match(source, /Section length/);
+  assert.match(source, /<span>Length<\/span>/);
 });
 
 test("arrangement sections own playback and persistent per-track mixing", async () => {

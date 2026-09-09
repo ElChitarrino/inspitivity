@@ -782,20 +782,32 @@ function BottomNav({
   go: (s: Screen) => void;
   create: () => void;
 }) {
-  const destinations: [Screen, string, string][] = [
-    ["home", "⌂", "Studio"], ["projects", "▱", "Projects"],
-    ["drums", "▦", "Drums"], ["chords", "♯", "Chords"],
-    ["bass", "♭", "Bass"], ["melody", "♥", "Melody"], ["riff", "⇶", "Patterns"],
-    ["transition", "⇄", "Transitions"], ["metronome", "♩", "Metronome"],
-    ["settings", "◎", "Settings"],
+  const groups: { label: string; destinations: [Screen, string, string][] }[] = [
+    { label: "Workspace", destinations: [["home", "⌂", "Studio"], ["projects", "▱", "Projects"]] },
+    { label: "Create parts", destinations: [
+      ["drums", "▦", "Drums"], ["chords", "♯", "Chords"],
+      ["bass", "♭", "Bass"], ["melody", "♥", "Melody"], ["riff", "⇶", "Patterns"],
+    ] },
+    { label: "Tools", destinations: [
+      ["transition", "⇄", "Transitions"], ["metronome", "♩", "Metronome"],
+      ["settings", "◎", "Settings"],
+    ] },
   ];
+  const mobilePrimary = new Set<Screen>(["home", "projects", "metronome", "settings"]);
+  const creating = ["drums", "chords", "bass", "melody", "riff", "transition"].includes(screen);
   return <nav className="studio-nav" aria-label="Main navigation">
     <button className="studio-brand" aria-label="Inspitivity studio" onClick={() => go("home")}><span className="brand-mark"><img src="/icon-192.png" alt="" /></span><span>inspitivity<small>SONGWRITING STUDIO</small></span></button>
     <button className="studio-create" aria-label="Create new" onClick={create}><b>＋</b><span>Create new</span></button>
-    <div className="studio-destinations">{destinations.map(([target, icon, label]) =>
-      <button key={target} aria-label={label} aria-current={screen === target || target === "projects" && screen === "project" ? "page" : undefined}
-        onClick={() => go(target)}><b aria-hidden="true">{icon}</b><span>{label}</span></button>
-    )}</div>
+    <div className="studio-destinations">
+      <button className="studio-mobile-create" aria-label="Create" aria-current={creating ? "page" : undefined} onClick={create}><b aria-hidden="true">＋</b><span>Create</span></button>
+      {groups.map(group => <div className="nav-group" key={group.label}>
+        <span className="nav-group-label">{group.label}</span>
+        {group.destinations.map(([target, icon, label]) =>
+          <button className={`nav-${target} ${mobilePrimary.has(target) ? "" : "nav-mobile-hidden"}`} key={target} aria-label={label} aria-current={screen === target || target === "projects" && screen === "project" ? "page" : undefined}
+            onClick={() => go(target)}><b aria-hidden="true">{icon}</b><span>{label}</span></button>
+        )}
+      </div>)}
+    </div>
     <span className="studio-nav-foot">A space for your next song.</span>
   </nav>;
 }
@@ -2339,14 +2351,14 @@ function ProjectView({
               <PlayButton compact playing={arrangementPlaying && activeSectionIndex === index} label={section.name} onClick={() => void playSection(section,index)} />
             </header>
             <div className="asset-section-meta">
-              <label className="section-length"><span className="sr-only">Section length</span>
+              <label className="section-length"><span>Length</span>
                 <select aria-label={`${section.name} length`} value={section.bars} onChange={e=>{stopArrangement();setSectionBars(section.id,Number(e.target.value));}}>
                   {[...new Set([section.bars,4,8,12,16,24,32])].sort((a,b)=>a-b).map(bars=><option key={bars} value={bars}>{bars} bars</option>)}
                 </select>
               </label>
               <label className="section-repeat"><span>Repeat</span><select aria-label={`${section.name} repeats`} value={section.repeats??1} onChange={(event)=>setSectionRepeats(section.id,Number(event.target.value))}>{[1,2,3,4].map(value=><option key={value} value={value}>×{value}</option>)}</select></label>
               <label className="section-energy"><span>Energy</span><select aria-label={`${section.name} energy`} value={section.energy??sectionFeel(project,section).energy} onChange={(event)=>setSectionEnergy(section.id,event.target.value as SectionEnergy)}>{["mellow","balanced","powerful"].map(value=><option key={value}>{value}</option>)}</select></label>
-              <details className="section-meter-settings"><summary>{[...new Set(sectionMeterMap(section,project.meter))].join(" / ")}</summary>
+              <details className="section-meter-settings"><summary><span>Meter</span><b>{[...new Set(sectionMeterMap(section,project.meter))].join(" / ")}</b></summary>
                 <div className="meter-map">{sectionMeterMap(section,project.meter).map((meter,barIndex)=><button key={barIndex} onClick={()=>cycleSectionMeter(section.id,barIndex)} aria-label={`Bar ${barIndex+1}: ${meter}. Change meter`}>{barIndex+1}: {meter}</button>)}</div>
               </details>
             </div>
@@ -2418,9 +2430,9 @@ function ProjectView({
         ))}
       </div>
       <div className="project-actions">
-        <button className="capture-action" onClick={record}>● Record idea</button>
+        <button className="capture-action icon-action" aria-label="Record idea" title="Record idea" onClick={record}>●</button>
         <button onClick={() => setAdding(true)}>＋ Add section</button>
-        <button className="danger-action" onClick={deleteProject}><TrashIcon /> Delete project</button>
+        <button className="danger-action icon-action" aria-label="Delete project" title="Delete project" onClick={deleteProject}><TrashIcon /></button>
       </div>
       {adding && (
         <div className="modal-layer">
@@ -2665,47 +2677,22 @@ function ToolHeader({
   go: (s: Screen) => void;
   active: Screen;
 }) {
+  const destinations: [Screen, string, string][] = [
+    ["drums", "▦", "Drums"], ["chords", "♯", "Chords"], ["bass", "♭", "Bass"],
+    ["melody", "♥", "Melody"], ["riff", "⇶", "Pattern"], ["transition", "⇄", "Transitions"],
+    ["metronome", "♩", "Metronome"],
+  ];
   return (
     <>
       <Topbar title={title} subtitle={projectName ? `${projectName} · ${subtitle}` : subtitle} onBack={back} />
-      <div className="tool-tabs">
-        <button
-          className={active === "drums" ? "active" : ""}
-          onClick={() => go("drums")}
-        >
-          Drums
-        </button>
-        <button
-          className={active === "chords" ? "active" : ""}
-          onClick={() => go("chords")}
-        >
-          Chords
-        </button>
-        <button
-          className={active === "bass" ? "active" : ""}
-          onClick={() => go("bass")}
-        >
-          Bass
-        </button>
-        <button
-          className={active === "melody" ? "active" : ""}
-          onClick={() => go("melody")}
-        >
-          Melody
-        </button>
-        <button
-          className={active === "riff" ? "active" : ""}
-          onClick={() => go("riff")}
-        >
-          Pattern
-        </button>
-        <button
-          className={active === "metronome" ? "active" : ""}
-          onClick={() => go("metronome")}
-        >
-          Metronome
-        </button>
-      </div>
+      <nav className="tool-tabs" aria-label="Project tools">
+        {destinations.map(([target, icon, label]) => <button
+          key={target}
+          className={active === target ? "active" : ""}
+          aria-current={active === target ? "page" : undefined}
+          onClick={() => go(target)}
+        ><span className="tool-tab-icon" aria-hidden="true">{icon}</span>{label}</button>)}
+      </nav>
     </>
   );
 }
@@ -4794,7 +4781,7 @@ function CreateModal({
 }: {
   close: () => void;
   choose: (
-    a: "project" | "record" | "chords" | "melody" | "drums" | "riff",
+    a: "project" | "record" | "chords" | "bass" | "melody" | "drums" | "riff" | "transition",
   ) => void;
 }) {
   return (
@@ -4847,6 +4834,13 @@ function CreateModal({
             title="Synth pattern"
             copy="Build a repeating guide"
             onClick={() => choose("riff")}
+          />
+          <ToolButton
+            tone="amber"
+            icon="⇄"
+            title="Transition"
+            copy="Connect two sections"
+            onClick={() => choose("transition")}
           />
            <ToolButton
             tone="amber"
