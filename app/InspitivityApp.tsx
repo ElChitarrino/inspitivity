@@ -24,7 +24,7 @@ import {
   ProgressionOpening,
   Root,
 } from "../packages/music-theory";
-import { createMidiFile, createMultitrackMidi, type MidiNoteEvent } from "../packages/midi";
+import { createMidiFile, type MidiNoteEvent } from "../packages/midi";
 import {
   beatDurationSeconds,
   calculateTapTempo,
@@ -62,7 +62,7 @@ import {
 import { useCloudProjects, saveRecording, getRecording, downloadBackup, restoreBackup } from "./workspace-storage";
 import { DraftSession, DraftToolbar, useDraftState, useDraftPreview, type DraftPreview } from "./draft-session";
 import { sectionFeel, buildSongPlan, type SongLayer } from "../packages/workspace/music";
-import type { Idea, SongSection, Project, TrackMix } from "../packages/workspace";
+import type { Idea, SongSection, Project, TrackMix, SectionEnergy } from "../packages/workspace";
 import { varyNotes } from "../packages/workspace/variation";
 import { VariationControls } from "./variation-controls";
 import { isTheme, resolveInitialTheme, type Theme } from "../packages/theme";
@@ -76,6 +76,7 @@ type Screen =
   | "chords"
   | "melody"
   | "drums"
+  | "bass"
   | "riff"
   | "transition"
   | "metronome"
@@ -94,15 +95,17 @@ type DrumKit = "current" | "rock" | "prog metal";
 const freshSeed = () => Math.floor(Math.random() * 1000000000);
 const LAYER_LABELS = [
   ["drums", "Drums"],
+  ["bass", "Bass"],
   ["chords", "Chords"],
   ["melody", "Melody"],
   ["riff", "Pattern"],
 ] as const satisfies readonly (readonly [SongLayer, string])[];
 const DEFAULT_SECTION_MIX: Record<SongLayer, TrackMix> = {
-  drums: { muted: false, solo: false, volume: 0.72 },
-  chords: { muted: false, solo: false, volume: 0.78 },
-  melody: { muted: false, solo: false, volume: 0.78 },
-  riff: { muted: false, solo: false, volume: 0.72 },
+  drums: { muted: false, solo: false, volume: 0.76 },
+  bass: { muted: false, solo: false, volume: 0.62 },
+  chords: { muted: false, solo: false, volume: 0.58 },
+  melody: { muted: false, solo: false, volume: 0.72 },
+  riff: { muted: false, solo: false, volume: 0.54 },
 };
 const sectionMix = (section?: SongSection): Record<SongLayer, TrackMix> =>
   Object.fromEntries(
@@ -111,6 +114,17 @@ const sectionMix = (section?: SongSection): Record<SongLayer, TrackMix> =>
       { ...DEFAULT_SECTION_MIX[layer], ...section?.mix?.[layer] },
     ]),
   ) as Record<SongLayer, TrackMix>;
+
+const automaticSectionMix = (section: SongSection): Record<SongLayer, TrackMix> => {
+  const present = new Set(section.ideas.map((idea) => idea.type));
+  const energy = section.energy ?? "balanced";
+  const mix = Object.fromEntries(LAYER_LABELS.map(([layer]) => [layer, { ...DEFAULT_SECTION_MIX[layer] }])) as Record<SongLayer, TrackMix>;
+  if (energy === "mellow") { mix.drums.volume = .64; mix.bass.volume = .56; mix.chords.volume = .62; }
+  if (energy === "powerful") { mix.drums.volume = .78; mix.bass.volume = .66; mix.chords.volume = .52; }
+  if (present.has("chords") && present.has("riff")) { mix.chords.volume -= .08; mix.riff.volume -= .05; }
+  if (present.has("melody")) mix.melody.volume = energy === "powerful" ? .68 : .74;
+  return mix;
+};
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -371,6 +385,74 @@ const decodeRiffIdea = (idea: Idea): RiffEvent[] =>
       muted: muted !== "0",
     };
   });
+type BassPattern = "sustained" | "eighth notes" | "groove" | "syncopated" | "progressive";
+type BassEvent = { pitch: number; start: number; duration: number; accent: boolean };
+const decodeBassIdea = (idea: Idea): BassEvent[] =>
+  (idea.data ?? []).map((value) => {
+    const [pitch, start, duration, accent] = value.split("|");
+    return { pitch: Number(pitch) || 36, start: Number(start) || 0, duration: Number(duration) || .4, accent: accent === "1" };
+  });
+const encodeBassEvent = (event: BassEvent) => `${event.pitch}|${event.start}|${event.duration}|${event.accent ? 1 : 0}`;
+const bassRootPitch = (symbol: string) => 36 + (notePitchClass(symbol) ?? 0);
+const generateBassLine = (
+  project: Project,
+  section: SongSection | undefined,
+  pattern: BassPattern,
+  lockToKick: boolean,
+  seed: number,
+): BassEvent[] => {
+  const length = section ? sectionBeatTotal(section, project.meter) : meterBeats(project.meter) * 4;
+  const fallbackRoot = projectHarmony(project).root;
+  const harmonyIdea = section?.ideas.find((idea) => idea.type === "chords");
+  const harmony = (harmonyIdea?.data?.length ? harmonyIdea.data : harmonyIdea ? harmonyIdea.detail.split(" · ") : [`${fallbackRoot}|${length}`])
+    .map((value) => { const [symbol, beats] = value.split("|"); return { symbol, beats: Math.max(.25, Number(beats) || 4) }; });
+  const rootAt = (beat: number) => {
+    const cycle = harmony.reduce((sum, chord) => sum + chord.beats, 0) || length;
+    let cursor = 0, position = beat % cycle;
+    for (const chord of harmony) { cursor += chord.beats; if (position < cursor) return bassRootPitch(chord.symbol); }
+    return bassRootPitch(fallbackRoot);
+  };
+  let starts: number[] = [];
+  if (pattern === "sustained") {
+    let cursor = 0;
+    while (cursor < length) for (const chord of harmony) { if (cursor >= length) break; starts.push(cursor); cursor += chord.beats; }
+  } else {
+    const cells: Record<Exclude<BassPattern,"sustained">, number[]> = {
+      "eighth notes": [0,.5,1,1.5],
+      groove: [0,1,1.5,3],
+      syncopated: [0,.75,1.5,2.5,3.25],
+      progressive: [0,.75,1.5,2.25,3.5,4.25],
+    };
+    const cycle = pattern === "progressive" ? 5 : 4;
+    for (let offset = 0; offset < length; offset += cycle)
+      starts.push(...cells[pattern].map((beat) => offset + beat).filter((beat) => beat < length));
+  }
+  if (lockToKick) {
+    const drums = section?.ideas.find((idea) => idea.type === "drums");
+    const kickStarts = (drums?.data ?? []).filter((value) => value.startsWith("kick|")).map((value) => Number(value.split("|")[1]) / 4).filter(Number.isFinite);
+    const cycle = drumPatternBeats(drums?.data ?? [], meterBeats(project.meter));
+    if (kickStarts.length && cycle > 0) {
+      starts = [];
+      for (let offset = 0; offset < length; offset += cycle) starts.push(...kickStarts.map((beat) => offset + beat).filter((beat) => beat < length));
+    }
+  }
+  const chordStarts = pattern === "sustained" ? starts : harmony.reduce<number[]>((result, chord) => {
+    const previous = result.at(-1) ?? 0;
+    return [...result, previous + chord.beats];
+  }, [0]).filter((beat) => beat < length);
+  starts = [...new Set([...starts, ...chordStarts])].sort((a,b) => a-b);
+  const scale = getScale(projectHarmony(project).root, projectHarmony(project).mode).map((note) => notePitchClass(note)).filter((pitch): pitch is number => pitch !== null);
+  return starts.map((start, index) => {
+    let pitch = rootAt(start);
+    if (pattern === "progressive" && index % 4 === 3) {
+      const candidate = [pitch + 2, pitch + 3].find((value) => scale.includes(value % 12));
+      if (candidate) pitch = candidate;
+    }
+    const next = starts[index + 1] ?? length;
+    const duration = pattern === "sustained" ? Math.max(.25, next - start - .08) : Math.min(.46, Math.max(.18, next - start - .06));
+    return { pitch, start, duration, accent: index === 0 || ((index + seed) % 4 === 0) };
+  });
+};
 const sectionMeterMap = (section: SongSection, fallback: string) =>
   Array.from(
     { length: section.bars },
@@ -488,14 +570,20 @@ function buildPlayableSketch(preset: SketchPreset): Project {
         ),
       });
     }
-    return {
+    const section: SongSection = {
       id: uid(),
       name: shape.name,
       bars: shape.bars,
       color: shape.color,
       ideas,
       meterMap: Array.from({ length: shape.bars }, () => preset.meter),
+      energy: sectionIndex === 0 ? "mellow" : preset.energy,
     };
+    const sketchContext: Project = { id:"preview",name:preset.label,bpm:preset.bpm,meter:preset.meter,key:formatProjectKey(preset.root,preset.mode),updated:0,sections:[section] };
+    const bass = generateBassLine(sketchContext,section,sectionIndex === 0 ? "sustained" : "groove",true,sectionSeed+29);
+    ideas.push({ id:uid(),type:"bass",name:`${shape.name} bass`,detail:`${bass.length} notes · chord and kick aware`,data:bass.map(encodeBassEvent),voice:"deep bass" });
+    section.mix=automaticSectionMix(section);
+    return section;
   });
   return {
     id: uid(),
@@ -697,7 +785,7 @@ function BottomNav({
   const destinations: [Screen, string, string][] = [
     ["home", "⌂", "Studio"], ["projects", "▱", "Projects"],
     ["drums", "▦", "Drums"], ["chords", "♯", "Chords"],
-    ["melody", "♥", "Melody"], ["riff", "⇶", "Patterns"],
+    ["bass", "♭", "Bass"], ["melody", "♥", "Melody"], ["riff", "⇶", "Patterns"],
     ["transition", "⇄", "Transitions"], ["metronome", "♩", "Metronome"],
     ["settings", "◎", "Settings"],
   ];
@@ -1029,13 +1117,14 @@ function scheduleClickTrack(
   beats: number,
   beatSeconds: number,
   meter: string,
+  startSeconds = 0,
 ) {
   const beatsPerBar = Number(meter.split("/")[0]) || 4;
   for (let beat = 0; beat < beats; beat++) {
     const accented = beat % beatsPerBar === 0;
     engine.tone(
       accented ? 88 : 80,
-      beat * beatSeconds,
+      startSeconds + beat * beatSeconds,
       0.04,
       accented ? 0.11 : 0.055,
       "click",
@@ -1218,7 +1307,7 @@ export default function InspitivityApp({ account, signOutPath }: {
       setEditingIdea(selected?.sections.find(s => s.id === draftSectionId)?.ideas.find(i => i.type === next) ?? null);
       savedDraftId.current = null;
     }
-    if (!["chords", "melody", "drums", "riff", "transition", "metronome"].includes(next))
+    if (!["chords", "melody", "drums", "bass", "riff", "transition", "metronome"].includes(next))
       { setReturnToArrangement(false); setDraftSectionId(null); }
     setScreen(next);
   };
@@ -1359,7 +1448,7 @@ export default function InspitivityApp({ account, signOutPath }: {
   };
   const openSectionTool = (
     sectionId: string,
-    tool: "chords" | "melody" | "drums" | "riff" | "transition",
+    tool: "chords" | "melody" | "drums" | "bass" | "riff" | "transition",
   ) => {
     savedDraftId.current = null;
     setEditingIdea(selected?.sections.find(s => s.id === sectionId)?.ideas.find(i => i.type === tool) ?? null);
@@ -1381,6 +1470,7 @@ export default function InspitivityApp({ account, signOutPath }: {
       idea.type === "chords" ||
       idea.type === "melody" ||
       idea.type === "drums" ||
+      idea.type === "bass" ||
       idea.type === "riff" ||
       idea.type === "transition"
     ) {
@@ -1394,7 +1484,7 @@ export default function InspitivityApp({ account, signOutPath }: {
     const scope = draftSectionId ?? "scratch";
     if (draftSectionId ? section.id !== draftSectionId : index !== 0) return section;
     const ideas = [...section.ideas];
-    for (const type of ["chords", "melody", "drums", "riff"] as const) {
+    for (const type of ["chords", "melody", "drums", "bass", "riff"] as const) {
       const preview = previews[`${selected.id}/${scope}/${type}`];
       if (!preview) continue;
       const i=ideas.findIndex(idea=>idea.type===type);
@@ -1418,7 +1508,7 @@ export default function InspitivityApp({ account, signOutPath }: {
         <div className="account-sync"><b>{account.displayName}</b><span role="status">{cloud.status}</span></div>
         <div className="account-actions"><button onClick={() => void cloud.sync()}>Sync now</button><a href={signOutPath} target="_top">Sign out</a></div>
       </div>
-      {selected && returnToArrangement && ["drums", "chords", "melody", "riff", "metronome"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} chooseSection={(id) => { setDraftSectionId(id); setEditingIdea(null); }} updateProject={updateSelected} />}
+      {selected && returnToArrangement && ["drums", "chords", "melody", "bass", "riff", "metronome"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} chooseSection={(id) => { setDraftSectionId(id); setEditingIdea(null); }} updateProject={updateSelected} />}
       <DraftSession key={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} id={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} publish={publishPreview}>
       {screen === "home" && (
         <Home
@@ -1490,6 +1580,21 @@ export default function InspitivityApp({ account, signOutPath }: {
         <DrumTool
           key={`${editingIdea?.id ?? "new-drums"}-${draftSectionId ?? "default"}`}
           idea={editingIdea?.type === "drums" ? editingIdea : undefined}
+          project={musicProject ?? selected}
+          section={draftSection}
+          sectionIndex={draftSectionIndex}
+          updateProject={updateSelected}
+          back={backFromMusicTool}
+          save={saveIdea}
+          go={navigate}
+          metronomeEnabled={toolMetronomeEnabled}
+          toggleMetronome={() => setToolMetronomeEnabled((enabled) => !enabled)}
+        />
+      )}
+      {screen === "bass" && selected && (
+        <BassTool
+          key={`${editingIdea?.id ?? "new-bass"}-${draftSectionId ?? "default"}`}
+          idea={editingIdea?.type === "bass" ? editingIdea : undefined}
           project={musicProject ?? selected}
           section={draftSection}
           sectionIndex={draftSectionIndex}
@@ -1682,7 +1787,7 @@ function Home({
           </button>
         </div>
         <p className="sketch-note">
-          Creates a coherent intro, verse and hook with chords, motif and drums.
+          Creates a coherent intro, verse and hook with chords, bass, motif and drums.
         </p>
       </section>
       <SectionTitle
@@ -1712,51 +1817,6 @@ function Home({
           <b>+</b>
           <span>New project</span>
         </button>
-      </div>
-      <SectionTitle eyebrow="Built for momentum" title="Creative tools" />
-      <div className="tool-grid">
-        <ToolButton
-          tone="coral"
-          icon="●"
-          title="Drum Loops"
-          copy="Build a pocket"
-          onClick={() => go("drums")}
-        />
-        <ToolButton
-          tone="blue"
-          icon="♯"
-          title="Chord Progression"
-          copy="Generate harmonies"
-          onClick={() => go("chords")}
-        />
-        <ToolButton
-          tone="violet"
-          icon="♥"
-          title="Melody Generator"
-          copy="Shape a new motif"
-          onClick={() => go("melody")}
-        />
-        <ToolButton
-          tone="amber"
-          icon="⇶"
-          title="Synth Pattern"
-          copy="A repeating guide pulse"
-          onClick={() => go("riff")}
-        />
-        <ToolButton
-          tone="amber"
-          icon="♩"
-          title="Metronome"
-          copy="Keep time, stay loose"
-          onClick={() => go("metronome")}
-        />
-        <ToolButton
-          tone="coral"
-          icon="●"
-          title="Quick Record"
-          copy="Catch the moment"
-          onClick={record}
-        />
       </div>
     </>
   );
@@ -1866,7 +1926,7 @@ function TrashIcon() {
 }
 const SECTION_ASSETS = [
   ["drums", "Drums", "▦"], ["chords", "Chords", "♯"],
-  ["melody", "Melody", "♥"], ["riff", "Pattern", "⇶"], ["transition", "Transition", "⇄"],
+  ["bass", "Bass", "♭"], ["melody", "Melody", "♥"], ["riff", "Pattern", "⇶"], ["transition", "Transition", "⇄"],
 ] as const;
 
 function ProjectView({
@@ -1885,7 +1945,7 @@ function ProjectView({
   record: () => void;
   openSectionTool: (
     sectionId: string,
-    tool: "chords" | "melody" | "drums" | "riff" | "transition",
+    tool: "chords" | "melody" | "drums" | "bass" | "riff" | "transition",
   ) => void;
   editIdea: (sectionId: string, idea: Idea) => void;
   deleteProject: () => void;
@@ -1897,16 +1957,23 @@ function ProjectView({
   const [note, setNote] = useState("");
   const [sectionName, setSectionName] = useState("");
   const [arrangementPlaying, setArrangementPlaying] = useState(false);
+  const [playbackSeconds, setPlaybackSeconds] = useState(0);
+  const [countIn, setCountIn] = useState(false);
+  const [arrangementClick, setArrangementClick] = useState(false);
+  const [loopArrangement, setLoopArrangement] = useState(false);
   const [audioStatus, setAudioStatus] = useState<string | null>(null);
   const [activeSectionIndex, setActiveSectionIndex] = useState<number | null>(
     null,
   );
   const [playingIdeaId, setPlayingIdeaId] = useState<string | null>(null);
   const arrangementTimer = useRef<number | null>(null);
+  const playbackTimer = useRef<number | null>(null);
+  const loopArrangementRef = useRef(false);
   const sectionTimers = useRef<number[]>([]);
   const ideaTimer = useRef<number | null>(null);
   const ideaAudio = useRef<HTMLAudioElement | null>(null);
   const engine = useAudioEngine();
+  useEffect(() => { loopArrangementRef.current = loopArrangement; }, [loopArrangement]);
   const move = (index: number, direction: number) =>
     update((p) => {
       const sections = [...p.sections];
@@ -1918,11 +1985,14 @@ function ProjectView({
   const stopArrangement = useCallback(() => {
     if (arrangementTimer.current) window.clearTimeout(arrangementTimer.current);
     arrangementTimer.current = null;
+    if (playbackTimer.current) window.clearInterval(playbackTimer.current);
+    playbackTimer.current = null;
     sectionTimers.current.forEach((timer) => window.clearTimeout(timer));
     sectionTimers.current = [];
     engine.stopAll();
     setArrangementPlaying(false);
     setActiveSectionIndex(null);
+    setPlaybackSeconds(0);
   }, [engine]);
   const stopIdea = useCallback(() => {
     if (ideaTimer.current) window.clearTimeout(ideaTimer.current);
@@ -2005,12 +2075,46 @@ function ProjectView({
       ),
     }));
   };
-  const playSavedSections = async (sections: SongSection[], firstIndex: number) => {
+  const autoBalanceSection = (sectionId: string) => {
+    stopArrangement();
+    update((p) => ({ ...p, sections:p.sections.map((section) => section.id === sectionId ? { ...section, mix:automaticSectionMix(section) } : section) }));
+  };
+  const autoBalanceAll = () => {
+    stopArrangement();
+    update((p) => ({ ...p, sections:p.sections.map((section) => ({ ...section, mix:automaticSectionMix(section) })) }));
+  };
+  const setSectionRepeats = (sectionId: string, repeats: number) => {
+    stopArrangement();
+    update((p) => ({ ...p, sections:p.sections.map((section) => section.id === sectionId ? { ...section, repeats } : section) }));
+  };
+  const setSectionEnergy = (sectionId: string, energy: SectionEnergy) => {
+    stopArrangement();
+    update((p) => ({ ...p, sections:p.sections.map((section) => section.id === sectionId ? { ...section, energy, mix:automaticSectionMix({ ...section, energy }) } : section) }));
+  };
+  const duplicateSection = (sectionId: string, variation: boolean) => update((p) => {
+    const index = p.sections.findIndex((section) => section.id === sectionId);
+    if (index < 0) return p;
+    const source = p.sections[index];
+    const varyData = (idea: Idea) => !variation || !idea.data ? idea.data : idea.data.map((value, itemIndex) => {
+      const fields=value.split("|");
+      if (idea.type === "drums") fields[2]=String(Math.max(.2,Math.min(1,(Number(fields[2])||.7)*(itemIndex%3===0?1.08:.92))));
+      if (idea.type === "bass" || idea.type === "riff") fields[3]=itemIndex%4===3 ? (fields[3] === "1" ? "0" : "1") : fields[3];
+      if (idea.type === "melody" && itemIndex%4===2) fields[2]=String(Math.max(.2,(Number(fields[2])||.45)*.8));
+      return fields.join("|");
+    });
+    const copy: SongSection = { ...source, id:uid(), name:variation ? `${source.name} variation` : `${source.name} copy`, repeats:1, ideas:source.ideas.map((idea)=>({ ...idea,id:uid(),name:variation?`${idea.name} variation`:idea.name,data:varyData(idea) })) };
+    const sections=[...p.sections]; sections.splice(index+1,0,copy); return { ...p,sections };
+  });
+  const playSavedSections = async (sections: SongSection[], firstIndex: number, skipCountIn = false) => {
     window.dispatchEvent(new Event("inspitivity-solo-preview"));
     stopArrangement(); stopIdea();
     if (!(await engine.unlock())) { setAudioStatus("Audio blocked by this browser"); return; }
     const plan=buildSongPlan({...project,sections});
-    if(!plan.events.length) { setAudioStatus("Create a drum, chord, melody or pattern asset to hear this section."); return; }
+    if(!plan.events.length) { setAudioStatus("Create a drum, bass, chord, melody or pattern asset to hear this section."); return; }
+    const countInBeats = countIn && !skipCountIn ? meterBeats(project.meter) : 0;
+    const countInSeconds = countInBeats * beatDurationSeconds(project.bpm);
+    if (countInBeats) scheduleClickTrack(engine,countInBeats,beatDurationSeconds(project.bpm),project.meter);
+    if (arrangementClick) scheduleClickTrack(engine,Math.ceil(plan.seconds/beatDurationSeconds(project.bpm)),beatDurationSeconds(project.bpm),project.meter,countInSeconds);
     for(const event of plan.events) {
       const mix = sectionMix(sections.find((section) => section.id === event.sectionId));
       const settings = mix[event.layer];
@@ -2018,21 +2122,29 @@ function ProjectView({
       if (settings.muted || (hasSolo && !settings.solo) || settings.volume <= 0) continue;
       if(event.layer === "drums") {
         const instrument=Object.entries(DRUM_PITCHES).find(([,pitch])=>pitch===event.pitch)?.[0] as DrumInstrument | undefined;
-        if(instrument)engine.drum(instrument,event.seconds,event.velocity*settings.volume*.9,(event.voice as DrumKit)||"current");
+        if(instrument)engine.drum(instrument,event.seconds+countInSeconds,event.velocity*settings.volume*.9,(event.voice as DrumKit)||"current");
       } else {
-        const baseGain = event.layer === "chords" ? .052 : event.layer === "melody" ? .058 : .055;
-        engine.tone(event.pitch,event.seconds,event.secondsDuration,baseGain*event.velocity*settings.volume,(event.voice as SynthVoice)||(event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : "analog pulse"));
+        const baseGain = event.layer === "chords" ? .052 : event.layer === "melody" ? .058 : event.layer === "bass" ? .065 : .055;
+        engine.tone(event.pitch,event.seconds+countInSeconds,event.secondsDuration,baseGain*event.velocity*settings.volume,(event.voice as SynthVoice)||(event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : event.layer === "bass" ? "deep bass" : "analog pulse"));
       }
     }
     let offset=0;
     sections.forEach((section,index)=>{
       const sectionIndex=firstIndex+index;
-      sectionTimers.current.push(window.setTimeout(()=>setActiveSectionIndex(sectionIndex),offset*1000));
-      offset+=sectionBeatTotal(section,project.meter)*beatDurationSeconds(project.bpm);
+      for(let repeat=0;repeat<(section.repeats??1);repeat++) {
+        sectionTimers.current.push(window.setTimeout(()=>setActiveSectionIndex(sectionIndex),(offset+countInSeconds)*1000));
+        offset+=sectionBeatTotal(section,project.meter)*beatDurationSeconds(project.bpm);
+      }
     });
-    setArrangementPlaying(true);setActiveSectionIndex(firstIndex);
-    setAudioStatus("Playing saved assets · empty parts stay silent");
-    arrangementTimer.current=window.setTimeout(()=>{stopArrangement();setAudioStatus(null);},plan.seconds*1000);
+    const startedAt=performance.now()+countInSeconds*1000;
+    playbackTimer.current=window.setInterval(()=>setPlaybackSeconds(Math.max(0,(performance.now()-startedAt)/1000)),50);
+    setArrangementPlaying(true);setActiveSectionIndex(countInSeconds ? null : firstIndex);
+    setAudioStatus(countInSeconds ? `Count-in · ${countInBeats} beats` : "Playing saved assets · empty parts stay silent");
+    if(countInSeconds) sectionTimers.current.push(window.setTimeout(()=>setAudioStatus("Playing saved assets · empty parts stay silent"),countInSeconds*1000));
+    arrangementTimer.current=window.setTimeout(()=>{
+      if(loopArrangementRef.current) void playSavedSections(sections,firstIndex,true);
+      else { stopArrangement();setAudioStatus(null); }
+    },(plan.seconds+countInSeconds)*1000);
   };
   const playArrangement = async () => {
     if(arrangementPlaying) { stopArrangement(); return; }
@@ -2118,6 +2230,14 @@ function ProjectView({
       );
       return;
     }
+    if (idea.type === "bass") {
+      const bass = decodeBassIdea(idea);
+      bass.forEach((event) =>
+        engine.tone(event.pitch, event.start * beat, event.duration * beat, event.accent ? .065 : .05, "deep bass"),
+      );
+      finishAt(Math.max(.5, ...bass.map((event) => event.start + event.duration)) * beat * 1000);
+      return;
+    }
     if (idea.type === "audio" && idea.recordingId) {
       const blob = await getRecording(idea.recordingId);
       if (blob) {
@@ -2150,12 +2270,18 @@ function ProjectView({
       idea.type === "chords" ||
       idea.type === "melody" ||
       idea.type === "drums" ||
+      idea.type === "bass" ||
       idea.type === "riff" ||
       idea.type === "transition"
     )
       editIdea(sectionId, idea);
     else void playIdea(idea);
   };
+  const arrangementPlan = buildSongPlan(project);
+  const markerIndex = Math.max(0, arrangementPlan.markers.findLastIndex((marker) => marker.seconds <= playbackSeconds));
+  const marker = arrangementPlan.markers[markerIndex];
+  const beatInBar = marker ? Math.max(1, Math.floor((playbackSeconds-marker.seconds)/(60/marker.bpm))+1) : 1;
+  const playhead = arrangementPlan.seconds ? Math.min(100,(playbackSeconds/arrangementPlan.seconds)*100) : 0;
   return (
     <>
       <Topbar
@@ -2168,17 +2294,25 @@ function ProjectView({
           <span>Song progress</span>
           <div className="song-summary-actions">
             <PlayButton playing={arrangementPlaying} label="song" onClick={() => void playArrangement()} />
-            <b>{project.sections.reduce((n, s) => n + s.bars, 0)} bars</b>
+            <b>{project.sections.reduce((n, s) => n + s.bars*(s.repeats??1), 0)} bars</b>
           </div>
         </div>
         <div className="arrangement-line">
+          <span className="arrangement-playhead" style={{ left:`${playhead}%` }} aria-hidden="true" />
           {project.sections.map((section, index) => (
             <i
               className={`${section.color} ${activeSectionIndex === index ? "playing" : ""}`}
-              style={{ flex: section.bars }}
+              style={{ flex: section.bars*(section.repeats??1) }}
               key={section.id}
             />
           ))}
+        </div>
+        <div className="arrangement-transport" aria-label="Arrangement playback controls">
+          <span className="transport-position">Bar {markerIndex+1} · Beat {beatInBar}</span>
+          <label><input type="checkbox" checked={countIn} onChange={(event)=>setCountIn(event.target.checked)} /> Count-in</label>
+          <label><input type="checkbox" checked={arrangementClick} onChange={(event)=>setArrangementClick(event.target.checked)} /> Click</label>
+          <button aria-pressed={loopArrangement} className={loopArrangement ? "active" : ""} onClick={()=>setLoopArrangement((value)=>!value)}>↻ Loop</button>
+          <button onClick={autoBalanceAll}>Auto balance all</button>
         </div>
         <p className="flow-hint">
           Hear the full sketch, then change one layer inside the section that
@@ -2210,6 +2344,8 @@ function ProjectView({
                   {[...new Set([section.bars,4,8,12,16,24,32])].sort((a,b)=>a-b).map(bars=><option key={bars} value={bars}>{bars} bars</option>)}
                 </select>
               </label>
+              <label className="section-repeat"><span>Repeat</span><select aria-label={`${section.name} repeats`} value={section.repeats??1} onChange={(event)=>setSectionRepeats(section.id,Number(event.target.value))}>{[1,2,3,4].map(value=><option key={value} value={value}>×{value}</option>)}</select></label>
+              <label className="section-energy"><span>Energy</span><select aria-label={`${section.name} energy`} value={section.energy??sectionFeel(project,section).energy} onChange={(event)=>setSectionEnergy(section.id,event.target.value as SectionEnergy)}>{["mellow","balanced","powerful"].map(value=><option key={value}>{value}</option>)}</select></label>
               <details className="section-meter-settings"><summary>{[...new Set(sectionMeterMap(section,project.meter))].join(" / ")}</summary>
                 <div className="meter-map">{sectionMeterMap(section,project.meter).map((meter,barIndex)=><button key={barIndex} onClick={()=>cycleSectionMeter(section.id,barIndex)} aria-label={`Bar ${barIndex+1}: ${meter}. Change meter`}>{barIndex+1}: {meter}</button>)}</div>
               </details>
@@ -2233,7 +2369,8 @@ function ProjectView({
               })}
             </div>
             <details className="section-mixer embedded-mixer">
-              <summary>Mix tracks</summary>
+              <summary>Mix tracks <span>peak-safe</span></summary>
+              <button className="auto-balance" onClick={()=>autoBalanceSection(section.id)}>Auto balance this section</button>
               <div className="mixer-grid">
                 {LAYER_LABELS.map(([layer, label]) => {
                   const settings = sectionMix(section)[layer];
@@ -2273,6 +2410,8 @@ function ProjectView({
             <footer className="section-order-controls">
               <button onClick={()=>move(index,-1)} disabled={index===0} aria-label={`Move ${section.name} up`}>↑</button>
               <button onClick={()=>move(index,1)} disabled={index===project.sections.length-1} aria-label={`Move ${section.name} down`}>↓</button>
+              <button onClick={()=>duplicateSection(section.id,false)} aria-label={`Duplicate ${section.name}`}>⧉ <span>Copy</span></button>
+              <button onClick={()=>duplicateSection(section.id,true)} aria-label={`Create variation of ${section.name}`}>⌁ <span>Variation</span></button>
               <button onClick={()=>removeSection(section.id)} disabled={project.sections.length===1} aria-label={`Remove ${section.name}`}><TrashIcon /></button>
             </footer>
           </article>
@@ -2399,7 +2538,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
   const mix = sectionMix(selectedSection);
   const previewProject = useMemo(() => ({ ...project, sections: selectedSection ? [{
     ...selectedSection,
-    ideas: (["drums", "chords", "melody", "riff"] as const).reduce((ideas, type) => {
+    ideas: (["drums", "bass", "chords", "melody", "riff"] as const).reduce((ideas, type) => {
       const draft = previews[`${project.id}/${activeSectionId ?? "scratch"}/${type}`];
       if (!draft) return ideas;
       const next = [...ideas], index = next.findIndex(idea => idea.type === type);
@@ -2454,9 +2593,9 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
             const instrument=(Object.entries(DRUM_PITCHES).find(([,pitch])=>pitch===event.pitch)?.[0] as DrumInstrument | undefined);
             if (instrument) engine.drum(instrument,delay,event.velocity*settings.volume*.9, (event.voice ?? "current") as DrumKit);
           } else {
-            const voice=(event.voice ?? (event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : "analog pulse")) as SynthVoice;
-            const baseGain = event.layer === "chords" ? .052 : event.layer === "melody" ? .058 : .055;
-            engine.tone(event.pitch,delay,event.secondsDuration,baseGain*event.velocity*settings.volume,voice);
+            const voice=(event.voice ?? (event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : event.layer === "bass" ? "deep bass" : "analog pulse")) as SynthVoice;
+            const baseGain = event.layer === "chords" ? .052 : event.layer === "melody" ? .058 : event.layer === "bass" ? .065 : .055;
+            engine.tone(event.pitch,delay,event.secondsDuration,baseGain*event.velocity*settings.volume,voice === "current" ? "deep bass" : voice);
           }
         }
         setProgress(Math.max(0,Math.min(1,(now-origin)/Math.max(.1,cyclePlan.seconds))));
@@ -2541,6 +2680,12 @@ function ToolHeader({
           onClick={() => go("chords")}
         >
           Chords
+        </button>
+        <button
+          className={active === "bass" ? "active" : ""}
+          onClick={() => go("bass")}
+        >
+          Bass
         </button>
         <button
           className={active === "melody" ? "active" : ""}
@@ -3510,6 +3655,75 @@ function MelodyTool({
       </div>
     </>
   );
+}
+
+function BassTool({
+  idea,
+  project,
+  section,
+  sectionIndex,
+  updateProject,
+  back,
+  save,
+  go,
+  metronomeEnabled,
+  toggleMetronome,
+}: {
+  idea?: Idea;
+  project: Project;
+  section?: SongSection;
+  sectionIndex: number;
+  updateProject: (fn: (p: Project) => Project) => void;
+  back: () => void;
+  save: SaveIdea;
+  go: (s: Screen) => void;
+  metronomeEnabled: boolean;
+  toggleMetronome: () => void;
+}) {
+  const [pattern, setPattern] = useDraftState<BassPattern>("bassPattern", "groove");
+  const [lockToKick, setLockToKick] = useDraftState("bassLockToKick", true);
+  const [seed, setSeed] = useDraftState("bassSeed", () => freshSeed() + Math.max(0, sectionIndex));
+  const [savedBass, setSavedBass] = useDraftState<BassEvent[] | null>("savedBass", () => idea ? decodeBassIdea(idea) : null);
+  const generated = useMemo(
+    () => generateBassLine(project, section, pattern, lockToKick, seed),
+    [project, section, pattern, lockToKick, seed],
+  );
+  const bass = savedBass ?? generated;
+  const beatSeconds = beatDurationSeconds(project.bpm);
+  const length = Math.max(.5, ...bass.map((event) => event.start + event.duration));
+  const engine = useAudioEngine();
+  const play = useCallback(() => {
+    bass.forEach((event) => engine.tone(event.pitch, event.start * beatSeconds, event.duration * beatSeconds, event.accent ? .065 : .05, "deep bass"));
+    if (metronomeEnabled) scheduleClickTrack(engine, Math.ceil(length), beatSeconds, project.meter);
+  }, [bass, beatSeconds, engine, length, metronomeEnabled, project.meter]);
+  const transport = useLoopTransport(play, length * beatSeconds * 1000, engine.stopAll, engine.unlock);
+  useDraftPreview({ type:"bass", data:bass.map(encodeBassEvent), voice:"deep bass" });
+  const regenerate = () => { transport.stop(); setSavedBass(null); setSeed((value) => value + 1); };
+  return <>
+    <ToolHeader title="Bass Generator" subtitle="Connect harmony and drums with a focused mono bass line" projectName={project.name} back={back} go={go} active="bass" />
+    <ProjectContext project={project} update={updateProject} metronomeEnabled={metronomeEnabled} toggleMetronome={toggleMetronome} />
+    {section && <p className="destination-name">Following {section.name} · {section.energy ?? sectionFeel(project,section).energy} energy</p>}
+    <DraftToolbar />
+    <div className="tool-layout">
+      <GeneratorSettings className="bass-panel">
+        <ControlTitle n="1" title="Bass movement" />
+        <Select label="Pattern" value={pattern} options={["sustained","eighth notes","groove","syncopated","progressive"]} set={(value) => { transport.stop(); setSavedBass(null); setPattern(value as BassPattern); }} />
+        <ControlTitle n="2" title="Rhythm-section lock" />
+        <label className="bass-lock"><input type="checkbox" checked={lockToKick} onChange={(event) => { transport.stop(); setSavedBass(null); setLockToKick(event.target.checked); }} /><span>Follow kick attacks when drums exist</span></label>
+        <p className="control-note">Chord changes are always preserved. Kick lock changes note timing, not harmony.</p>
+        <button className="primary-button wide" onClick={regenerate}>Generate new bass line <span>↻</span></button>
+      </GeneratorSettings>
+      <section className="result-panel bass-result">
+        <div className="result-heading"><div><p className="eyebrow">Mono electric bass</p><h2>{pattern} · {bass.length} notes</h2></div><PlayButton playing={transport.mode !== "stopped"} label="bass line" onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} /></div>
+        <div className="bass-roll" aria-label="Bass timing preview">
+          {bass.map((event,index)=><span key={`${event.start}-${index}`} className={event.accent ? "accent" : ""} style={{left:`${(event.start/length)*100}%`,width:`${Math.max(2,(event.duration/length)*100)}%`,bottom:`${18+(event.pitch-36)*7}px`}} title={`${midiNoteName(event.pitch)} · beat ${event.start+1}`}>{midiNoteName(event.pitch)}</span>)}
+        </div>
+        <div className={`playback-bar ${transport.mode !== "stopped" ? "is-playing" : ""}`}><button aria-label="Play bass line" onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()}>{transport.mode === "stopped" ? "▶" : "■"}</button><Wave tone="blue" bars={12}/><button className={`loop-button ${transport.mode === "loop" ? "active" : ""}`} aria-pressed={transport.mode === "loop"} onClick={() => transport.mode === "loop" ? transport.stop() : void transport.start(true)}>↻ <small>Loop</small></button></div>
+        <SaveActions section={section} editing={!!idea} submit={(chooseDestination) => save("bass", `${pattern} bass`, `${bass.length} notes · ${lockToKick ? "kick locked" : "independent pulse"}`, bass.map(encodeBassEvent), chooseDestination, "deep bass")} />
+        <button className="export-button wide" onClick={() => downloadMidi(`${project.name}-bass`, createMidiFile({name:`${project.name} bass`,bpm:project.bpm,meter:project.meter,notes:bass,program:MIDI_PROGRAMS["deep bass"]}))}>⇩ Export bass as MIDI</button>
+      </section>
+    </div>
+  </>;
 }
 
 function RiffTool({
@@ -4612,6 +4826,13 @@ function CreateModal({
             title="New progression"
             copy="Find the harmony"
             onClick={() => choose("chords")}
+          />
+          <ToolButton
+            tone="violet"
+            icon="♭"
+            title="Bass line"
+            copy="Connect harmony and drums"
+            onClick={() => choose("bass")}
           />
           <ToolButton
             tone="violet"

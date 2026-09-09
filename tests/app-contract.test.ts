@@ -9,11 +9,12 @@ const source = await readFile(
 );
 const theme = await readFile(resolve(process.cwd(), "app/theme.css"), "utf8");
 
-test("the product surface retains all six planned workflows", () => {
+test("the product surface retains the core songwriting workflows", () => {
   for (const feature of [
     "Projects",
-    "Quick Record",
+    "Record idea",
     "Chord Progression",
+    "Bass Generator",
     "Melody Generator",
     "Drum Loop Generator",
     "Metronome",
@@ -23,7 +24,7 @@ test("the product surface retains all six planned workflows", () => {
 
 test("project tool navigation stays visible above a compact section player", () => {
   assert.match(source, /returnToArrangement \? "inside-project" : ""/);
-  assert.match(source, /\["drums", "chords", "melody", "riff", "metronome"\]\.includes\(screen\)/);
+  assert.match(source, /\["drums", "chords", "melody", "bass", "riff", "metronome"\]\.includes\(screen\)/);
   assert.match(source, /back=\{backFromMusicTool\}/);
   assert.match(source, /projectName=\{project\.name\}/);
   assert.match(theme, /\.inside-project \.topbar\{order:-2/);
@@ -37,6 +38,40 @@ test("shared play controls are larger, green at rest, and red while playing", ()
   assert.match(theme, /button\.play-control\{min-width:108px;min-height:50px/);
   assert.match(theme, /background:#173b2a;color:#c7ffda/);
   assert.match(theme, /button\.play-control\.playing\{background:#4a171e/);
+});
+
+test("arrangement playback exposes timing, looping, count-in, and automatic balance", () => {
+  assert.match(source, /className="arrangement-playhead"/);
+  assert.match(source, /Bar \{markerIndex\+1\} · Beat \{beatInBar\}/);
+  assert.match(source, /> Count-in</);
+  assert.match(source, /↻ Loop/);
+  assert.match(source, /automaticSectionMix/);
+  assert.match(source, /Auto balance all/);
+  assert.match(source, /Peak-safe|peak-safe/);
+});
+
+test("bass connects harmony and drums and participates in playback and mixing", () => {
+  assert.match(source, /function BassTool/);
+  assert.match(source, /function generateBassLine|const generateBassLine/);
+  assert.match(source, /Follow kick attacks when drums exist/);
+  assert.match(source, /type:"bass"/);
+  assert.match(source, /"deep bass"/);
+  assert.match(source, /\["bass", "Bass"\]/);
+});
+
+test("arrangement sections expose repeats, energy, copies, and variations without overlapping asset actions", async () => {
+  const studio = await readFile(resolve(process.cwd(), "app/studio.css"), "utf8");
+  assert.match(source, /setSectionRepeats/);
+  assert.match(source, /setSectionEnergy/);
+  assert.match(source, /duplicateSection\(section\.id,false\)/);
+  assert.match(source, /duplicateSection\(section\.id,true\)/);
+  assert.match(studio, /grid-template-columns:minmax\(0,1fr\) 50px 42px/);
+  assert.match(theme, /\.project-actions\{bottom:12px\}/);
+});
+
+test("home omits the duplicate creative-tools directory", () => {
+  assert.doesNotMatch(source, /Built for momentum/);
+  assert.doesNotMatch(source, /title="Creative tools"/);
 });
 
 test("projects and recordings retain an offline copy alongside private cloud sync", async () => {
@@ -69,7 +104,7 @@ test("the songwriting workspace is installable on a phone", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.match(serviceWorker, /inspitivity-shell-v5/);
+  assert.match(serviceWorker, /inspitivity-shell-v6/);
   assert.match(serviceWorker, /cache\.delete\("\/"\)/);
 });
 
@@ -110,7 +145,7 @@ test("arrangement sections own playback and persistent per-track mixing", async 
   assert.match(source, /DEFAULT_SECTION_MIX/);
   assert.match(source, /mix: \{ \.\.\.section\.mix/);
   assert.match(source, /event\.sectionId/);
-  assert.match(source, /\["drums", "chords", "melody", "riff", "metronome"\]\.includes\(screen\)/);
+  assert.match(source, /\["drums", "chords", "melody", "bass", "riff", "metronome"\]\.includes\(screen\)/);
   assert.match(theme, /\.project-screen \.topbar,\.inside-project \.topbar\{position:sticky/);
 });
 
@@ -193,9 +228,9 @@ test("the metronome supports 9/8 projects", () => {
   );
 });
 
-test("the app gives chords, melody, and drums distinct accessible visual identities", () => {
+test("the app gives music tools distinct accessible visual identities", () => {
   assert.match(source, /className=\{`app-shell \$\{screen\}-screen \$\{returnToArrangement/);
-  assert.match(source, /tone="blue"\s*icon="♯"\s*title="Chord Progression"/);
+  assert.match(source, /title="Bass line"/);
 });
 
 test("both generators expose accessible play and loop controls", () => {

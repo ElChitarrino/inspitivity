@@ -51,9 +51,10 @@ html[data-theme="crimson"] .piano-note{background:var(--mint)}
 .electric-preview .theme-swatch{background:#090b09;border:1px solid #354323}.electric-preview .theme-swatch i{background:#c8ff3d}
 
 .project-actions .danger-action{display:flex;align-items:center;gap:8px;border-color:#80531f;background:#2b2115;color:#ffc06b}
+.project-actions{bottom:12px}
 .confirm-delete p{color:var(--muted);line-height:1.5}.danger-text{color:#ffc06b!important}.confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:24px}.confirm-actions button{min-height:46px;border-radius:7px;font-weight:750}.danger-button{border:1px solid #c77d26;background:#f0a23f;color:#1b1004}
 
-@media(max-width:700px){.project-open{grid-template-columns:54px 1fr 18px;gap:11px;padding:14px}.project-avatar{width:54px;height:54px}.project-delete-button{width:48px}.theme-grid{grid-template-columns:1fr}.project-actions .danger-action{flex-basis:100%}}
+@media(max-width:700px){.project-open{grid-template-columns:54px 1fr 18px;gap:11px;padding:14px}.project-avatar{width:54px;height:54px}.project-delete-button{width:48px}.theme-grid{grid-template-columns:1fr}.project-actions{bottom:76px}.project-actions .danger-action{flex-basis:100%}}
 
 .brand-mark{overflow:hidden;background:#0b1730!important;color:transparent!important}
 .brand-mark img{display:block;width:100%;height:100%;object-fit:cover}

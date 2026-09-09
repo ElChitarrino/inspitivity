@@ -4,6 +4,8 @@ import type { Project, SongSection } from "./index.js";
 import type { GrooveEnergy } from "../sequencing/index.js";
 
 export function sectionFeel(project: Project, section?: SongSection): { energy: GrooveEnergy; reason: string } {
+  if (section?.energy)
+    return { energy: section.energy, reason: `${section.name} is set to ${section.energy} energy in the arrangement.` };
   const ideas = section ? section.ideas : project.sections.flatMap(s => s.ideas);
   const harmony = ideas.find(i => i.type === "chords");
   const durations = harmony?.data?.map(d => Math.max(0.25, Number(d.split("|")[1]) || 4)) ?? [];
@@ -24,13 +26,15 @@ export function sectionFeel(project: Project, section?: SongSection): { energy: 
   return { energy: score <= -1 ? "mellow" : score >= 1 ? "powerful" : "balanced", reason: `Following ${reasons.join(" and ") || `${project.bpm} BPM; add harmony or melody for a closer fit`}${section ? ` in ${section.name}` : ""}.` };
 }
 
-export type SongLayer = "drums" | "chords" | "melody" | "riff";
+export type SongLayer = "drums" | "bass" | "chords" | "melody" | "riff";
 export type SongEvent = { sectionId: string; voice?: string; layer: SongLayer; pitch: number; start: number; duration: number; velocity: number; seconds: number; secondsDuration: number };
 export type SongMarker = { start: number; seconds: number; meter: string; bpm: number; name?: string };
 export function buildSongPlan(project: Project) {
   const events: SongEvent[] = [], markers: SongMarker[] = [];
   let quarterOffset = 0, secondOffset = 0;
   for (const section of project.sections) {
+   const repeats = Math.max(1, Math.min(8, section.repeats ?? 1));
+   for (let repeatIndex = 0; repeatIndex < repeats; repeatIndex++) {
     const meters = Array.from({ length: section.bars }, (_, i) => section.meterMap?.length ? section.meterMap[i % section.meterMap.length] : project.meter);
     const bars = meters.map(meter => ({ meter, units: Number(meter.split("/")[0]) || 4, ratio: 4 / (Number(meter.split("/")[1]) || 4) }));
     const length = bars.reduce((s,b) => s+b.units, 0);
@@ -42,7 +46,7 @@ export function buildSongPlan(project: Project) {
     const unitSeconds = 60 / project.bpm;
     let barUnit = 0;
     for (const b of bars) {
-      markers.push({ start: quarterOffset + toQuarter(barUnit), seconds: secondOffset + barUnit*unitSeconds, meter: b.meter, bpm: project.bpm*b.ratio, ...(barUnit === 0 ? { name: section.name } : {}) });
+      markers.push({ start: quarterOffset + toQuarter(barUnit), seconds: secondOffset + barUnit*unitSeconds, meter: b.meter, bpm: project.bpm*b.ratio, ...(barUnit === 0 ? { name: repeats > 1 ? `${section.name} ${repeatIndex + 1}/${repeats}` : section.name } : {}) });
       barUnit += b.units;
     }
     const add = (layer: SongLayer, pitch: number, start: number, duration: number, velocity: number) => {
@@ -50,7 +54,7 @@ export function buildSongPlan(project: Project) {
       const end = Math.min(length, start+duration);
       events.push({ sectionId: section.id, voice: section.ideas.find(i => i.type === layer)?.voice, layer, pitch, start: quarterOffset+toQuarter(start), duration: toQuarter(end)-toQuarter(start), velocity, seconds: secondOffset+start*unitSeconds, secondsDuration: (end-start)*unitSeconds });
     };
-    for (const layer of ["chords", "melody", "riff", "drums"] as const) {
+    for (const layer of ["chords", "melody", "bass", "riff", "drums"] as const) {
       const idea = section.ideas.find(i => i.type === layer);
       const data = idea?.data ?? (layer === "chords" && idea ? idea.detail.split(" · ") : []);
       if (!data.length) continue;
@@ -91,11 +95,12 @@ export function buildSongPlan(project: Project) {
         }).filter(n => [n.pitch,n.start,n.duration].every(Number.isFinite));
         // A saved phrase is its own loop. Repeat it intact until the section
         // ends instead of stretching it to the first bar or dropping it early.
-        const cycle = Math.max(.125, ...notes.map(n => n.start + n.duration));
+        const cycle = layer === "bass" ? length : Math.max(.125, ...notes.map(n => n.start + n.duration));
         for (let offset = 0; offset < length; offset += cycle) for (const n of notes) add(layer,n.pitch,offset+n.start,n.duration,n.velocity);
       }
     }
     quarterOffset += toQuarter(length); secondOffset += length*unitSeconds;
+   }
   }
   return { events: events.sort((a,b)=>a.seconds-b.seconds), markers, quarters: quarterOffset, seconds: secondOffset };
 }

@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type SetStateAction } from "react";
 
 type Values = Record<string, unknown>;
-export type DraftPreview = { type: "chords" | "melody" | "drums" | "riff"; data: string[]; voice?: string };
+export type DraftPreview = { type: "chords" | "melody" | "drums" | "bass" | "riff"; data: string[]; voice?: string };
 type DraftContextValue = { values: Values; ready: boolean; saved: boolean; set: (key: string, value: SetStateAction<unknown>) => void; register: (key: string, value: unknown) => void; publish: (preview: DraftPreview) => void; undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean; error: boolean };
 const DraftContext = createContext<DraftContextValue | null>(null);
 export function DraftSession({ id, children, publish }: { id: string; children: ReactNode; publish: (preview: DraftPreview) => void }) {

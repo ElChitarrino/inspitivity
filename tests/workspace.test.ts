@@ -33,6 +33,15 @@ test("workspace validation rejects malformed or oversized musical records",()=>{
   assert.equal(validProjects([project(),project()]),false);
   assert.equal(validProjects([{...project(),sections:[{...project().sections[0],ideas:[{type:"audio"}]}]}]),false);
 });
+test("workspace accepts bass, section energy, and bounded repeats",()=>{
+  const p=project();
+  p.sections[0].energy="powerful"; p.sections[0].repeats=2;
+  p.sections[0].ideas.push({id:"b",type:"bass",name:"Bass",detail:"",voice:"deep bass",data:["36|0|0.45|1"]});
+  p.sections[0].mix={bass:{muted:false,solo:false,volume:.62}};
+  assert.ok(validProjects([p]));
+  p.sections[0].repeats=9;
+  assert.equal(validProjects([p]),false);
+});
 test("section feel uses actual harmony and is independent of mood keywords",()=>{
   const p=project();
   assert.equal(sectionFeel(p,p.sections[0]).energy,"mellow");
@@ -70,6 +79,14 @@ test("song plan repeats saved layers, preserves displaced starts, and leaves mis
   assert.equal(plan.events.some(e=>e.layer==="drums"),false);
   assert.ok(plan.events.every(e=>e.sectionId==="s"));
   assert.ok(plan.events.every(e=>e.start+e.duration<=8));
+});
+test("song plan expands arrangement repeats and includes mono bass events",()=>{
+  const p=project(); p.sections[0].repeats=2;
+  p.sections[0].ideas.push({id:"b",type:"bass",name:"Bass",detail:"",voice:"deep bass",data:["36|0|0.45|1","41|4|0.45|0"]});
+  const plan=buildSongPlan(p);
+  assert.equal(plan.quarters,16);
+  assert.equal(plan.seconds,8);
+  assert.deepEqual(plan.events.filter(event=>event.layer==="bass").map(event=>event.start),[0,4,8,12]);
 });
 test("short saved phrases repeat at their own loop length until a longer section ends",()=>{
   const p=project(); p.sections[0].bars=4;
