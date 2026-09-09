@@ -1218,7 +1218,7 @@ export default function InspitivityApp({ account, signOutPath }: {
       setEditingIdea(selected?.sections.find(s => s.id === draftSectionId)?.ideas.find(i => i.type === next) ?? null);
       savedDraftId.current = null;
     }
-    if (!["chords", "melody", "drums", "riff", "transition"].includes(next))
+    if (!["chords", "melody", "drums", "riff", "transition", "metronome"].includes(next))
       { setReturnToArrangement(false); setDraftSectionId(null); }
     setScreen(next);
   };
@@ -1412,13 +1412,13 @@ export default function InspitivityApp({ account, signOutPath }: {
       : -1;
 
   return (
-    <main className={`app-shell ${screen}-screen`}>
+    <main className={`app-shell ${screen}-screen ${returnToArrangement ? "inside-project" : ""}`}>
       <div className="studio-workspace">
       <div className="sync-status">
         <div className="account-sync"><b>{account.displayName}</b><span role="status">{cloud.status}</span></div>
         <div className="account-actions"><button onClick={() => void cloud.sync()}>Sync now</button><a href={signOutPath} target="_top">Sign out</a></div>
       </div>
-      {selected && ["drums", "chords", "melody", "riff"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} chooseSection={(id) => { setDraftSectionId(id); setEditingIdea(null); }} updateProject={updateSelected} />}
+      {selected && returnToArrangement && ["drums", "chords", "melody", "riff", "metronome"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} chooseSection={(id) => { setDraftSectionId(id); setEditingIdea(null); }} updateProject={updateSelected} />}
       <DraftSession key={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} id={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} publish={publishPreview}>
       {screen === "home" && (
         <Home
@@ -1532,7 +1532,7 @@ export default function InspitivityApp({ account, signOutPath }: {
         <Metronome
           project={selected}
           updateProject={updateSelected}
-          back={() => navigate("home")}
+          back={backFromMusicTool}
           go={navigate}
         />
       )}
@@ -2489,12 +2489,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
         <label className="track-volume"><span>{Math.round(mix[layer].volume*100)}%</span><input type="range" aria-label={`${label} volume`} min="0" max="1" step="0.05" value={mix[layer].volume} onChange={e=>updateMix(layer,{volume:Number(e.target.value)})} /></label>
       </div>)}
     </div></details>
-    <p>{message || "Loops saved parts plus your current drafts. Missing layers stay silent. Mix settings are saved with this section."}</p>
-    <button className="export-button" onClick={() => {
-      const song=buildSongPlan(project);
-      const tracks=([ ["drums","Drums",9,0], ["chords","Chords",0,89], ["melody","Melody",1,73], ["riff","Pattern",2,81] ] as const).map(([layer,name,channel,program])=>({name,channel,program,notes:song.events.filter(e=>e.layer===layer)}));
-      downloadMidi(`${project.name}-song`,createMultitrackMidi({name:project.name,tracks,markers:song.markers,length:song.quarters}));
-    }}>⇩ Export saved song as multitrack MIDI</button>
+    {message && <p role="status">{message}</p>}
   </section>;
 }
 
@@ -2519,19 +2514,21 @@ function PlayButton({ playing, onClick, label, compact = false, className = "", 
 function ToolHeader({
   title,
   subtitle,
+  projectName,
   back,
   go,
   active,
 }: {
   title: string;
   subtitle: string;
+  projectName?: string;
   back: () => void;
   go: (s: Screen) => void;
   active: Screen;
 }) {
   return (
     <>
-      <Topbar title={title} subtitle={subtitle} onBack={back} />
+      <Topbar title={title} subtitle={projectName ? `${projectName} · ${subtitle}` : subtitle} onBack={back} />
       <div className="tool-tabs">
         <button
           className={active === "drums" ? "active" : ""}
@@ -2794,6 +2791,7 @@ function ChordTool({
       <ToolHeader
         title="Chord Progression"
         subtitle="Shape coherent harmonic arcs, then make them yours"
+        projectName={project.name}
         back={back}
         go={go}
         active="chords"
@@ -3278,6 +3276,7 @@ function MelodyTool({
       <ToolHeader
         title="Melody Generator"
         subtitle="Shape motifs with movement and intention"
+        projectName={project.name}
         back={back}
         go={go}
         active="melody"
@@ -3577,6 +3576,7 @@ function RiffTool({
       <ToolHeader
         title="Synth Pattern"
         subtitle="Create a repeating pulse that pulls the track forward"
+        projectName={project.name}
         back={back}
         go={go}
         active="riff"
@@ -3812,6 +3812,7 @@ function TransitionTool({
       <ToolHeader
         title="Transition Builder"
         subtitle="Connect sections with intent, not just a cut"
+        projectName={project.name}
         back={back}
         go={go}
         active="transition"
@@ -3977,6 +3978,7 @@ function DrumTool({
       <ToolHeader
         title="Drum Loop Generator"
         subtitle="Build a pocket for your section"
+        projectName={project.name}
         back={back}
         go={go}
         active="drums"
@@ -4044,7 +4046,6 @@ function DrumTool({
             />
           </label>
           <label className="range-control"><span>Fill chance · {Math.round(fill*100)}%</span><input aria-label="Fill chance" type="range" min="0" max="1" step=".1" value={fill} onChange={e=>{setFill(Number(e.target.value));setSavedLoop(null);}} /></label>
-          <p className="control-note">New kick patterns, ghost notes, cymbal phrasing and dynamic accents. Longer phrases develop over several bars and can finish with a tom fill.</p>
           <button
             className="primary-button coral-button wide"
             onClick={regenerate}
@@ -4246,6 +4247,7 @@ function Metronome({
       <ToolHeader
         title="Metronome"
         subtitle="A steady pulse that stays out of the way"
+        projectName={project.name}
         back={back}
         go={go}
         active="metronome"

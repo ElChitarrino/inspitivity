@@ -20,7 +20,12 @@ html[data-theme="crimson"] .section-player{background:#171012;border-color:#5834
 html[data-theme="crimson"] .section-player select,
 html[data-theme="crimson"] .section-player button,
 html[data-theme="crimson"] .mixer-channel{background:#25191c}
-html[data-theme="crimson"] .play-control{background:#421a22;border-color:#a44352;color:#ffe6e9}
+html[data-theme] .app-shell button.play-control{min-width:108px;min-height:50px;padding:0 18px;border-color:#5ba87a;background:#173b2a;color:#c7ffda;font-size:16px}
+html[data-theme] .app-shell button.play-control:hover{background:#205038;border-color:#8bd5a5}
+html[data-theme] .app-shell button.play-control.compact{width:50px;min-width:50px;min-height:46px;padding:0}
+html[data-theme] .app-shell button.play-control.playing{background:#4a171e;border-color:#e05a69;color:#ffe1e5}
+html[data-theme] .app-shell button.play-control.playing:hover{background:#5b1b24;border-color:#ff7b88}
+html[data-theme] .play-control .play-symbol{font-size:18px}
 html[data-theme="crimson"] .asset-tile{background:#1c1719;border-color:#47383c;color:#aaa1a4}
 html[data-theme="crimson"] .asset-tile.is-created{background:#3a171e;border-color:#9b3c4a;color:#ffe8eb}
 html[data-theme="crimson"] .section-card,
@@ -53,14 +58,21 @@ html[data-theme="crimson"] .piano-note{background:var(--mint)}
 .brand-mark{overflow:hidden;background:#0b1730!important;color:transparent!important}
 .brand-mark img{display:block;width:100%;height:100%;object-fit:cover}
 
-.project-screen .topbar{position:sticky;top:0;z-index:55;margin-inline:calc(clamp(24px,3.4vw,72px) * -1);padding:12px clamp(24px,3.4vw,72px);background:color-mix(in srgb,var(--black) 90%,transparent);border-bottom:1px solid var(--line);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.project-screen .topbar,.inside-project .topbar{position:sticky;top:0;z-index:55;margin-inline:calc(clamp(24px,3.4vw,72px) * -1);padding:12px clamp(24px,3.4vw,72px);background:color-mix(in srgb,var(--black) 90%,transparent);border-bottom:1px solid var(--line);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.inside-project .studio-workspace{display:flex;flex-direction:column}
+.inside-project .sync-status{display:none}
+.inside-project .topbar{order:-2;margin-bottom:12px}
+.inside-project .section-player{order:-1;padding:10px 14px;margin-bottom:12px;border-radius:8px}
+.inside-project .section-player-heading{gap:12px}
+.inside-project .section-player-heading .eyebrow{font-size:10px}
+.inside-project .section-player progress{margin:7px 0 1px}
 .embedded-mixer{margin-top:14px;border-top:1px solid var(--line)}
 .embedded-mixer>summary{color:var(--ink);font-weight:700}
 .track-volume{grid-column:1/-1;display:grid;grid-template-columns:44px minmax(0,1fr);align-items:center;gap:8px;color:var(--muted);font-size:12px}
 .track-volume input{grid-column:auto;min-width:0;width:100%;accent-color:var(--mint)}
 .mixer-channel:has(button[aria-pressed="true"]){border:1px solid color-mix(in srgb,var(--mint) 55%,var(--line))}
 
-@media(max-width:700px){.project-screen .topbar{margin-inline:-15px;padding:10px 15px}.embedded-mixer .mixer-grid{grid-template-columns:1fr}.track-volume{grid-template-columns:42px minmax(0,1fr)}}
+@media(max-width:700px){.project-screen .topbar,.inside-project .topbar{margin-inline:-15px;padding:10px 15px}.inside-project .section-player{padding:10px;margin-bottom:10px}.inside-project .section-player-heading>div{flex:1 1 auto}.embedded-mixer .mixer-grid{grid-template-columns:1fr}.track-volume{grid-template-columns:42px minmax(0,1fr)}}
 
 .account-sync{display:grid;gap:3px;min-width:0}.account-sync b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-size:14px}.account-sync span{font-size:12px}.account-actions{display:flex;align-items:center;gap:10px;flex:none}.account-actions a{color:var(--muted);font-size:12px;text-decoration:none}.account-actions a:hover,.account-actions a:focus-visible{color:var(--ink);text-decoration:underline}
 @media(max-width:700px){.account-actions{gap:5px}.account-actions a{padding:8px 2px}.account-sync b{font-size:13px}}

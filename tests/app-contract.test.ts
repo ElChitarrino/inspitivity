@@ -7,6 +7,7 @@ const source = await readFile(
   resolve(process.cwd(), "app/InspitivityApp.tsx"),
   "utf8",
 );
+const theme = await readFile(resolve(process.cwd(), "app/theme.css"), "utf8");
 
 test("the product surface retains all six planned workflows", () => {
   for (const feature of [
@@ -18,6 +19,24 @@ test("the product surface retains all six planned workflows", () => {
     "Metronome",
   ])
     assert.match(source, new RegExp(feature));
+});
+
+test("project tool navigation stays visible above a compact section player", () => {
+  assert.match(source, /returnToArrangement \? "inside-project" : ""/);
+  assert.match(source, /\["drums", "chords", "melody", "riff", "metronome"\]\.includes\(screen\)/);
+  assert.match(source, /back=\{backFromMusicTool\}/);
+  assert.match(source, /projectName=\{project\.name\}/);
+  assert.match(theme, /\.inside-project \.topbar\{order:-2/);
+  assert.match(theme, /\.inside-project \.section-player\{order:-1/);
+  assert.doesNotMatch(source, /Loops saved parts plus your current drafts/);
+  assert.doesNotMatch(source, /Export saved song as multitrack MIDI/);
+  assert.doesNotMatch(source, /New kick patterns, ghost notes/);
+});
+
+test("shared play controls are larger, green at rest, and red while playing", () => {
+  assert.match(theme, /button\.play-control\{min-width:108px;min-height:50px/);
+  assert.match(theme, /background:#173b2a;color:#c7ffda/);
+  assert.match(theme, /button\.play-control\.playing\{background:#4a171e/);
 });
 
 test("projects and recordings retain an offline copy alongside private cloud sync", async () => {
@@ -91,8 +110,8 @@ test("arrangement sections own playback and persistent per-track mixing", async 
   assert.match(source, /DEFAULT_SECTION_MIX/);
   assert.match(source, /mix: \{ \.\.\.section\.mix/);
   assert.match(source, /event\.sectionId/);
-  assert.match(source, /\["drums", "chords", "melody", "riff"\]\.includes\(screen\)/);
-  assert.match(theme, /\.project-screen \.topbar\{position:sticky/);
+  assert.match(source, /\["drums", "chords", "melody", "riff", "metronome"\]\.includes\(screen\)/);
+  assert.match(theme, /\.project-screen \.topbar,\.inside-project \.topbar\{position:sticky/);
 });
 
 test("the supplied Inspitivity artwork is used for navigation and installed-app icons", async () => {
@@ -175,7 +194,7 @@ test("the metronome supports 9/8 projects", () => {
 });
 
 test("the app gives chords, melody, and drums distinct accessible visual identities", () => {
-  assert.match(source, /className=\{`app-shell \$\{screen\}-screen`\}/);
+  assert.match(source, /className=\{`app-shell \$\{screen\}-screen \$\{returnToArrangement/);
   assert.match(source, /tone="blue"\s*icon="♯"\s*title="Chord Progression"/);
 });
 
