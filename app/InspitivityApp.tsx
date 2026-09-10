@@ -193,7 +193,7 @@ const MIDI_PROGRAMS: Record<SynthVoice, number> = {
   glass: 98,
   pluck: 84,
   "analog pulse": 80,
-  "deep bass": 38,
+  "deep bass": 33,
   "distorted guitar": 30,
 };
 const DRUM_MIDI_NOTES = DRUM_PITCHES;
@@ -465,13 +465,17 @@ const decodeRiffIdea = (idea: Idea): RiffEvent[] =>
   });
 type BassPattern = "sustained" | "eighth notes" | "groove" | "syncopated" | "progressive";
 type BassEvent = { pitch: number; start: number; duration: number; accent: boolean };
+const BASS_PITCHES = Array.from({ length: 33 }, (_, index) => 23 + index);
 const decodeBassIdea = (idea: Idea): BassEvent[] =>
   (idea.data ?? []).map((value) => {
     const [pitch, start, duration, accent] = value.split("|");
     return { pitch: Number(pitch) || 36, start: Number(start) || 0, duration: Number(duration) || .4, accent: accent === "1" };
   });
 const encodeBassEvent = (event: BassEvent) => `${event.pitch}|${event.start}|${event.duration}|${event.accent ? 1 : 0}`;
-const bassRootPitch = (symbol: string) => 36 + (notePitchClass(symbol) ?? 0);
+const bassRootPitch = (symbol: string) => {
+  const pitchClass = notePitchClass(symbol) ?? 0;
+  return pitchClass === 11 ? 23 : 24 + pitchClass;
+};
 const generateBassLine = (
   project: Project,
   section: SongSection | undefined,
@@ -527,7 +531,7 @@ const generateBassLine = (
       if (candidate) pitch = candidate;
     }
     const next = starts[index + 1] ?? length;
-    const duration = pattern === "sustained" ? Math.max(.25, next - start - .08) : Math.min(.46, Math.max(.18, next - start - .06));
+    const duration = pattern === "sustained" ? Math.max(.25, next - start - .06) : Math.min(.82, Math.max(.22, next - start - .04));
     return { pitch, start, duration, accent: index === 0 || ((index + seed) % 4 === 0) };
   });
 };
@@ -853,7 +857,7 @@ function BottomNav({
     <button className="studio-nav-toggle" aria-label={open ? "Close navigation" : "Open navigation"} aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? "×" : "☰"}</button>
     <button className={`studio-nav-backdrop ${open ? "is-open" : ""}`} aria-label="Close navigation" tabIndex={open ? 0 : -1} onClick={() => setOpen(false)} />
     <nav className={`studio-nav ${open ? "is-open" : ""} ${collapsed ? "is-collapsed" : ""}`} aria-label="Main navigation">
-    <button className="studio-nav-collapse" aria-label={collapsed ? "Expand navigation" : "Collapse navigation"} aria-expanded={!collapsed} onClick={() => setCollapsed(value => !value)}>{collapsed ? "→" : "←"}</button>
+    <button className="studio-nav-collapse" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} onClick={() => setCollapsed(value => !value)}>{collapsed ? "›" : "‹"}</button>
     <button className="studio-brand" aria-label="Inspitivity studio" onClick={() => navigateFromMenu("home")}><span className="brand-mark"><img src="/icon-192.png" alt="" /></span><span>inspitivity<small>SONGWRITING STUDIO</small></span></button>
     <button className="studio-create" aria-label="Create new" onClick={() => { setOpen(false); create(); }}><b>＋</b><span>Create new</span></button>
     <div className="studio-destinations">
@@ -874,6 +878,7 @@ function BottomNav({
 type SharedAudioGraph = {
   context: AudioContext;
   input: GainNode;
+  dryInput: GainNode;
   analyser: AnalyserNode;
 };
 
@@ -921,6 +926,7 @@ function useAudioEngine() {
         throw new Error("Web Audio is not supported on this device.");
       const context = new AudioContextConstructor({ latencyHint: "interactive" });
       const input = context.createGain();
+      const dryInput = context.createGain();
       const dry = context.createGain();
       const reverb = context.createConvolver();
       const wet = context.createGain();
@@ -951,8 +957,9 @@ function useAudioEngine() {
 
       input.connect(dry).connect(compressor);
       input.connect(reverb).connect(wet).connect(compressor);
+      dryInput.connect(compressor);
       compressor.connect(master).connect(analyser).connect(context.destination);
-      const createdGraph = { context, input, analyser };
+      const createdGraph = { context, input, dryInput, analyser };
       sharedAudioGraph = createdGraph;
       return createdGraph;
     };
@@ -988,6 +995,80 @@ function useAudioEngine() {
     ) => {
       const ctx = get();
       const when = ctx.currentTime + start;
+      if (voice === "deep bass") {
+        const frequency = 440 * Math.pow(2, (midi - 69) / 12);
+        const voiceMix = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+        const cabinet = ctx.createBiquadFilter();
+        const body = ctx.createBiquadFilter();
+        const rumble = ctx.createBiquadFilter();
+        const drive = ctx.createWaveShaper();
+        const volume = ctx.createGain();
+        const curve = new Float32Array(2048);
+        for (let index = 0; index < curve.length; index++) {
+          const x = 2 * index / (curve.length - 1) - 1;
+          curve[index] = Math.tanh(1.75 * x);
+        }
+        drive.curve = curve;
+        drive.oversample = "2x";
+        filter.type = "lowpass";
+        filter.Q.value = .85;
+        filter.frequency.setValueAtTime(1550, when);
+        filter.frequency.exponentialRampToValueAtTime(520, when + .11);
+        cabinet.type = "lowpass";
+        cabinet.frequency.value = 2400;
+        cabinet.Q.value = .55;
+        body.type = "lowshelf";
+        body.frequency.value = 105;
+        body.gain.value = 4.5;
+        rumble.type = "highpass";
+        rumble.frequency.value = 27;
+        rumble.Q.value = .7;
+        const layers = [
+          { type:"sine" as OscillatorType, level:.72, detune:0 },
+          { type:"triangle" as OscillatorType, level:.44, detune:-1.5 },
+          { type:"sawtooth" as OscillatorType, level:.085, detune:1.5 },
+        ].map((layer) => {
+          const oscillator = ctx.createOscillator();
+          const layerGain = ctx.createGain();
+          oscillator.type = layer.type;
+          oscillator.frequency.setValueAtTime(frequency * 1.008, when);
+          oscillator.frequency.exponentialRampToValueAtTime(frequency, when + .035);
+          oscillator.detune.value = layer.detune;
+          layerGain.gain.value = layer.level;
+          oscillator.connect(layerGain).connect(voiceMix);
+          sources.add(oscillator);
+          oscillator.onended = () => sources.delete(oscillator);
+          return oscillator;
+        });
+        const pickup = ctx.createOscillator();
+        const pickupFilter = ctx.createBiquadFilter();
+        const pickupGain = ctx.createGain();
+        pickup.type = "square";
+        pickup.frequency.value = frequency * 3;
+        pickupFilter.type = "bandpass";
+        pickupFilter.frequency.value = 920;
+        pickupFilter.Q.value = .75;
+        pickupGain.gain.setValueAtTime(Math.max(.0001, gain * .16), when);
+        pickupGain.gain.exponentialRampToValueAtTime(.0001, when + .045);
+        pickup.connect(pickupFilter).connect(pickupGain).connect(voiceMix);
+        sources.add(pickup);
+        pickup.onended = () => sources.delete(pickup);
+        voiceMix.connect(filter).connect(drive).connect(cabinet).connect(body).connect(rumble).connect(volume).connect(getGraph().dryInput);
+        const peak = gain * 1.55;
+        volume.gain.setValueAtTime(.0001, when);
+        volume.gain.exponentialRampToValueAtTime(peak, when + .007);
+        volume.gain.exponentialRampToValueAtTime(peak * .72, when + Math.min(.09, duration * .35));
+        volume.gain.setValueAtTime(peak * .72, when + Math.max(.1, duration * .72));
+        volume.gain.exponentialRampToValueAtTime(.0001, when + duration + .16);
+        layers.forEach((oscillator) => {
+          oscillator.start(when);
+          oscillator.stop(when + duration + .18);
+        });
+        pickup.start(when);
+        pickup.stop(when + .055);
+        return;
+      }
       const volume = ctx.createGain();
       const filter = ctx.createBiquadFilter();
       const profiles = {
@@ -3901,8 +3982,27 @@ function BassTool({
   const transport = useLoopTransport(play, length * beatSeconds * 1000, engine.stopAll, engine.unlock);
   useDraftPreview({ type:"bass", data:bass.map(encodeBassEvent), voice:"deep bass" });
   const regenerate = () => { transport.stop(); setSavedBass(null); setSeed((value) => value + 1); };
+  const updateBassEvent = (index: number, changes: Partial<BassEvent>) => {
+    transport.stop();
+    setSavedBass((current) => (current ?? generated).map((event,eventIndex) => eventIndex === index ? { ...event, ...changes } : event));
+  };
+  const addBassEvent = () => {
+    transport.stop();
+    const start = Math.max(0, ...bass.map((event) => event.start + event.duration));
+    const pitch = bass.at(-1)?.pitch ?? bassRootPitch(projectHarmony(project).root);
+    setSavedBass([...bass, { pitch, start, duration:.5, accent:false }]);
+  };
+  const removeBassEvent = (index: number) => {
+    if (bass.length === 1) return;
+    transport.stop();
+    setSavedBass(bass.filter((_,eventIndex) => eventIndex !== index));
+  };
+  const auditionBassEvent = async (event: BassEvent) => {
+    transport.stop();
+    if (await engine.unlock()) engine.tone(event.pitch, 0, Math.max(.32,Math.min(.8,event.duration*beatSeconds)), .06, "deep bass");
+  };
   return <>
-    <ToolHeader title="Bass Generator" subtitle="Connect harmony and drums with a focused mono bass line" projectName={project.name} back={back} go={go} active="bass" />
+    <ToolHeader title="Bass Generator" subtitle="Low five-string electric bass shaped around harmony and drums" projectName={project.name} back={back} go={go} active="bass" />
     <ProjectContext project={project} update={updateProject} metronomeEnabled={metronomeEnabled} toggleMetronome={toggleMetronome} />
     {section && <p className="destination-name">Following {section.name} · {section.energy ?? sectionFeel(project,section).energy} energy</p>}
     <DraftToolbar />
@@ -3916,9 +4016,23 @@ function BassTool({
         <button className="primary-button wide" onClick={regenerate}>Generate new bass line <span>↻</span></button>
       </GeneratorSettings>
       <section className="result-panel bass-result">
-        <div className="result-heading"><div><p className="eyebrow">Mono electric bass</p><h2>{pattern} · {bass.length} notes</h2></div><PlayButton playing={transport.mode !== "stopped"} label="bass line" onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} /></div>
+        <div className="result-heading"><div><p className="eyebrow">Five-string electric bass</p><h2>{pattern} · {bass.length} notes</h2></div><PlayButton playing={transport.mode !== "stopped"} label="bass line" onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} /></div>
         <div className="bass-roll" aria-label="Bass timing preview">
-          {bass.map((event,index)=><span key={`${event.start}-${index}`} className={event.accent ? "accent" : ""} style={{left:`${(event.start/length)*100}%`,width:`${Math.max(2,(event.duration/length)*100)}%`,bottom:`${18+(event.pitch-36)*7}px`}} title={`${midiNoteName(event.pitch)} · beat ${event.start+1}`}>{midiNoteName(event.pitch)}</span>)}
+          {bass.map((event,index)=><span key={`${event.start}-${index}`} className={event.accent ? "accent" : ""} style={{left:`${(event.start/length)*100}%`,width:`${Math.max(2,(event.duration/length)*100)}%`,bottom:`${18+Math.max(0,Math.min(32,event.pitch-23))*4.3}px`}} title={`${midiNoteName(event.pitch)} · beat ${event.start+1}`}>{midiNoteName(event.pitch)}</span>)}
+        </div>
+        <div className="bass-note-editor" aria-label="Edit bass notes">
+          <header><div><b>Edit notes</b><span>Low B0–G3 range</span></div><button onClick={addBassEvent}>＋ Add note</button></header>
+          <div className="bass-note-list">
+            {bass.map((event,index)=><article key={`${event.start}-${index}`}>
+              <span className="bass-note-number">{index+1}</span>
+              <label><span>Pitch</span><select aria-label={`Bass note ${index+1} pitch`} value={event.pitch} onChange={change=>updateBassEvent(index,{pitch:Number(change.target.value)})}>{BASS_PITCHES.map(pitch=><option key={pitch} value={pitch}>{midiNoteName(pitch)}</option>)}</select></label>
+              <label><span>Beat</span><input aria-label={`Bass note ${index+1} start`} type="number" min="0" max={Math.max(1,length)} step="0.25" value={Number(event.start.toFixed(3))} onChange={change=>updateBassEvent(index,{start:Math.max(0,Number(change.target.value))})}/></label>
+              <label><span>Length</span><input aria-label={`Bass note ${index+1} duration`} type="number" min="0.125" max="8" step="0.125" value={Number(event.duration.toFixed(3))} onChange={change=>updateBassEvent(index,{duration:Math.max(.125,Number(change.target.value))})}/></label>
+              <label className="bass-accent"><input type="checkbox" checked={event.accent} onChange={change=>updateBassEvent(index,{accent:change.target.checked})}/><span>Accent</span></label>
+              <button className="bass-audition" aria-label={`Audition bass note ${index+1}`} onClick={()=>void auditionBassEvent(event)}>▶</button>
+              <button className="bass-remove" aria-label={`Remove bass note ${index+1}`} disabled={bass.length===1} onClick={()=>removeBassEvent(index)}>×</button>
+            </article>)}
+          </div>
         </div>
         <div className={`playback-bar ${transport.mode !== "stopped" ? "is-playing" : ""}`}><button aria-label="Play bass line" onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()}>{transport.mode === "stopped" ? "▶" : "■"}</button><Wave tone="blue" bars={12}/><button className={`loop-button ${transport.mode === "loop" ? "active" : ""}`} aria-pressed={transport.mode === "loop"} onClick={() => transport.mode === "loop" ? transport.stop() : void transport.start(true)}>↻ <small>Loop</small></button></div>
         <SaveActions section={section} editing={!!idea} submit={(chooseDestination) => save("bass", `${pattern} bass`, `${bass.length} notes · ${lockToKick ? "kick locked" : "independent pulse"}`, bass.map(encodeBassEvent), chooseDestination, "deep bass")} />

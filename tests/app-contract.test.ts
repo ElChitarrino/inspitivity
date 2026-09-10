@@ -57,6 +57,24 @@ test("bass connects harmony and drums and participates in playback and mixing", 
   assert.match(source, /type:"bass"/);
   assert.match(source, /"deep bass"/);
   assert.match(source, /\["bass", "Bass"\]/);
+  assert.match(source, /pitchClass === 11 \? 23 : 24 \+ pitchClass/);
+  assert.match(source, /Five-string electric bass/);
+  assert.match(source, /const updateBassEvent/);
+  assert.match(source, /Bass note \$\{index\+1\} pitch/);
+  assert.match(source, /const addBassEvent/);
+  assert.match(source, /const removeBassEvent/);
+  assert.match(source, /const auditionBassEvent/);
+  assert.match(theme, /\.bass-note-editor/);
+});
+
+test("deep bass uses a layered, dry electric-bass signal path", () => {
+  assert.match(source, /if \(voice === "deep bass"\)/);
+  assert.match(source, /type:"sine" as OscillatorType/);
+  assert.match(source, /type:"triangle" as OscillatorType/);
+  assert.match(source, /type:"sawtooth" as OscillatorType/);
+  assert.match(source, /body\.type = "lowshelf"/);
+  assert.match(source, /connect\(getGraph\(\)\.dryInput\)/);
+  assert.match(source, /"deep bass": 33/);
 });
 
 test("arrangement sections expose repeats, energy, copies, and variations without overlapping asset actions", async () => {
@@ -95,6 +113,8 @@ test("navigation groups related work and becomes an expandable mobile drawer", (
   assert.match(source, /studio-nav-backdrop/);
   assert.match(theme, /\.studio-nav\.is-collapsed/);
   assert.match(theme, /\.studio-nav\.is-open\{transform:translateX\(0\)\}/);
+  assert.match(source, /Collapse sidebar/);
+  assert.match(theme, /@media\(min-width:701px\) and \(max-width:1199px\)[\s\S]*\.studio-nav-collapse\{display:none\}/);
   assert.match(source, /aria-label="Project tools"/);
 });
 
@@ -134,7 +154,7 @@ test("the songwriting workspace is installable on a phone", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.match(serviceWorker, /inspitivity-shell-v10/);
+  assert.match(serviceWorker, /inspitivity-shell-v11/);
   assert.match(serviceWorker, /cache\.delete\("\/"\)/);
 });
 
