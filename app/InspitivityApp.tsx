@@ -303,6 +303,33 @@ const normalizeAccidentals = (value: string) =>
     .replace(/A#/g, "Bb");
 const midiNoteName = (pitch: number) =>
   `${ROOTS[((pitch % 12) + 12) % 12]}${Math.floor(pitch / 12) - 1}`;
+const VOICING_PITCHES = Array.from({ length: 61 }, (_, index) => 36 + index);
+const KEYBOARD_WHITE_KEYS = [48, 50, 52, 53, 55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72];
+const KEYBOARD_BLACK_KEYS = [
+  { pitch: 49, after: 1 }, { pitch: 51, after: 2 },
+  { pitch: 54, after: 4 }, { pitch: 56, after: 5 }, { pitch: 58, after: 6 },
+  { pitch: 61, after: 8 }, { pitch: 63, after: 9 },
+  { pitch: 66, after: 11 }, { pitch: 68, after: 12 }, { pitch: 70, after: 13 },
+];
+
+function OnScreenKeyboard({ selectedPitch, onPitch }: { selectedPitch?: number; onPitch: (pitch: number) => void }) {
+  return (
+    <div className="keyboard-scroll">
+      <div className="onscreen-keyboard" role="group" aria-label="Two octave piano keyboard">
+        {KEYBOARD_WHITE_KEYS.map((pitch) => (
+          <button key={pitch} className={`white-key ${selectedPitch === pitch ? "selected" : ""}`} aria-label={midiNoteName(pitch)} onClick={() => onPitch(pitch)}>
+            <span>{midiNoteName(pitch)}</span>
+          </button>
+        ))}
+        {KEYBOARD_BLACK_KEYS.map(({ pitch, after }) => (
+          <button key={pitch} className={`black-key ${selectedPitch === pitch ? "selected" : ""}`} style={{ left: `calc(${after} * var(--white-key) - var(--black-key) / 2)` }} aria-label={midiNoteName(pitch)} onClick={() => onPitch(pitch)}>
+            <span>{midiNoteName(pitch)}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 const projectHarmony = (project?: Project): { root: Root; mode: Mode } => {
   const [savedRoot = "C", ...savedMode] = normalizeAccidentals(
     project?.key ?? "C major",
@@ -2378,6 +2405,11 @@ function ProjectView({
       editIdea(sectionId, idea);
     else void playIdea(idea);
   };
+  const addSectionNote = (sectionId: string) => {
+    setEditingNoteId(null);
+    setNote("");
+    setIdeaSection(sectionId);
+  };
   const arrangementPlan = buildSongPlan(project);
   const arrangementCheck=analyzeArrangement(project);
   const markerIndex = Math.max(0, arrangementPlan.markers.findLastIndex((marker) => marker.seconds <= playbackSeconds));
@@ -2511,9 +2543,13 @@ function ProjectView({
                 })}
               </div>
             </details>
-            {section.ideas.some(i=>i.type==="text") && <details className="section-notes"><summary>Existing notes · {section.ideas.filter(i=>i.type==="text").length}</summary>
-              {section.ideas.filter(i=>i.type==="text").map(idea=><div className="existing-note" key={idea.id}><button onClick={()=>openIdea(section.id,idea)}>{idea.detail}</button><button aria-label={`Remove ${idea.name}`} onClick={()=>removeIdea(section.id,idea.id)}><TrashIcon /></button></div>)}
-            </details>}
+            <section className="section-notes" aria-label={`Notes for ${section.name}`}>
+              <header>
+                <div><b>Section notes</b><span>{section.ideas.filter(i=>i.type==="text").length ? `${section.ideas.filter(i=>i.type==="text").length} saved` : "Lyrics, production or arrangement"}</span></div>
+                <button className="add-section-note" onClick={()=>addSectionNote(section.id)}>＋ Add note</button>
+              </header>
+              {section.ideas.filter(i=>i.type==="text").map(idea=><div className="existing-note" key={idea.id}><button aria-label={`Edit note in ${section.name}`} onClick={()=>openIdea(section.id,idea)}>{idea.detail}</button><button aria-label={`Remove ${idea.name}`} onClick={()=>removeIdea(section.id,idea.id)}><TrashIcon /></button></div>)}
+            </section>
             <footer className="section-order-controls">
               <button onClick={()=>move(index,-1)} disabled={index===0} aria-label={`Move ${section.name} up`}>↑</button>
               <button onClick={()=>move(index,1)} disabled={index===project.sections.length-1} aria-label={`Move ${section.name} down`}>↓</button>
@@ -2580,7 +2616,7 @@ function ProjectView({
             >
               ×
             </button>
-            <p className="eyebrow">Text idea</p>
+            <p className="eyebrow">Section note</p>
             <h2>{editingNoteId ? "Edit note" : "Catch the thought"}</h2>
             <textarea
               value={note}
@@ -2621,7 +2657,7 @@ function ProjectView({
                 setIdeaSection(null);
               }}
             >
-              {editingNoteId ? "Update note" : "Save idea"}
+              {editingNoteId ? "Update note" : "Save note"}
             </button>
           </div>
         </div>
@@ -3016,6 +3052,25 @@ function ChordTool({
         chord.id === id ? { ...chord, ...changes, ...(changes.name ? {pitches:voiceChord(changes.name,seed,voicing)} : {}) } : chord,
       ),
     );
+  const updateVoicingPitch = (chordId: string, pitchIndex: number, pitch: number) =>
+    setChords((items) => items.map((chord) => {
+      if (chord.id !== chordId) return chord;
+      const pitches = [...(chord.pitches ?? decodeVoicing(chord.name))];
+      pitches[pitchIndex] = pitch;
+      return { ...chord, pitches };
+    }));
+  const removeVoicingPitch = (chordId: string, pitchIndex: number) =>
+    setChords((items) => items.map((chord) => {
+      if (chord.id !== chordId) return chord;
+      const pitches = chord.pitches ?? decodeVoicing(chord.name);
+      return pitches.length > 1 ? { ...chord, pitches:pitches.filter((_, index) => index !== pitchIndex) } : chord;
+    }));
+  const addVoicingPitch = (chordId: string) =>
+    setChords((items) => items.map((chord) => {
+      if (chord.id !== chordId) return chord;
+      const pitches = [...(chord.pitches ?? decodeVoicing(chord.name))];
+      return { ...chord, pitches:[...pitches, Math.min(96, (pitches.at(-1) ?? 60) + 3)] };
+    }));
   useDraftPreview({ type: "chords", data: chords.map(encodeChord), voice });
   return (
     <>
@@ -3227,7 +3282,18 @@ function ChordTool({
                 >
                   ×
                 </button>
-                <div className="voicing-notes" aria-label={`Chord ${index+1} voicing`}>{(chord.pitches ?? decodeVoicing(chord.name)).map(pitch=><span key={pitch}>{midiNoteName(pitch)}</span>)}</div>
+                <div className="voicing-editor" aria-label={`Chord ${index+1} voicing`}>
+                  <span className="voicing-label">Voicing notes</span>
+                  <div className="voicing-note-list">
+                    {(chord.pitches ?? decodeVoicing(chord.name)).map((pitch,pitchIndex)=><div className="voicing-note" key={`${pitch}-${pitchIndex}`}>
+                      <select aria-label={`Chord ${index+1} voicing note ${pitchIndex+1}`} value={pitch} onChange={event=>updateVoicingPitch(chord.id,pitchIndex,Number(event.target.value))}>
+                        {VOICING_PITCHES.map(option=><option key={option} value={option}>{midiNoteName(option)}</option>)}
+                      </select>
+                      <button aria-label={`Remove ${midiNoteName(pitch)} from chord ${index+1}`} disabled={(chord.pitches ?? decodeVoicing(chord.name)).length===1} onClick={()=>removeVoicingPitch(chord.id,pitchIndex)}>×</button>
+                    </div>)}
+                    <button className="add-voicing-note" onClick={()=>addVoicingPitch(chord.id)}>＋ Tone</button>
+                  </div>
+                </div>
               </article>
             ))}
           </div>
@@ -3418,6 +3484,11 @@ function MelodyTool({
     duration: number;
     rollWidth: number;
   } | null>(null);
+  const [selectedNoteIndex, setSelectedNoteIndex] = useState<number | null>(() => melody.length ? 0 : null);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    setSelectedNoteIndex((current) => current !== null && current < melody.length ? current : melody.length ? 0 : null);
+  }, [melody.length]);
   const updateNote = (
     index: number,
     changes: { pitch?: number; duration?: number },
@@ -3434,6 +3505,7 @@ function MelodyTool({
     index: number,
   ) => {
     const note = melody[index];
+    setSelectedNoteIndex(index);
     const bounds = event.currentTarget.getBoundingClientRect();
     const rollWidth =
       event.currentTarget.parentElement?.getBoundingClientRect().width ?? 1;
@@ -3477,6 +3549,31 @@ function MelodyTool({
           ),
         ),
       });
+  };
+  const chooseKeyboardPitch = (pitch: number) => {
+    transport.stop();
+    if (selectedNoteIndex === null || !melody[selectedNoteIndex]) {
+      const start = Math.max(0, ...melody.map((note) => note.start + note.duration));
+      const next = [...melody, { note:midiNoteName(pitch), start, duration:.5, pitch, velocity:.72 }];
+      setSavedMelody(next);
+      setSelectedNoteIndex(next.length - 1);
+    } else updateNote(selectedNoteIndex, { pitch });
+    void engine.unlock().then((ready) => { if (ready) engine.tone(pitch, 0, .32, .065, voice); });
+  };
+  const addMelodyNote = () => {
+    transport.stop();
+    const pitch = selectedNoteIndex !== null ? melody[selectedNoteIndex]?.pitch ?? 60 : 60;
+    const start = Math.max(0, ...melody.map((note) => note.start + note.duration));
+    const next = [...melody, { note:midiNoteName(pitch), start, duration:.5, pitch, velocity:.72 }];
+    setSavedMelody(next);
+    setSelectedNoteIndex(next.length - 1);
+  };
+  const removeSelectedMelodyNote = () => {
+    if (selectedNoteIndex === null || !melody[selectedNoteIndex]) return;
+    transport.stop();
+    const next = melody.filter((_, index) => index !== selectedNoteIndex);
+    setSavedMelody(next);
+    setSelectedNoteIndex(next.length ? Math.min(selectedNoteIndex, next.length - 1) : null);
   };
   const applyTransform = (transform: MotifTransform) =>
     setSavedMelody((current) =>
@@ -3660,7 +3757,8 @@ function MelodyTool({
             {melody.map((note, i) => (
               <button
                 key={i}
-                className={`piano-note ${draggingNote?.index === i ? "dragging" : ""}`}
+                className={`piano-note ${draggingNote?.index === i ? "dragging" : ""} ${selectedNoteIndex === i ? "selected" : ""}`}
+                aria-pressed={selectedNoteIndex === i}
                 title={`${note.note} · ${note.duration.toFixed(2)} beats`}
                 onPointerDown={(event) => beginNoteDrag(event, i)}
                 onPointerMove={(event) => dragNote(event, i)}
@@ -3677,6 +3775,20 @@ function MelodyTool({
                 <i aria-hidden="true" />
               </button>
             ))}
+          </div>
+          <div className={`note-keyboard-dock ${keyboardOpen ? "is-open" : ""}`}>
+            <button className="keyboard-toggle" aria-expanded={keyboardOpen} onClick={()=>setKeyboardOpen((open)=>!open)}>
+              <span>⌨ Piano keyboard</span>
+              <small>{selectedNoteIndex === null ? "Add a note" : `Note ${selectedNoteIndex+1} · ${melody[selectedNoteIndex]?.note ?? "Select"}`}</small>
+              <b aria-hidden="true">{keyboardOpen ? "↓" : "↑"}</b>
+            </button>
+            {keyboardOpen && <div className="keyboard-panel">
+              <div className="keyboard-actions">
+                <p>{selectedNoteIndex === null ? "Choose a key to add a note." : `Choose a pitch for note ${selectedNoteIndex+1}. Keys audition immediately.`}</p>
+                <div><button onClick={addMelodyNote}>＋ Add note</button><button onClick={removeSelectedMelodyNote} disabled={selectedNoteIndex===null}>Remove selected</button></div>
+              </div>
+              <OnScreenKeyboard selectedPitch={selectedNoteIndex === null ? undefined : melody[selectedNoteIndex]?.pitch} onPitch={chooseKeyboardPitch} />
+            </div>}
           </div>
           <div
             className="tension-map"

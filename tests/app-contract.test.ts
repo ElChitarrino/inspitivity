@@ -134,7 +134,7 @@ test("the songwriting workspace is installable on a phone", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.match(serviceWorker, /inspitivity-shell-v9/);
+  assert.match(serviceWorker, /inspitivity-shell-v10/);
   assert.match(serviceWorker, /cache\.delete\("\/"\)/);
 });
 
@@ -193,13 +193,15 @@ test("the supplied Inspitivity artwork is used for navigation and installed-app 
   assert.match(layout, /icon: "\/icon-192\.png"/);
 });
 
-test("each asset slot opens its typed editor and retains existing notes separately", () => {
+test("each asset slot opens its typed editor and every section exposes written notes", () => {
   assert.match(source, /SECTION_ASSETS/);
   assert.match(source, /is-created/);
   assert.match(source, /is-empty/);
   assert.match(source, /openSectionTool\(section.id,type\)/);
   assert.match(source, /openIdea\(section.id,idea\)/);
-  assert.match(source, /Existing notes/);
+  assert.match(source, /Section notes/);
+  assert.match(source, /addSectionNote/);
+  assert.match(source, /Lyrics, production or arrangement/);
   assert.match(source, /decodeChordDrafts/);
   assert.match(source, /decodeMelodyIdea/);
   assert.match(source, /Update note/);
@@ -319,6 +321,15 @@ test("melody notes preserve the phrase while pitch and duration are edited by dr
   assert.match(source, /note\.duration\.toFixed/);
 });
 
+test("melody notes can be selected and edited with a hidden-until-open piano keyboard", () => {
+  assert.match(source, /function OnScreenKeyboard/);
+  assert.match(source, /aria-label="Two octave piano keyboard"/);
+  assert.match(source, /const \[keyboardOpen, setKeyboardOpen\] = useState\(false\)/);
+  assert.match(source, /keyboardOpen && <div className="keyboard-panel">/);
+  assert.match(source, /chooseKeyboardPitch/);
+  assert.match(source, /Remove selected/);
+});
+
 test("the melody generator lets writers choose exactly how many notes to generate", () => {
   assert.match(source, /const \[noteCount, setNoteCount\] = useDraftState\("noteCount", Math\.min\(30, defaultNoteCount\)\)/);
   assert.match(source, /aria-label="Number of melody notes"/);
@@ -333,6 +344,21 @@ test("chord progressions support whole-note playback and direct editing", () => 
   assert.match(source, /Add chord/);
   assert.match(source, /Remove chord/);
   assert.doesNotMatch(source, /Audio-clock scheduling keeps every click tight/);
+});
+
+test("each chord voicing exposes its saved MIDI pitches for direct editing", () => {
+  assert.match(source, /const updateVoicingPitch/);
+  assert.match(source, /Chord \$\{index\+1\} voicing note \$\{pitchIndex\+1\}/);
+  assert.match(source, /addVoicingPitch/);
+  assert.match(source, /removeVoicingPitch/);
+});
+
+test("desktop, tablet, phone, and narrow-phone layouts have explicit responsive rules", () => {
+  assert.match(theme, /@media\(min-width:1200px\)/);
+  assert.match(theme, /@media\(min-width:701px\) and \(max-width:1199px\)/);
+  assert.match(theme, /@media\(max-width:700px\)/);
+  assert.match(theme, /@media\(max-width:480px\)/);
+  assert.match(theme, /\.tool-layout\{grid-template-columns:minmax\(0,1fr\)/);
 });
 
 test("the progression editor explains each chord's harmonic role", () => {
