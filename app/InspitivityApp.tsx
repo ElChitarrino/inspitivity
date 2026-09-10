@@ -67,6 +67,12 @@ import { sectionFeel, buildSongPlan, type SongLayer } from "../packages/workspac
 import { analyzeArrangement, type ArrangementInsight } from "../packages/workspace/arrangement";
 import type { Idea, SongSection, Project, TrackMix, SectionEnergy } from "../packages/workspace";
 import { varyIdeaData, varyNotes } from "../packages/workspace/variation";
+import {
+  generateBassPhrase,
+  type BassDirection,
+  type BassEvent,
+  type BassMovement,
+} from "../packages/workspace/bass";
 import { VariationControls } from "./variation-controls";
 import { isTheme, resolveInitialTheme, type Theme } from "../packages/theme";
 
@@ -463,8 +469,6 @@ const decodeRiffIdea = (idea: Idea): RiffEvent[] =>
       muted: muted !== "0",
     };
   });
-type BassPattern = "sustained" | "eighth notes" | "groove" | "syncopated" | "progressive";
-type BassEvent = { pitch: number; start: number; duration: number; accent: boolean };
 const BASS_PITCHES = Array.from({ length: 33 }, (_, index) => 23 + index);
 const decodeBassIdea = (idea: Idea): BassEvent[] =>
   (idea.data ?? []).map((value) => {
@@ -479,60 +483,38 @@ const bassRootPitch = (symbol: string) => {
 const generateBassLine = (
   project: Project,
   section: SongSection | undefined,
-  pattern: BassPattern,
+  direction: BassDirection,
+  movement: BassMovement,
   lockToKick: boolean,
   seed: number,
 ): BassEvent[] => {
   const length = section ? sectionBeatTotal(section, project.meter) : meterBeats(project.meter) * 4;
-  const fallbackRoot = projectHarmony(project).root;
+  const { root, mode } = projectHarmony(project);
   const harmonyIdea = section?.ideas.find((idea) => idea.type === "chords");
-  const harmony = (harmonyIdea?.data?.length ? harmonyIdea.data : harmonyIdea ? harmonyIdea.detail.split(" · ") : [`${fallbackRoot}|${length}`])
+  const harmony = (harmonyIdea?.data?.length ? harmonyIdea.data : harmonyIdea ? harmonyIdea.detail.split(" · ") : [`${root}|${length}`])
     .map((value) => { const [symbol, beats] = value.split("|"); return { symbol, beats: Math.max(.25, Number(beats) || 4) }; });
-  const rootAt = (beat: number) => {
-    const cycle = harmony.reduce((sum, chord) => sum + chord.beats, 0) || length;
-    let cursor = 0; const position = beat % cycle;
-    for (const chord of harmony) { cursor += chord.beats; if (position < cursor) return bassRootPitch(chord.symbol); }
-    return bassRootPitch(fallbackRoot);
-  };
-  let starts: number[] = [];
-  if (pattern === "sustained") {
-    let cursor = 0;
-    while (cursor < length) for (const chord of harmony) { if (cursor >= length) break; starts.push(cursor); cursor += chord.beats; }
-  } else {
-    const cells: Record<Exclude<BassPattern,"sustained">, number[]> = {
-      "eighth notes": [0,.5,1,1.5],
-      groove: [0,1,1.5,3],
-      syncopated: [0,.75,1.5,2.5,3.25],
-      progressive: [0,.75,1.5,2.25,3.5,4.25],
-    };
-    const cycle = pattern === "progressive" ? 5 : 4;
-    for (let offset = 0; offset < length; offset += cycle)
-      starts.push(...cells[pattern].map((beat) => offset + beat).filter((beat) => beat < length));
-  }
-  if (lockToKick) {
-    const drums = section?.ideas.find((idea) => idea.type === "drums");
-    const kickStarts = (drums?.data ?? []).filter((value) => value.startsWith("kick|")).map((value) => Number(value.split("|")[1]) / 4).filter(Number.isFinite);
-    const cycle = drumPatternBeats(drums?.data ?? [], meterBeats(project.meter));
-    if (kickStarts.length && cycle > 0) {
-      starts = [];
-      for (let offset = 0; offset < length; offset += cycle) starts.push(...kickStarts.map((beat) => offset + beat).filter((beat) => beat < length));
-    }
-  }
-  const chordStarts = pattern === "sustained" ? starts : harmony.reduce<number[]>((result, chord) => {
-    const previous = result.at(-1) ?? 0;
-    return [...result, previous + chord.beats];
-  }, [0]).filter((beat) => beat < length);
-  starts = [...new Set([...starts, ...chordStarts])].sort((a,b) => a-b);
-  const scale = getScale(projectHarmony(project).root, projectHarmony(project).mode).map((note) => notePitchClass(note)).filter((pitch): pitch is number => pitch !== null);
-  return starts.map((start, index) => {
-    let pitch = rootAt(start);
-    if (pattern === "progressive" && index % 4 === 3) {
-      const candidate = [pitch + 2, pitch + 3].find((value) => scale.includes(value % 12));
-      if (candidate) pitch = candidate;
-    }
-    const next = starts[index + 1] ?? length;
-    const duration = pattern === "sustained" ? Math.max(.25, next - start - .06) : Math.min(.82, Math.max(.22, next - start - .04));
-    return { pitch, start, duration, accent: index === 0 || ((index + seed) % 4 === 0) };
+  const drums = section?.ideas.find((idea) => idea.type === "drums");
+  const kickStarts = (drums?.data ?? [])
+    .filter((value) => value.startsWith("kick|"))
+    .map((value) => Number(value.split("|")[1]) / 4)
+    .filter(Number.isFinite);
+  const activity = section?.ideas
+    .filter((idea) => idea.type === "melody" || idea.type === "riff")
+    .reduce((sum, idea) => sum + (idea.data?.length ?? 0), 0) ?? 0;
+  return generateBassPhrase({
+    length,
+    meter: project.meter,
+    meterMap: section?.meterMap,
+    root,
+    mode,
+    harmony,
+    direction,
+    movement,
+    lockToKick,
+    kickStarts,
+    kickCycle: drumPatternBeats(drums?.data ?? [], meterBeats(project.meter)),
+    otherActivity: activity / Math.max(1, length),
+    seed,
   });
 };
 const sectionMeterMap = (section: SongSection, fallback: string) =>
@@ -635,7 +617,14 @@ function buildPlayableSketch(preset: SketchPreset): Project {
     if(riff.length) ideas.push({ id:uid(),type:"riff",name:`${formSection.name} pulse`,detail:`${riff.length} notes · ${preset.meter}`,data:riff.map(note=>`${note.pitch}|${note.start}|${note.duration}|${note.accent?1:0}|${note.muted?1:0}`) });
     const section: SongSection = { id:uid(),name:formSection.name,bars,color:formSection.color,ideas,meterMap:Array.from({length:bars},()=>preset.meter),energy:sectionIndex===0?"mellow":preset.energy };
     const sketchContext: Project = { id:"preview",name:preset.label,bpm:preset.bpm,meter:preset.meter,key:formatProjectKey(preset.root,preset.mode),updated:0,sections:[section] };
-    const bass = generateBassLine(sketchContext,section,sectionIndex===0?"sustained":"groove",true,sectionSeed+29);
+    const bass = generateBassLine(
+      sketchContext,
+      section,
+      sectionIndex===0 ? "sustained" : preset.id==="prog" ? "progressive" : "groove",
+      preset.id==="heavy" ? "rooted" : preset.id==="neo-soul" || preset.id==="prog" ? "melodic" : "supportive",
+      true,
+      sectionSeed+29,
+    );
     ideas.push({ id:uid(),type:"bass",name:`${formSection.name} bass`,detail:`${bass.length} notes · chord and kick aware`,data:bass.map(encodeBassEvent),voice:"deep bass" });
     section.mix=automaticSectionMix(section);
     return section;
@@ -3963,13 +3952,14 @@ function BassTool({
   metronomeEnabled: boolean;
   toggleMetronome: () => void;
 }) {
-  const [pattern, setPattern] = useDraftState<BassPattern>("bassPattern", "groove");
+  const [pattern, setPattern] = useDraftState<BassDirection>("bassPattern", "groove");
+  const [movement, setMovement] = useDraftState<BassMovement>("bassMovement", "supportive");
   const [lockToKick, setLockToKick] = useDraftState("bassLockToKick", true);
   const [seed, setSeed] = useDraftState("bassSeed", () => freshSeed() + Math.max(0, sectionIndex));
   const [savedBass, setSavedBass] = useDraftState<BassEvent[] | null>("savedBass", () => idea ? decodeBassIdea(idea) : null);
   const generated = useMemo(
-    () => generateBassLine(project, section, pattern, lockToKick, seed),
-    [project, section, pattern, lockToKick, seed],
+    () => generateBassLine(project, section, pattern, movement, lockToKick, seed),
+    [project, section, pattern, movement, lockToKick, seed],
   );
   const bass = savedBass ?? generated;
   const beatSeconds = beatDurationSeconds(project.bpm);
@@ -4008,15 +3998,16 @@ function BassTool({
     <DraftToolbar />
     <div className="tool-layout">
       <GeneratorSettings className="bass-panel">
-        <ControlTitle n="1" title="Bass movement" />
-        <Select label="Pattern" value={pattern} options={["sustained","eighth notes","groove","syncopated","progressive"]} set={(value) => { transport.stop(); setSavedBass(null); setPattern(value as BassPattern); }} />
+        <ControlTitle n="1" title="Phrase character" />
+        <Select label="Groove direction" value={pattern} options={["sustained","eighth notes","groove","syncopated","progressive"]} set={(value) => { transport.stop(); setSavedBass(null); setPattern(value as BassDirection); }} />
+        <Select label="Note movement" value={movement} options={["rooted","supportive","melodic"]} set={(value) => { transport.stop(); setSavedBass(null); setMovement(value as BassMovement); }} />
         <ControlTitle n="2" title="Rhythm-section lock" />
         <label className="bass-lock"><input type="checkbox" checked={lockToKick} onChange={(event) => { transport.stop(); setSavedBass(null); setLockToKick(event.target.checked); }} /><span>Follow kick attacks when drums exist</span></label>
-        <p className="control-note">Chord changes are always preserved. Kick lock changes note timing, not harmony.</p>
+        <p className="control-note">Every generation creates a new phrase. Chords anchor the notes; kicks influence the pocket without replacing it.</p>
         <button className="primary-button wide" onClick={regenerate}>Generate new bass line <span>↻</span></button>
       </GeneratorSettings>
       <section className="result-panel bass-result">
-        <div className="result-heading"><div><p className="eyebrow">Five-string electric bass</p><h2>{pattern} · {bass.length} notes</h2></div><PlayButton playing={transport.mode !== "stopped"} label="bass line" onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} /></div>
+        <div className="result-heading"><div><p className="eyebrow">Five-string electric bass</p><h2>{pattern} · {movement} · {bass.length} notes</h2></div><PlayButton playing={transport.mode !== "stopped"} label="bass line" onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} /></div>
         <div className="bass-roll" aria-label="Bass timing preview">
           {bass.map((event,index)=><span key={`${event.start}-${index}`} className={event.accent ? "accent" : ""} style={{left:`${(event.start/length)*100}%`,width:`${Math.max(2,(event.duration/length)*100)}%`,bottom:`${18+Math.max(0,Math.min(32,event.pitch-23))*4.3}px`}} title={`${midiNoteName(event.pitch)} · beat ${event.start+1}`}>{midiNoteName(event.pitch)}</span>)}
         </div>
@@ -4035,7 +4026,7 @@ function BassTool({
           </div>
         </div>
         <div className={`playback-bar ${transport.mode !== "stopped" ? "is-playing" : ""}`}><button aria-label="Play bass line" onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()}>{transport.mode === "stopped" ? "▶" : "■"}</button><Wave tone="blue" bars={12}/><button className={`loop-button ${transport.mode === "loop" ? "active" : ""}`} aria-pressed={transport.mode === "loop"} onClick={() => transport.mode === "loop" ? transport.stop() : void transport.start(true)}>↻ <small>Loop</small></button></div>
-        <SaveActions section={section} editing={!!idea} submit={(chooseDestination) => save("bass", `${pattern} bass`, `${bass.length} notes · ${lockToKick ? "kick locked" : "independent pulse"}`, bass.map(encodeBassEvent), chooseDestination, "deep bass")} />
+        <SaveActions section={section} editing={!!idea} submit={(chooseDestination) => save("bass", `${pattern} bass`, `${bass.length} notes · ${movement} · ${lockToKick ? "kick aware" : "independent pulse"}`, bass.map(encodeBassEvent), chooseDestination, "deep bass")} />
         <button className="export-button wide" onClick={() => downloadMidi(`${project.name}-bass`, createMidiFile({name:`${project.name} bass`,bpm:project.bpm,meter:project.meter,notes:bass,program:MIDI_PROGRAMS["deep bass"]}))}>⇩ Export bass as MIDI</button>
       </section>
     </div>

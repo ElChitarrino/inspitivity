@@ -64,6 +64,10 @@ test("bass connects harmony and drums and participates in playback and mixing", 
   assert.match(source, /const addBassEvent/);
   assert.match(source, /const removeBassEvent/);
   assert.match(source, /const auditionBassEvent/);
+  assert.match(source, /Groove direction/);
+  assert.match(source, /Note movement/);
+  assert.match(source, /Every generation creates a new phrase/);
+  assert.match(source, /generateBassPhrase/);
   assert.match(theme, /\.bass-note-editor/);
 });
 
@@ -154,7 +158,7 @@ test("the songwriting workspace is installable on a phone", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.match(serviceWorker, /inspitivity-shell-v11/);
+  assert.match(serviceWorker, /inspitivity-shell-v12/);
   assert.match(serviceWorker, /cache\.delete\("\/"\)/);
 });
 
