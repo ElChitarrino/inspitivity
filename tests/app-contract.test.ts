@@ -69,6 +69,20 @@ test("arrangement sections expose repeats, energy, copies, and variations withou
   assert.match(theme, /\.project-actions\{bottom:12px\}/);
 });
 
+test("arrangement guidance turns structural critique into reversible actions", async()=>{
+  const arrangement=await readFile(resolve(process.cwd(),"packages/workspace/arrangement.ts"),"utf8");
+  assert.match(source,/Arrangement check/);
+  assert.match(source,/applyArrangementInsight/);
+  assert.match(source,/createSectionReturn/);
+  assert.match(source,/shapeEnergyArc/);
+  assert.match(source,/restoreRemoval/);
+  assert.match(source,/Rename \$\{section\.name\}/);
+  assert.match(arrangement,/Nothing returns yet/);
+  assert.match(arrangement,/The energy curve is flat/);
+  assert.match(theme,/\.arrangement-check/);
+  assert.match(theme,/\.undo-removal/);
+});
+
 test("home omits the duplicate creative-tools directory", () => {
   assert.doesNotMatch(source, /Built for momentum/);
   assert.doesNotMatch(source, /title="Creative tools"/);
@@ -120,7 +134,7 @@ test("the songwriting workspace is installable on a phone", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.match(serviceWorker, /inspitivity-shell-v8/);
+  assert.match(serviceWorker, /inspitivity-shell-v9/);
   assert.match(serviceWorker, /cache\.delete\("\/"\)/);
 });
 

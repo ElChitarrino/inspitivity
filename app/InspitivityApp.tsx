@@ -64,6 +64,7 @@ import {
 import { useCloudProjects, saveRecording, getRecording, downloadBackup, restoreBackup } from "./workspace-storage";
 import { DraftSession, DraftToolbar, useDraftState, useDraftPreview, type DraftPreview } from "./draft-session";
 import { sectionFeel, buildSongPlan, type SongLayer } from "../packages/workspace/music";
+import { analyzeArrangement, type ArrangementInsight } from "../packages/workspace/arrangement";
 import type { Idea, SongSection, Project, TrackMix, SectionEnergy } from "../packages/workspace";
 import { varyIdeaData, varyNotes } from "../packages/workspace/variation";
 import { VariationControls } from "./variation-controls";
@@ -1843,7 +1844,7 @@ function Home({
           </button>
         </div>
         <p className="sketch-note">
-          Creates a coherent intro, verse and hook with chords, bass, motif and drums.
+          Creates a varied song form with connected chords, bass, motif and drums.
         </p>
       </section>
       <SectionTitle
@@ -1984,6 +1985,9 @@ const SECTION_ASSETS = [
   ["drums", "Drums", "▦"], ["chords", "Chords", "♯"],
   ["bass", "Bass", "♭"], ["melody", "Melody", "♥"], ["riff", "Pattern", "⇶"], ["transition", "Transition", "⇄"],
 ] as const;
+type UndoRemoval =
+  | { kind:"section"; label:string; section:SongSection; index:number }
+  | { kind:"idea"; label:string; idea:Idea; sectionId:string; index:number };
 
 function ProjectView({
   project,
@@ -2012,6 +2016,9 @@ function ProjectView({
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [sectionName, setSectionName] = useState("");
+  const [renamingSectionId,setRenamingSectionId]=useState<string|null>(null);
+  const [sectionRename,setSectionRename]=useState("");
+  const [undoRemoval,setUndoRemoval]=useState<UndoRemoval|null>(null);
   const [arrangementPlaying, setArrangementPlaying] = useState(false);
   const [playbackSeconds, setPlaybackSeconds] = useState(0);
   const [countIn, setCountIn] = useState(false);
@@ -2063,9 +2070,13 @@ function ProjectView({
   }, [engine]);
   const removeSection = (sectionId: string) => {
     if (project.sections.length === 1) return;
-    project.sections.find(s=>s.id===sectionId)?.ideas.forEach(idea=>clearAssetDraft(sectionId,idea,true));
+    const index=project.sections.findIndex(section=>section.id===sectionId);
+    const removed=project.sections[index];
+    if(!removed)return;
+    removed.ideas.forEach(idea=>clearAssetDraft(sectionId,idea,true));
     stopArrangement();
     stopIdea();
+    setUndoRemoval({kind:"section",label:removed.name,section:removed,index});
     update((p) => ({
       ...p,
       sections: p.sections.filter((section) => section.id !== sectionId),
@@ -2073,8 +2084,11 @@ function ProjectView({
   };
   const removeIdea = (sectionId: string, ideaId: string) => {
     stopArrangement(); stopIdea();
-    const removed=project.sections.find(s=>s.id===sectionId)?.ideas.find(i=>i.id===ideaId);
+    const sourceSection=project.sections.find(s=>s.id===sectionId);
+    const index=sourceSection?.ideas.findIndex(i=>i.id===ideaId)??-1;
+    const removed=index>=0?sourceSection?.ideas[index]:undefined;
     if(removed)clearAssetDraft(sectionId,removed,true);
+    if(removed)setUndoRemoval({kind:"idea",label:removed.name,idea:removed,sectionId,index});
     update((p) => ({
       ...p,
       sections: p.sections.map((section) =>
@@ -2086,6 +2100,27 @@ function ProjectView({
           : section,
       ),
     }));
+  };
+  const restoreRemoval=()=>{
+    if(!undoRemoval)return;
+    stopArrangement();stopIdea();
+    update(p=>{
+      if(undoRemoval.kind==="section") {
+        if(p.sections.some(section=>section.id===undoRemoval.section.id))return p;
+        const sections=[...p.sections];sections.splice(Math.min(undoRemoval.index,sections.length),0,undoRemoval.section);return {...p,sections};
+      }
+      return {...p,sections:p.sections.map(section=>{
+        if(section.id!==undoRemoval.sectionId||section.ideas.some(idea=>idea.id===undoRemoval.idea.id))return section;
+        const ideas=[...section.ideas];ideas.splice(Math.min(undoRemoval.index,ideas.length),0,undoRemoval.idea);return {...section,ideas};
+      })};
+    });
+    setUndoRemoval(null);
+  };
+  const beginRename=(section:SongSection)=>{setRenamingSectionId(section.id);setSectionRename(section.name);};
+  const commitRename=(sectionId:string)=>{
+    const name=sectionRename.trim();
+    if(name)update(p=>({...p,sections:p.sections.map(section=>section.id===sectionId?{...section,name}:section)}));
+    setRenamingSectionId(null);
   };
   const cycleSectionMeter = (sectionId: string, barIndex: number) =>
     update((p) => ({
@@ -2155,6 +2190,22 @@ function ProjectView({
     const copy: SongSection = { ...source, id:uid(), name:variation ? `${source.name} variation` : `${source.name} copy`, repeats:1, ideas:source.ideas.map((idea)=>({ ...idea,id:uid(),name:variation?`${idea.name} variation`:idea.name,data:varyData(idea) })) };
     const sections=[...p.sections]; sections.splice(index+1,0,copy); return { ...p,sections };
   });
+  const createSectionReturn=(sectionId:string)=>update(p=>{
+    const source=p.sections.find(section=>section.id===sectionId);
+    if(!source)return p;
+    const returned:SongSection={...source,id:uid(),name:`${source.name} return`,repeats:1,meterMap:source.meterMap?[...source.meterMap]:undefined,mix:source.mix?JSON.parse(JSON.stringify(source.mix)):undefined,ideas:source.ideas.map(idea=>({...idea,id:uid(),name:`${idea.name} return`,data:idea.data?[...idea.data]:undefined}))};
+    return {...p,sections:[...p.sections,returned]};
+  });
+  const shapeEnergyArc=()=>update(p=>({...p,sections:p.sections.map((section,index)=>{
+    const energy:SectionEnergy=index===0?"mellow":index===p.sections.length-1?"powerful":"balanced";
+    const next={...section,energy};return {...next,mix:automaticSectionMix(next)};
+  })}));
+  const applyArrangementInsight=(insight:ArrangementInsight)=>{
+    if(insight.action==="add_section")setAdding(true);
+    if(insight.action==="create_return"&&insight.sectionId)createSectionReturn(insight.sectionId);
+    if(insight.action==="shape_energy")shapeEnergyArc();
+    if(insight.action==="add_foundation"&&insight.sectionId&&insight.tool)openSectionTool(insight.sectionId,insight.tool);
+  };
   const playSavedSections = async (sections: SongSection[], firstIndex: number, skipCountIn = false) => {
     window.dispatchEvent(new Event("inspitivity-solo-preview"));
     stopArrangement(); stopIdea();
@@ -2328,6 +2379,7 @@ function ProjectView({
     else void playIdea(idea);
   };
   const arrangementPlan = buildSongPlan(project);
+  const arrangementCheck=analyzeArrangement(project);
   const markerIndex = Math.max(0, arrangementPlan.markers.findLastIndex((marker) => marker.seconds <= playbackSeconds));
   const marker = arrangementPlan.markers[markerIndex];
   const beatInBar = marker ? Math.max(1, Math.floor((playbackSeconds-marker.seconds)/(60/marker.bpm))+1) : 1;
@@ -2375,6 +2427,11 @@ function ProjectView({
           </p>
         )}
       </div>
+      <section className={`arrangement-check ${arrangementCheck.ready?"is-ready":""}`} aria-labelledby="arrangement-check-title">
+        <header><div><p className="eyebrow">Song structure</p><h2 id="arrangement-check-title">Arrangement check</h2></div><span>{arrangementCheck.ready?"Basics covered":"Next moves"}</span></header>
+        {arrangementCheck.ready ? <p>This arrangement includes repetition, energy contrast and core rhythmic-harmonic layers.</p> : <div className="arrangement-insights">{arrangementCheck.insights.map(insight=><article key={insight.id}><div><b>{insight.title}</b><p>{insight.detail}</p></div><button onClick={()=>applyArrangementInsight(insight)}>{insight.action==="create_return"?"Create return":insight.action==="shape_energy"?"Shape energy":insight.action==="add_foundation"?`Add ${insight.tool}`:"Add section"}</button></article>)}</div>}
+      </section>
+      {undoRemoval&&<div className="undo-removal" role="status"><span>Removed {undoRemoval.label}</span><button onClick={restoreRemoval}>Undo</button><button aria-label="Dismiss undo" onClick={()=>setUndoRemoval(null)}>×</button></div>}
       <SectionTitle
         eyebrow=""
         title="Arrangement"
@@ -2385,7 +2442,7 @@ function ProjectView({
         {project.sections.map((section, index) => (
           <article key={section.id} className={`section-card asset-section ${activeSectionIndex === index ? "playing" : ""}`}>
             <header className="asset-section-heading">
-              <div><span className="section-position">SECTION {String(index+1).padStart(2,"0")}</span><h3>{section.name}</h3></div>
+              <div className="section-title-editor"><span className="section-position">SECTION {String(index+1).padStart(2,"0")}</span>{renamingSectionId===section.id?<form onSubmit={event=>{event.preventDefault();commitRename(section.id);}}><input autoFocus aria-label={`Rename ${section.name}`} value={sectionRename} onChange={event=>setSectionRename(event.target.value)} onKeyDown={event=>{if(event.key==="Escape")setRenamingSectionId(null);}}/><button type="submit">Save</button></form>:<div><h3>{section.name}</h3><button className="rename-section" aria-label={`Rename ${section.name}`} onClick={()=>beginRename(section)}>✎</button></div>}</div>
               <PlayButton compact playing={arrangementPlaying && activeSectionIndex === index} label={section.name} onClick={() => void playSection(section,index)} />
             </header>
             <div className="asset-section-meta">

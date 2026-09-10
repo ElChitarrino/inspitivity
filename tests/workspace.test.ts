@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { mergeProjects, validProjects, type Project } from "../packages/workspace/index.js";
 import { sectionFeel, buildSongPlan } from "../packages/workspace/music.js";
+import { analyzeArrangement } from "../packages/workspace/arrangement.js";
 import { varyIdeaData, varyNotes } from "../packages/workspace/variation.js";
 import { generateDrumLoop } from "../packages/sequencing/index.js";
 import { createMultitrackMidi } from "../packages/midi/index.js";
@@ -79,6 +80,24 @@ test("section variations audibly transform saved parts instead of cloning them",
   assert.notDeepEqual(variedMelody,melody);
   assert.ok(variedMelody.filter((value,index)=>value!==melody[index]).length>=2);
   assert.notDeepEqual(variedChords,chords);
+});
+test("arrangement analysis detects missing returns, energy contrast, and foundations",()=>{
+  const song=project();
+  song.sections=["Intro","Verse","Bridge"].map((name,index)=>({...song.sections[0],id:`s${index}`,name,energy:"balanced",ideas:index===0?song.sections[0].ideas:[]}));
+  const check=analyzeArrangement(song);
+  assert.equal(check.ready,false);
+  assert.deepEqual(check.insights.map(insight=>insight.id),["return","energy","foundation"]);
+  assert.equal(check.insights.find(insight=>insight.id==="foundation")?.tool,"drums");
+});
+test("arrangement analysis clears when form, contrast, and core layers are present",()=>{
+  const song=project();
+  const ideas=[
+    {id:"c",type:"chords" as const,name:"Harmony",detail:"",data:["C|4"]},
+    {id:"d",type:"drums" as const,name:"Pocket",detail:"",data:["kick|0|.8"]},
+    {id:"b",type:"bass" as const,name:"Bass",detail:"",data:["36|0|.4|1"]},
+  ];
+  song.sections=["Verse","Chorus","Verse return"].map((name,index)=>({...song.sections[0],id:`s${index}`,name,energy:index===0?"mellow" as const:index===2?"powerful" as const:"balanced" as const,ideas:ideas.map(idea=>({...idea,id:`${idea.id}${index}`}))}));
+  assert.deepEqual(analyzeArrangement(song),{ready:true,insights:[]});
 });
 test("song plan repeats saved layers, preserves displaced starts, and leaves missing parts silent",()=>{
   const p=project();p.sections[0].ideas.push({id:"m",type:"melody",name:"Flute",detail:"",data:["E4|0.5|0.5|64"]});
