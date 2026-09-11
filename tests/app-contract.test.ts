@@ -148,6 +148,23 @@ test("the app requires a ChatGPT account and scopes every local cache to it", as
   assert.match(storage, /Synced across your devices/);
 });
 
+test("projects can be shared with account-bound collaborators", async () => {
+  const schema = await readFile(resolve(process.cwd(), "db/schema.ts"), "utf8");
+  const api = await readFile(resolve(process.cwd(), "worker/workspace.ts"), "utf8");
+  const worker = await readFile(resolve(process.cwd(), "worker/index.ts"), "utf8");
+  assert.match(source, /ShareProjectModal/);
+  assert.match(source, /Collaborator’s ChatGPT email/);
+  assert.match(source, /Everyone with access works on the same project/);
+  assert.match(source, /Leave shared project/);
+  assert.match(schema, /sharedProjects/);
+  assert.match(schema, /projectMembers/);
+  assert.match(schema, /sharedRecordings/);
+  assert.match(api, /oai-authenticated-user-email/);
+  assert.match(api, /Only the project owner can add collaborators/);
+  assert.match(api, /sharedRecordingOwner/);
+  assert.match(worker, /url\.pathname === "\/api\/shares"/);
+});
+
 test("the songwriting workspace is installable on a phone", async () => {
   const layout = await readFile(resolve(process.cwd(), "app/layout.tsx"), "utf8");
   const manifest = await readFile(resolve(process.cwd(), "app/manifest.ts"), "utf8");
@@ -158,7 +175,7 @@ test("the songwriting workspace is installable on a phone", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.match(serviceWorker, /inspitivity-shell-v12/);
+  assert.match(serviceWorker, /inspitivity-shell-v13/);
   assert.match(serviceWorker, /cache\.delete\("\/"\)/);
 });
 

@@ -28,7 +28,7 @@ interface ExecutionContext {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === "/api/workspace" || url.pathname.startsWith("/api/recordings/")) return workspaceApi(request, env);
+    if (url.pathname === "/api/workspace" || url.pathname === "/api/shares" || url.pathname.startsWith("/api/recordings/")) return workspaceApi(request, env);
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];

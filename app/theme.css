@@ -51,6 +51,7 @@ html[data-theme="crimson"] .piano-note{background:var(--mint)}
 .electric-preview .theme-swatch{background:#090b09;border:1px solid #354323}.electric-preview .theme-swatch i{background:#c8ff3d}
 
 .project-actions .danger-action{display:flex;align-items:center;gap:8px;border-color:#80531f;background:#2b2115;color:#ffc06b}
+.project-actions .share-action{border-color:#375c69;background:#162930;color:#9be2f4}
 .project-actions{bottom:12px}
 .confirm-delete p{color:var(--muted);line-height:1.5}.danger-text{color:#ffc06b!important}.confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:24px}.confirm-actions button{min-height:46px;border-radius:7px;font-weight:750}.danger-button{border:1px solid #c77d26;background:#f0a23f;color:#1b1004}
 
@@ -105,6 +106,7 @@ html[data-theme="crimson"] .piano-note{background:var(--mint)}
 .section-order-controls{padding-top:2px}.section-order-controls button{min-width:40px;min-height:40px}
 .project-actions{width:max-content;max-width:100%;justify-content:flex-end;margin:20px 0 4px auto;padding:6px;gap:6px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--surface) 92%,transparent);box-shadow:0 14px 44px rgba(0,0,0,.3);backdrop-filter:blur(16px)}
 .project-actions button{min-height:44px;border-radius:8px}.project-actions .icon-action{display:grid;width:44px;min-width:44px;flex:0 0 44px;place-items:center;padding:0;font-size:17px}.project-actions .danger-action{justify-content:center}
+.share-project-modal{display:grid;gap:0}.share-project-modal h2{margin-bottom:10px}.share-explainer{margin:0 0 18px;color:var(--muted)}.share-invite{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:stretch;margin-bottom:18px}.share-invite .field{min-width:0}.share-invite .primary-button{margin:0;padding-inline:16px}.share-members{display:grid;gap:7px}.share-members article{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}.share-members article>div{display:grid;gap:2px;min-width:0}.share-members b{overflow:hidden;text-overflow:ellipsis;font-size:14px}.share-members small{color:var(--muted);font-size:12px}.share-members article>button{min-height:36px;border:1px solid #68464c;border-radius:7px;background:#2d1a1e;color:#ffb3bf;padding:6px 10px}.share-avatar{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:#34213d;color:var(--violet);font-size:9px}.share-avatar.collaborator{background:#17353c;color:#9be2f4}.share-empty,.share-status{margin:10px 0 0!important;font-size:13px!important}.share-empty{color:var(--muted)}.share-status{color:var(--mint)!important}.leave-project{margin-top:16px;min-height:44px;border:1px solid #87545c;border-radius:8px;background:#311b20;color:#ffb3bf}.share-project-modal button:disabled{opacity:.45;cursor:default}
 .tool-tabs{width:100%;gap:2px;margin-bottom:22px;overflow-x:auto;scrollbar-width:thin}.app-shell .tool-tabs button{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;padding:10px 14px}.tool-tab-icon{font-size:16px}
 .app-shell .control-panel,.app-shell .result-panel{padding:22px}.control-panel>summary{min-height:40px}.generator-settings-body{padding-top:16px}
 
@@ -145,6 +147,7 @@ html[data-theme="crimson"] .piano-note{background:var(--mint)}
   .studio-destinations button{display:flex;flex-direction:row;justify-content:flex-start;gap:12px;min-height:44px;padding:9px 12px;font-size:14px}.studio-destinations button span{font-size:14px}.studio-destinations button b{width:22px;font-size:18px}.studio-nav-foot{margin-top:auto}
   .project-actions{bottom:12px}
   .arrangement-check{padding:16px}.arrangement-insights article{grid-template-columns:1fr;gap:10px}.arrangement-insights button{width:100%}.undo-removal{left:12px;right:12px;bottom:12px}.undo-removal span{flex:1}.section-title-editor input{width:min(210px,55vw)}
+  .share-invite{grid-template-columns:1fr}.share-invite .primary-button{min-height:46px}
 }
 
 /* Section annotations remain visible even before the first note exists. */

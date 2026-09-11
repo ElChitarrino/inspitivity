@@ -4,12 +4,20 @@ import { workspaceApi, type WorkspaceEnv } from "../worker/workspace.js";
 
 function fixture() {
   const rows=new Map<string,{revision:number;projects:string}>();
-  const DB={prepare:(sql:string)=>({bind:(...values:unknown[])=>({first:async()=>{
-    const owner=String(values[0]),row=rows.get(owner);
-    if(sql.startsWith("SELECT"))return row ?? null;
-    if(row && row.revision!==values[2])return null;
-    const next={revision:(row?.revision??0)+1,projects:String(values[1])};rows.set(owner,next);return {revision:next.revision};
-  }})})};
+  const DB={
+    prepare:(sql:string)=>({bind:(...values:unknown[])=>({
+      first:async()=>{
+        const owner=String(values[0]),row=rows.get(owner);
+        if(sql.includes("FROM workspaces"))return row ?? null;
+        if(sql.startsWith("SELECT"))return null;
+        if(row && row.revision!==values[2])return null;
+        const next={revision:(row?.revision??0)+1,projects:String(values[1])};rows.set(owner,next);return {revision:next.revision};
+      },
+      all:async()=>({results:[],success:true}),
+      run:async()=>({results:[],success:true}),
+    })}),
+    batch:async()=>[],
+  };
   const env={DB,RECORDINGS:{}} as unknown as WorkspaceEnv;
   const request=(method="GET",owner="alice",body?:unknown,origin="https://music.test")=>new Request("https://music.test/api/workspace",{method,headers:{"oai-authenticated-user-id":owner,"Origin":origin,"Content-Type":"application/json"},...(body===undefined?{}:{body:JSON.stringify(body)})});
   return {env,request};

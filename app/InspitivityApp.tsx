@@ -78,6 +78,13 @@ import { isTheme, resolveInitialTheme, type Theme } from "../packages/theme";
 
 type IdeaDraft = Omit<Idea, "id" | "recordingId">;
 type SaveIdea = (type: Idea["type"], name: string, detail: string, data?: string[], chooseDestination?: boolean, voice?: string) => void;
+type ShareInfo = {
+  projectId: string;
+  ownerEmail: string;
+  members: Array<{ email: string; role: string }>;
+  canManage: boolean;
+  currentRole: "owner" | "editor";
+};
 type Screen =
   | "home"
   | "projects"
@@ -1440,6 +1447,7 @@ export default function InspitivityApp({ account, signOutPath }: {
   );
   const [toast, setToast] = useState("");
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [projectToShare, setProjectToShare] = useState<Project | null>(null);
   const [editingIdea, setEditingIdea] = useState<Idea | null>(null);
   const [pendingSave, setPendingSave] = useState<IdeaDraft | null>(null);
   const savedDraftId = useRef<string | null>(null);
@@ -1691,6 +1699,7 @@ export default function InspitivityApp({ account, signOutPath }: {
           openSectionTool={openSectionTool}
           editIdea={editArrangementIdea}
           deleteProject={() => setProjectToDelete(selected)}
+          shareProject={() => setProjectToShare(selected)}
           clearAssetDraft={(sectionId,idea,removeDraft=false) => {
             window.dispatchEvent(new Event("inspitivity-solo-preview"));
             setPreviews(current=>Object.fromEntries(Object.entries(current).filter(([key])=>key!==`${selected.id}/${sectionId}/${idea.type}` && key!==`${selected.id}/scratch/${idea.type}`)));
@@ -1863,6 +1872,19 @@ export default function InspitivityApp({ account, signOutPath }: {
           project={projectToDelete}
           close={() => setProjectToDelete(null)}
           confirm={confirmDeleteProject}
+        />
+      )}
+      {projectToShare && (
+        <ShareProjectModal
+          project={projectToShare}
+          close={() => setProjectToShare(null)}
+          sync={cloud.sync}
+          left={() => {
+            setProjects((items) => items.filter((project) => project.id !== projectToShare.id));
+            setProjectToShare(null);
+            setScreen("projects");
+            notify(`Left ${projectToShare.name}`);
+          }}
         />
       )}
       {toast && (
@@ -2078,6 +2100,9 @@ function Projects({
 function TrashIcon() {
   return <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7" /></svg>;
 }
+function ShareIcon() {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5"/></svg>;
+}
 const SECTION_ASSETS = [
   ["drums", "Drums", "▦"], ["chords", "Chords", "♯"],
   ["bass", "Bass", "♭"], ["melody", "Melody", "♥"], ["riff", "Pattern", "⇶"], ["transition", "Transition", "⇄"],
@@ -2094,6 +2119,7 @@ function ProjectView({
   openSectionTool,
   editIdea,
   deleteProject,
+  shareProject,
   clearAssetDraft,
 }: {
   project: Project;
@@ -2106,6 +2132,7 @@ function ProjectView({
   ) => void;
   editIdea: (sectionId: string, idea: Idea) => void;
   deleteProject: () => void;
+  shareProject: () => void;
   clearAssetDraft: (sectionId: string, idea: Idea, removeDraft?: boolean) => void;
 }) {
   const [adding, setAdding] = useState(false);
@@ -2633,6 +2660,7 @@ function ProjectView({
       <div className="project-actions">
         <button className="capture-action icon-action" aria-label="Record idea" title="Record idea" onClick={record}>●</button>
         <button onClick={() => setAdding(true)}>＋ Add section</button>
+        <button className="share-action icon-action" aria-label="Share project" title="Share project" onClick={shareProject}><ShareIcon /></button>
         <button className="danger-action icon-action" aria-label="Delete project" title="Delete project" onClick={deleteProject}><TrashIcon /></button>
       </div>
       {adding && (
@@ -2808,7 +2836,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
           } else {
             const voice=(event.voice ?? (event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : event.layer === "bass" ? "deep bass" : "analog pulse")) as SynthVoice;
             const baseGain = event.layer === "chords" ? .052 : event.layer === "melody" ? .058 : event.layer === "bass" ? .065 : .055;
-            engine.tone(event.pitch,delay,event.secondsDuration,baseGain*event.velocity*settings.volume,voice === "current" ? "deep bass" : voice);
+            engine.tone(event.pitch,delay,event.secondsDuration,baseGain*event.velocity*settings.volume,voice);
           }
         }
         setProgress(Math.max(0,Math.min(1,(now-origin)/Math.max(.1,cyclePlan.seconds))));
@@ -4938,7 +4966,7 @@ function Settings({
         <span className="settings-icon">◎</span>
         <h2>Your ideas stay yours.</h2>
         <p>
-          Projects and recordings sync privately through this site. A device copy keeps your work available offline. Draft experiments stay on the device until you save them to a section.
+          Projects and recordings sync privately through this site unless you explicitly add a collaborator. A device copy keeps your work available offline. Draft experiments stay on the device until you save them to a section.
         </p>
         <div className="storage-row">
           <span>Projects</span>
@@ -4997,10 +5025,99 @@ function Settings({
       <div className="settings-card compact">
         <h3>Account and storage</h3>
         <p>
-          Projects and recordings are stored privately under your signed-in ChatGPT account and synchronized across devices. This device also keeps a local working copy for resilience. Drafts that have not been saved remain on this device.
+          Projects and recordings are stored under your signed-in ChatGPT account and synchronized across devices. Shared projects also appear for collaborators you add by email. This device keeps a local working copy for resilience; unsaved drafts remain on this device.
         </p>
       </div>
     </>
+  );
+}
+
+function ShareProjectModal({
+  project,
+  close,
+  sync,
+  left,
+}: {
+  project: Project;
+  close: () => void;
+  sync: () => Promise<void>;
+  left: () => void;
+}) {
+  const [info, setInfo] = useState<ShareInfo | null>(null);
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState("Loading access…");
+  const [busy, setBusy] = useState(false);
+  const endpoint = `/api/shares?project_id=${encodeURIComponent(project.id)}`;
+  const load = useCallback(async () => {
+    try {
+      const response = await fetch(endpoint, { cache:"no-store" });
+      const body = await response.json() as ShareInfo & { error?: string };
+      if (!response.ok) throw new Error(body.error || "Could not load project access.");
+      setInfo(body);
+      setStatus("");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not load project access.");
+    }
+  }, [endpoint]);
+  useEffect(() => { void load(); }, [load]);
+  const invite = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!email.trim() || busy) return;
+    setBusy(true);
+    setStatus("Syncing the latest project first…");
+    try {
+      await sync();
+      const response = await fetch("/api/shares", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify({ projectId:project.id, email:email.trim() }),
+      });
+      const body = await response.json() as ShareInfo & { error?: string };
+      if (!response.ok) throw new Error(body.error || "Could not add collaborator.");
+      setInfo(body);
+      setEmail("");
+      setStatus("Collaborator added. Their matching ChatGPT account now receives this project.");
+      await sync();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not add collaborator.");
+    } finally { setBusy(false); }
+  };
+  const remove = async (memberEmail?: string) => {
+    if (busy) return;
+    setBusy(true);
+    setStatus(memberEmail ? "Removing access…" : "Leaving project…");
+    try {
+      const suffix = memberEmail ? `&email=${encodeURIComponent(memberEmail)}` : "";
+      const response = await fetch(`${endpoint}${suffix}`, { method:"DELETE" });
+      const body = await response.json() as ShareInfo & { error?: string; left?: boolean };
+      if (!response.ok) throw new Error(body.error || "Could not update project access.");
+      if (body.left) { left(); return; }
+      setInfo(body);
+      setStatus("Access updated.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not update project access.");
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="modal-layer" role="presentation">
+      <div className="modal small share-project-modal" role="dialog" aria-modal="true" aria-labelledby="share-project-title">
+        <button className="modal-close" onClick={close} aria-label="Close">×</button>
+        <p className="eyebrow">Collaboration</p>
+        <h2 id="share-project-title">Share “{project.name}”</h2>
+        <p className="share-explainer">Everyone with access works on the same project across their devices. Changes merge through account sync.</p>
+        {info?.canManage && <form className="share-invite" onSubmit={invite}>
+          <label className="field"><span>Collaborator’s ChatGPT email</span><input type="email" autoComplete="email" value={email} onChange={(event)=>setEmail(event.target.value)} placeholder="musician@example.com" /></label>
+          <button className="primary-button" disabled={busy || !email.trim()} type="submit">Add collaborator</button>
+        </form>}
+        {info && <div className="share-members" aria-label="People with access">
+          <article><span className="share-avatar" aria-hidden="true">●</span><div><b>{info.ownerEmail}</b><small>Owner</small></div></article>
+          {info.members.map((member)=><article key={member.email}><span className="share-avatar collaborator" aria-hidden="true">●</span><div><b>{member.email}</b><small>Can edit</small></div>{info.canManage && <button disabled={busy} onClick={()=>void remove(member.email)} aria-label={`Remove ${member.email}`}>Remove</button>}</article>)}
+          {!info.members.length && <p className="share-empty">Only you have access.</p>}
+        </div>}
+        {status && <p className="share-status" role="status">{status}</p>}
+        {info && !info.canManage && <button className="leave-project" disabled={busy} onClick={()=>void remove()}>Leave shared project</button>}
+      </div>
+    </div>
   );
 }
 

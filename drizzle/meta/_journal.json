@@ -8,6 +8,13 @@
       "when": 1788768887857,
       "tag": "0000_small_maggott",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789109329615,
+      "tag": "0001_normal_sumo",
+      "breakpoints": true
     }
   ]
 }
