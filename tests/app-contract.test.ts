@@ -175,7 +175,7 @@ test("the songwriting workspace is installable on a phone", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.match(serviceWorker, /inspitivity-shell-v13/);
+  assert.match(serviceWorker, /inspitivity-shell-v14/);
   assert.match(serviceWorker, /cache\.delete\("\/"\)/);
 });
 
@@ -208,6 +208,18 @@ test("the home screen can create a coherent playable sketch in one flow", () => 
   assert.match(source, /const forms: Record<SketchPreset/);
   assert.match(source, /reinforceDrumAccents/);
   assert.match(source, /sectionPitchContext/);
+});
+
+test("existing songs can generate a complete context-aware section", () => {
+  assert.match(source, /function buildGuidedSection/);
+  assert.match(source, /Generate complete section/);
+  assert.match(source, /Add empty section/);
+  assert.match(source, /Relationship/);
+  assert.match(source, /\["continue","contrast","return"\]/);
+  assert.match(source, /generated with the section/);
+  assert.match(source, /sectionPitchContext\(previous,"chords"\)/);
+  assert.match(source, /generateBassLine\(context,section/);
+  assert.match(source, /automaticSectionMix\(section\)/);
 });
 
 test("arrangement sections expose vertical ordering and a single current length", () => {

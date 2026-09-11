@@ -647,6 +647,59 @@ function buildPlayableSketch(preset: SketchPreset): Project {
   };
 }
 
+type GuidedSectionDirection = "continue" | "contrast" | "return";
+function buildGuidedSection(
+  project: Project,
+  name: string,
+  energy: SectionEnergy,
+  direction: GuidedSectionDirection,
+): SongSection {
+  const seed=freshSeed(), random=seededRandom(seed), previous=project.sections.at(-1);
+  const {root,mode}=projectHarmony(project), beatsPerBar=meterBeats(project.meter);
+  const heavy=previous?.ideas.some(idea=>idea.type==="riff"||idea.voice==="distorted guitar") ?? false;
+  const bars=direction==="return" && previous ? previous.bars : [4,8,8][Math.floor(random()*3)];
+  const previousHarmony=previous?.ideas.find(idea=>idea.type==="chords");
+  const chords=direction==="return" && previousHarmony
+    ? decodeChordDrafts(previousHarmony).map((chord,index)=>({...chord,id:uid(),pitches:voiceChord(chord.name,seed+index*41,index%2?"open":"mixed")}))
+    : makeChordDrafts(
+        root,mode,heavy||direction==="contrast"?5:4,heavy?"advanced":"medium",seed,beatsPerBar,
+        direction==="contrast"?12:4,direction==="contrast"?"modal interchange":"diatonic",
+        direction==="return"?"tonic":direction==="contrast"?"surprise":"away",
+        heavy?"open":"mixed",energy==="mellow"?"smooth":"balanced",sectionPitchContext(previous,"chords"),
+      );
+  const previousMelody=previous?.ideas.find(idea=>idea.type==="melody");
+  const mood:MelodyMood=energy==="mellow"?(mode==="major"?"calm":"melancholic"):energy==="powerful"?(heavy?"dark":"bright"):"calm";
+  const melody=direction==="return" && previousMelody?.data?.length
+    ? fitMelodyToChords(decodeMelodyIdea({...previousMelody,data:varyIdeaData("melody",previousMelody.data,seed+7)}),chords)
+    : fitMelodyToChords(generateMelody({
+        root,mode,notes:energy==="mellow"?14:energy==="powerful"?28:20,
+        density:energy==="mellow"?.42:energy==="powerful"?.76:.58,mood,seed:seed+7,
+        shape:direction==="return"?"hook":direction==="contrast"?"answer":"flow",
+      }),chords);
+  const groove:DrumStyle=heavy?(direction==="contrast"?"linear":"djent"):(direction==="contrast"?"syncopated":"steady");
+  let drums=generateDrumLoop({beatsPerBar,density:energy==="mellow"?.4:energy==="powerful"?.78:.6,style:groove,energy,seed:seed+13,bars:Math.min(8,bars)});
+  drums=reinforceDrumAccents(drums,melody.filter((_,index)=>index%4===0).map(note=>note.start),beatsPerBar*bars*4);
+  const chordVoice:SynthVoice=heavy?"distorted guitar":energy==="mellow"?"glass":"warm pad";
+  const ideas:Idea[]=[
+    {id:uid(),type:"chords",name:`${name} harmony`,detail:chords.map(chord=>chord.name).join(" · "),data:chords.map(encodeChord),voice:chordVoice},
+    {id:uid(),type:"melody",name:`${name} motif`,detail:melody.map(note=>note.note).join(" · "),data:melody.map(note=>`${note.note}|${note.start}|${note.duration}|${note.pitch}`),voice:heavy?"pluck":"air flute"},
+    {id:uid(),type:"drums",name:`${name} pocket`,detail:`${drums.length} hits · ${project.meter}`,data:drums.map(hit=>`${hit.instrument}|${hit.step}|${hit.velocity}|${beatsPerBar*Math.min(8,bars)}`),voice:heavy?"prog metal":"rock"},
+  ];
+  const section:SongSection={
+    id:uid(),name,bars,color:COLORS[project.sections.length%COLORS.length],ideas,
+    meterMap:direction==="return"&&previous?.meterMap?[...previous.meterMap]:Array.from({length:bars},()=>project.meter),energy,
+  };
+  const context:Project={...project,sections:[...project.sections,section]};
+  const bass=generateBassLine(context,section,heavy?"progressive":energy==="mellow"?"sustained":"groove",heavy?"rooted":"supportive",true,seed+29);
+  ideas.push({id:uid(),type:"bass",name:`${name} bass`,detail:`${bass.length} notes · generated with the section`,data:bass.map(encodeBassEvent),voice:"deep bass"});
+  if(heavy||energy==="powerful") {
+    const riff=fitMelodyToChords(generateProgRiff({root,mode,beats:beatsPerBar,cycle:beatsPerBar===7?7:5,grouping:beatsPerBar===7?"2+2+3":"3+3+2",density:energy==="powerful"?.72:.52,seed:seed+37,startOffset:.5,motion:direction==="contrast"?"rise":"orbit"}).map(note=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),chords);
+    ideas.push({id:uid(),type:"riff",name:`${name} pattern`,detail:`${riff.length} notes · supports the generated harmony`,data:riff.map(note=>`${note.pitch}|${note.start}|${note.duration}|${note.accent?1:0}|${note.muted?1:0}`),voice:heavy?"distorted guitar":"analog pulse"});
+  }
+  section.mix=automaticSectionMix(section);
+  return section;
+}
+
 const STARTER_PROJECTS: Project[] = [
   {
     id: "midnight",
@@ -2140,6 +2193,8 @@ function ProjectView({
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [sectionName, setSectionName] = useState("");
+  const [sectionDirection,setSectionDirection]=useState<GuidedSectionDirection>("continue");
+  const [sectionEnergy,setNewSectionEnergy]=useState<SectionEnergy>("balanced");
   const [renamingSectionId,setRenamingSectionId]=useState<string|null>(null);
   const [sectionRename,setSectionRename]=useState("");
   const [undoRemoval,setUndoRemoval]=useState<UndoRemoval|null>(null);
@@ -2305,6 +2360,18 @@ function ProjectView({
   const setSectionEnergy = (sectionId: string, energy: SectionEnergy) => {
     stopArrangement();
     update((p) => ({ ...p, sections:p.sections.map((section) => section.id === sectionId ? { ...section, energy, mix:automaticSectionMix({ ...section, energy }) } : section) }));
+  };
+  const finishAddingSection=()=>{setSectionName("");setSectionDirection("continue");setNewSectionEnergy("balanced");setAdding(false);};
+  const addEmptySection=()=>{
+    const name=sectionName.trim();if(!name)return;
+    update((p)=>({...p,sections:[...p.sections,{id:uid(),name,bars:8,color:COLORS[p.sections.length%COLORS.length],ideas:[],meterMap:Array.from({length:8},()=>p.meter),energy:sectionEnergy}]}));
+    finishAddingSection();
+  };
+  const generateCompleteSection=()=>{
+    const name=sectionName.trim();if(!name)return;
+    stopArrangement();stopIdea();
+    update((p)=>({...p,sections:[...p.sections,buildGuidedSection(p,name,sectionEnergy,sectionDirection)]}));
+    finishAddingSection();
   };
   const duplicateSection = (sectionId: string, variation: boolean) => update((p) => {
     const index = p.sections.findIndex((section) => section.id === sectionId);
@@ -2670,7 +2737,7 @@ function ProjectView({
               ×
             </button>
             <p className="eyebrow">New section</p>
-            <h2>Where does the song go next?</h2>
+            <h2>Build the next section</h2>
             <label className="field">
               <span>Section name</span>
               <input
@@ -2679,29 +2746,19 @@ function ProjectView({
                 placeholder="Bridge, pre-chorus, outro…"
               />
             </label>
+            <div className="guided-section-controls">
+              <Select label="Relationship" value={sectionDirection} options={["continue","contrast","return"]} set={(value)=>setSectionDirection(value as GuidedSectionDirection)} />
+              <Select label="Energy" value={sectionEnergy} options={["mellow","balanced","powerful"]} set={(value)=>setNewSectionEnergy(value as SectionEnergy)} />
+            </div>
+            <p className="guided-section-copy">Generate creates harmony, melody, drums and bass together. Powerful or riff-led songs also receive a supporting pattern.</p>
             <button
               className="primary-button wide"
               disabled={!sectionName.trim()}
-              onClick={() => {
-                update((p) => ({
-                  ...p,
-                  sections: [
-                    ...p.sections,
-                    {
-                      id: uid(),
-                      name: sectionName.trim(),
-                      bars: 8,
-                      color: COLORS[p.sections.length % COLORS.length],
-                      ideas: [],
-                    },
-                  ],
-                }));
-                setSectionName("");
-                setAdding(false);
-              }}
+              onClick={generateCompleteSection}
             >
-              Add section
+              Generate complete section
             </button>
+            <button className="secondary-button wide" disabled={!sectionName.trim()} onClick={addEmptySection}>Add empty section</button>
           </div>
         </div>
       )}
