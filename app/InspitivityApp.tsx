@@ -2189,6 +2189,10 @@ function ProjectView({
   clearAssetDraft: (sectionId: string, idea: Idea, removeDraft?: boolean) => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(
+    project.sections[0]?.id ?? null,
+  );
+  const [sectionPanel, setSectionPanel] = useState<"parts" | "mix" | "notes">("parts");
   const [ideaSection, setIdeaSection] = useState<string | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [note, setNote] = useState("");
@@ -2215,6 +2219,10 @@ function ProjectView({
   const ideaTimer = useRef<number | null>(null);
   const ideaAudio = useRef<HTMLAudioElement | null>(null);
   const engine = useAudioEngine();
+  useEffect(() => {
+    if (!project.sections.some((section) => section.id === selectedSectionId))
+      setSelectedSectionId(project.sections[0]?.id ?? null);
+  }, [project.sections, selectedSectionId]);
   useEffect(() => { loopArrangementRef.current = loopArrangement; }, [loopArrangement]);
   const move = (index: number, direction: number) =>
     update((p) => {
@@ -2256,6 +2264,8 @@ function ProjectView({
     stopArrangement();
     stopIdea();
     setUndoRemoval({kind:"section",label:removed.name,section:removed,index});
+    if (selectedSectionId === sectionId)
+      setSelectedSectionId(project.sections[index + 1]?.id ?? project.sections[index - 1]?.id ?? null);
     update((p) => ({
       ...p,
       sections: p.sections.filter((section) => section.id !== sectionId),
@@ -2364,13 +2374,17 @@ function ProjectView({
   const finishAddingSection=()=>{setSectionName("");setSectionDirection("continue");setNewSectionEnergy("balanced");setAdding(false);};
   const addEmptySection=()=>{
     const name=sectionName.trim();if(!name)return;
-    update((p)=>({...p,sections:[...p.sections,{id:uid(),name,bars:8,color:COLORS[p.sections.length%COLORS.length],ideas:[],meterMap:Array.from({length:8},()=>p.meter),energy:sectionEnergy}]}));
+    const id=uid();
+    update((p)=>({...p,sections:[...p.sections,{id,name,bars:8,color:COLORS[p.sections.length%COLORS.length],ideas:[],meterMap:Array.from({length:8},()=>p.meter),energy:sectionEnergy}]}));
+    setSelectedSectionId(id);setSectionPanel("parts");
     finishAddingSection();
   };
   const generateCompleteSection=()=>{
     const name=sectionName.trim();if(!name)return;
     stopArrangement();stopIdea();
-    update((p)=>({...p,sections:[...p.sections,buildGuidedSection(p,name,sectionEnergy,sectionDirection)]}));
+    const id=uid();
+    update((p)=>{const generated=buildGuidedSection(p,name,sectionEnergy,sectionDirection);return {...p,sections:[...p.sections,{...generated,id}]};});
+    setSelectedSectionId(id);setSectionPanel("parts");
     finishAddingSection();
   };
   const duplicateSection = (sectionId: string, variation: boolean) => update((p) => {
@@ -2607,15 +2621,16 @@ function ProjectView({
         </div>
         <div className="arrangement-transport" aria-label="Arrangement playback controls">
           <span className="transport-position">Bar {markerIndex+1} · Beat {beatInBar}</span>
-          <label><input type="checkbox" checked={countIn} onChange={(event)=>setCountIn(event.target.checked)} /> Count-in</label>
-          <label><input type="checkbox" checked={arrangementClick} onChange={(event)=>setArrangementClick(event.target.checked)} /> Click</label>
-          <button aria-pressed={loopArrangement} className={loopArrangement ? "active" : ""} onClick={()=>setLoopArrangement((value)=>!value)}>↻ Loop</button>
-          <button onClick={autoBalanceAll}>Auto balance all</button>
+          <details className="transport-options">
+            <summary>Playback settings</summary>
+            <div>
+              <label><input type="checkbox" checked={countIn} onChange={(event)=>setCountIn(event.target.checked)} /> Count-in</label>
+              <label><input type="checkbox" checked={arrangementClick} onChange={(event)=>setArrangementClick(event.target.checked)} /> Click</label>
+              <button aria-pressed={loopArrangement} className={loopArrangement ? "active" : ""} onClick={()=>setLoopArrangement((value)=>!value)}>↻ Loop</button>
+              <button aria-label="Auto balance all tracks" onClick={autoBalanceAll}>Auto balance</button>
+            </div>
+          </details>
         </div>
-        <p className="flow-hint">
-          Hear the full sketch, then change one layer inside the section that
-          needs it.
-        </p>
         {audioStatus && (
           <p className="audio-status" role="status">
             <span aria-hidden="true" />
@@ -2623,10 +2638,10 @@ function ProjectView({
           </p>
         )}
       </div>
-      <section className={`arrangement-check ${arrangementCheck.ready?"is-ready":""}`} aria-labelledby="arrangement-check-title">
-        <header><div><p className="eyebrow">Song structure</p><h2 id="arrangement-check-title">Arrangement check</h2></div><span>{arrangementCheck.ready?"Basics covered":"Next moves"}</span></header>
-        {arrangementCheck.ready ? <p>This arrangement includes repetition, energy contrast and core rhythmic-harmonic layers.</p> : <div className="arrangement-insights">{arrangementCheck.insights.map(insight=><article key={insight.id}><div><b>{insight.title}</b><p>{insight.detail}</p></div><button onClick={()=>applyArrangementInsight(insight)}>{insight.action==="create_return"?"Create return":insight.action==="shape_energy"?"Shape energy":insight.action==="add_foundation"?`Add ${insight.tool}`:"Add section"}</button></article>)}</div>}
-      </section>
+      <details className={`arrangement-check ${arrangementCheck.ready?"is-ready":""}`}>
+        <summary aria-label="Arrangement check"><span>Song check</span><b>{arrangementCheck.ready?"Ready":"Next moves"}</b></summary>
+        {arrangementCheck.ready ? <p>Repetition, contrast and the core musical layers are covered.</p> : <div className="arrangement-insights">{arrangementCheck.insights.map(insight=><article key={insight.id}><div><b>{insight.title}</b><p>{insight.detail}</p></div><button onClick={()=>applyArrangementInsight(insight)}>{insight.action==="create_return"?"Create return":insight.action==="shape_energy"?"Shape energy":insight.action==="add_foundation"?`Add ${insight.tool}`:"Add section"}</button></article>)}</div>}
+      </details>
       {undoRemoval&&<div className="undo-removal" role="status"><span>Removed {undoRemoval.label}</span><button onClick={restoreRemoval}>Undo</button><button aria-label="Dismiss undo" onClick={()=>setUndoRemoval(null)}>×</button></div>}
       <SectionTitle
         eyebrow=""
@@ -2634,8 +2649,27 @@ function ProjectView({
         action="+ Add section"
         onAction={() => setAdding(true)}
       />
+      <div className="section-timeline" role="tablist" aria-label="Song sections">
+        {project.sections.map((section,index)=><button
+          key={section.id}
+          role="tab"
+          aria-selected={selectedSectionId===section.id}
+          className={`${section.color} ${selectedSectionId===section.id?"selected":""} ${activeSectionIndex===index?"playing":""}`}
+          onClick={()=>{setSelectedSectionId(section.id);setSectionPanel("parts");}}
+        >
+          <span>{String(index+1).padStart(2,"0")}</span>
+          <b>{section.name}</b>
+          <small>{section.bars} bars{(section.repeats??1)>1?` · ×${section.repeats}`:""}</small>
+          <i aria-label={`${section.ideas.filter(idea=>idea.type!=="text").length} parts`}>
+            {SECTION_ASSETS.map(([type])=><em key={type} className={section.ideas.some(idea=>idea.type===type)?"filled":""}/>) }
+          </i>
+        </button>)}
+        <button className="add-section-tile" onClick={()=>setAdding(true)}><span>＋</span><b>Add section</b></button>
+      </div>
       <div className="arrangement-list arrangement-timeline" aria-label="Song sections, top to bottom">
-        {project.sections.map((section, index) => (
+        {project.sections.filter(section=>section.id===selectedSectionId).map((section) => {
+          const index=project.sections.findIndex(item=>item.id===section.id);
+          return (
           <article key={section.id} className={`section-card asset-section ${activeSectionIndex === index ? "playing" : ""}`}>
             <header className="asset-section-heading">
               <div className="section-title-editor"><span className="section-position">SECTION {String(index+1).padStart(2,"0")}</span>{renamingSectionId===section.id?<form onSubmit={event=>{event.preventDefault();commitRename(section.id);}}><input autoFocus aria-label={`Rename ${section.name}`} value={sectionRename} onChange={event=>setSectionRename(event.target.value)} onKeyDown={event=>{if(event.key==="Escape")setRenamingSectionId(null);}}/><button type="submit">Save</button></form>:<div><h3>{section.name}</h3><button className="rename-section" aria-label={`Rename ${section.name}`} onClick={()=>beginRename(section)}>✎</button></div>}</div>
@@ -2653,7 +2687,10 @@ function ProjectView({
                 <div className="meter-map">{sectionMeterMap(section,project.meter).map((meter,barIndex)=><button key={barIndex} onClick={()=>cycleSectionMeter(section.id,barIndex)} aria-label={`Bar ${barIndex+1}: ${meter}. Change meter`}>{barIndex+1}: {meter}</button>)}</div>
               </details>
             </div>
-            <div className="section-assets">
+            <div className="section-detail-tabs" role="tablist" aria-label={`${section.name} details`}>
+              {(["parts","mix","notes"] as const).map(panel=><button key={panel} role="tab" aria-selected={sectionPanel===panel} onClick={()=>setSectionPanel(panel)}>{panel}</button>)}
+            </div>
+            {sectionPanel==="parts"&&<div className="section-assets">
               {([...SECTION_ASSETS,...(section.ideas.some(i=>i.type==="audio") ? [["audio","Recording","●"] as const] : [])]).map(([type,label,icon])=>{
                 const assets=section.ideas.filter(i=>i.type===type),idea=assets[0];
                 const playable=!!idea && type!=="transition";
@@ -2670,9 +2707,9 @@ function ProjectView({
                   }}>{assets.map((asset,i)=><option key={asset.id} value={asset.id}>{i+1}. {asset.name}</option>)}</select>}
                 </div>;
               })}
-            </div>
-            <details className="section-mixer embedded-mixer">
-              <summary>Mix tracks <span>peak-safe</span></summary>
+            </div>}
+            {sectionPanel==="mix"&&<section className="section-mixer embedded-mixer" aria-label={`Mix ${section.name}`}>
+              <header><div><b>Section mix</b><span>Peak-safe levels</span></div></header>
               <button className="auto-balance" onClick={()=>autoBalanceSection(section.id)}>Auto balance this section</button>
               <div className="mixer-grid">
                 {LAYER_LABELS.map(([layer, label]) => {
@@ -2706,23 +2743,28 @@ function ProjectView({
                   );
                 })}
               </div>
-            </details>
-            <section className="section-notes" aria-label={`Notes for ${section.name}`}>
+            </section>}
+            {sectionPanel==="notes"&&<section className="section-notes" aria-label={`Notes for ${section.name}`}>
               <header>
                 <div><b>Section notes</b><span>{section.ideas.filter(i=>i.type==="text").length ? `${section.ideas.filter(i=>i.type==="text").length} saved` : "Lyrics, production or arrangement"}</span></div>
                 <button className="add-section-note" onClick={()=>addSectionNote(section.id)}>＋ Add note</button>
               </header>
               {section.ideas.filter(i=>i.type==="text").map(idea=><div className="existing-note" key={idea.id}><button aria-label={`Edit note in ${section.name}`} onClick={()=>openIdea(section.id,idea)}>{idea.detail}</button><button aria-label={`Remove ${idea.name}`} onClick={()=>removeIdea(section.id,idea.id)}><TrashIcon /></button></div>)}
-            </section>
+            </section>}
             <footer className="section-order-controls">
               <button onClick={()=>move(index,-1)} disabled={index===0} aria-label={`Move ${section.name} up`}>↑</button>
               <button onClick={()=>move(index,1)} disabled={index===project.sections.length-1} aria-label={`Move ${section.name} down`}>↓</button>
-              <button onClick={()=>duplicateSection(section.id,false)} aria-label={`Duplicate ${section.name}`}>⧉ <span>Copy</span></button>
-              <button onClick={()=>duplicateSection(section.id,true)} aria-label={`Create variation of ${section.name}`}>⌁ <span>Variation</span></button>
-              <button onClick={()=>removeSection(section.id)} disabled={project.sections.length===1} aria-label={`Remove ${section.name}`}><TrashIcon /></button>
+              <details className="section-more-actions">
+                <summary aria-label={`More actions for ${section.name}`}>•••</summary>
+                <div>
+                  <button onClick={()=>duplicateSection(section.id,false)} aria-label={`Duplicate ${section.name}`}>⧉ <span>Copy</span></button>
+                  <button onClick={()=>duplicateSection(section.id,true)} aria-label={`Create variation of ${section.name}`}>⌁ <span>Variation</span></button>
+                  <button className="danger-action" onClick={()=>removeSection(section.id)} disabled={project.sections.length===1} aria-label={`Remove ${section.name}`}><TrashIcon /><span>Delete</span></button>
+                </div>
+              </details>
             </footer>
           </article>
-        ))}
+        )})}
       </div>
       <div className="project-actions">
         <button className="capture-action icon-action" aria-label="Record idea" title="Record idea" onClick={record}>●</button>
@@ -3135,6 +3177,7 @@ function ChordTool({
   toggleMetronome: () => void;
 }) {
   const { root, mode } = projectHarmony(project);
+  const [workspaceMode,setWorkspaceMode]=useState<"generate"|"edit">(idea?"edit":"generate");
   const initialCount = idea?.data?.length || 4;
   const [initialSeed] = useState(() => freshSeed() + Math.max(0, sectionIndex));
   const supportPitchClasses = useMemo(() => sectionPitchContext(section,"chords"),[section]);
@@ -3249,9 +3292,13 @@ function ChordTool({
           Editing {section.name} · {section.bars} bars{supportPitchClasses.length ? " · supporting its melody, bass and pattern" : ""}
         </p>
       )}
+      <div className="instrument-mode-tabs" role="tablist" aria-label="Chord workspace">
+        <button role="tab" aria-selected={workspaceMode==="generate"} onClick={()=>setWorkspaceMode("generate")}><span>✦</span> Generate</button>
+        <button role="tab" aria-selected={workspaceMode==="edit"} onClick={()=>setWorkspaceMode("edit")}><span>✎</span> Edit chords</button>
+      </div>
       <DraftToolbar />
-      <div className="tool-layout">
-        <GeneratorSettings className="">
+      <div className={`tool-layout instrument-workspace is-${workspaceMode}`}>
+        {workspaceMode==="generate"&&<GeneratorSettings className="">
           <div className="idea-starts" aria-label="Harmony starting points">
             <p>Start with a feel</p>
             {([
@@ -3366,9 +3413,9 @@ function ChordTool({
           <button className="primary-button wide" onClick={() => regenerate()}>
             Generate progression <span>↻</span>
           </button>
-        </GeneratorSettings>
+        </GeneratorSettings>}
         <section className="result-panel">
-          <VariationControls value={chords} apply={value=>{transport.stop();setChords(value);}} vary={(kind,locks)=>{
+          {workspaceMode==="generate"&&<VariationControls value={chords} apply={value=>{transport.stop();setChords(value);}} vary={(kind,locks)=>{
             setSeed(seed+1);
             const candidate=makeChordDrafts(root,mode,chords.length,complexity,seed+97,defaultBeats,lengthVariation,harmonyColour,opening,voicing,tension,supportPitchClasses);
             const changeCount=kind==="subtle"?1:Math.max(2,Math.ceil(chords.length/3));
@@ -3377,7 +3424,7 @@ function ChordTool({
               pitches:!locks.notes && index>=chords.length-changeCount ? candidate[index].pitches : chord.pitches,
               beats:locks.rhythm ? chord.beats : kind==="space" ? Math.min(8,chord.beats*2) : kind==="energy" ? Math.max(1,chord.beats/2) : chord.beats
             }));
-          }} />
+          }} />}
           <div className="result-heading">
             <div>
               <p className="eyebrow">
@@ -3388,6 +3435,11 @@ function ChordTool({
             <PlayButton playing={transport.mode !== "stopped"} label="progression"
               onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} />
           </div>
+          {workspaceMode==="generate"?<div className="chord-overview" aria-label="Generated chord progression">
+            {chords.map((chord,index)=><button key={chord.id} onClick={()=>setWorkspaceMode("edit")} aria-label={`Edit chord ${index+1}: ${chord.name}`}>
+              <span>{index+1}</span><b>{chord.name}</b><small>{chordRole(chord.name,root,mode)} · {chord.beats} beats</small>
+            </button>)}
+          </div>:<>
           <div className="chord-editor">
             {chords.map((chord, index) => (
               <article key={chord.id}>
@@ -3467,6 +3519,7 @@ function ChordTool({
           >
             ＋ Add chord
           </button>
+          </>}
           <div
             className={`playback-bar ${transport.mode !== "stopped" ? "is-playing" : ""}`}
           >
@@ -4498,6 +4551,7 @@ function DrumTool({
   metronomeEnabled: boolean;
   toggleMetronome: () => void;
 }) {
+  const [workspaceMode,setWorkspaceMode]=useState<"generate"|"edit">(idea?"edit":"generate");
   const drumMeter = section
     ? sectionMeterMap(section, project.meter)[0]
     : project.meter;
@@ -4599,12 +4653,13 @@ function DrumTool({
           Editing {section.name} · repeats for {section.bars} bars
         </p>
       )}
+      <div className="instrument-mode-tabs" role="tablist" aria-label="Drum workspace">
+        <button role="tab" aria-selected={workspaceMode==="generate"} onClick={()=>setWorkspaceMode("generate")}><span>✦</span> Generate</button>
+        <button role="tab" aria-selected={workspaceMode==="edit"} onClick={()=>setWorkspaceMode("edit")}><span>▦</span> Edit pattern</button>
+      </div>
       <DraftToolbar />
-      <div className="tool-layout">
-        <GeneratorSettings className="drum-panel">
-          <Select label="Phrase length" value={String(bars)} options={["1","2","4","8"]} set={value=>{transport.stop();setBars(Number(value));setVisibleBar(0);setSavedLoop(null);}} />
-          <Select label="Drum kit" value={voice} set={value => setVoice(value as DrumKit)} options={["current", "rock", "prog metal"]} />
-          <p className="drum-audition-hint">{voice === "prog metal" ? "Tight kick, crisp snare and bright cymbals. Try linear or djent grooves for syncopated prog accents." : voice === "rock" ? "Weighty kick, full snare and longer cymbal sustain." : "The original electronic kit."}</p>
+      <div className={`tool-layout instrument-workspace is-${workspaceMode}`}>
+        {workspaceMode==="generate"&&<GeneratorSettings className="drum-panel">
           <ControlTitle n="1" title="Groove" />
           <Segment
             options={[
@@ -4650,22 +4705,26 @@ function DrumTool({
               }}
             />
           </label>
-          <label className="range-control"><span>Fill chance · {Math.round(fill*100)}%</span><input aria-label="Fill chance" type="range" min="0" max="1" step=".1" value={fill} onChange={e=>{setFill(Number(e.target.value));setSavedLoop(null);}} /></label>
+          <details className="advanced-controls"><summary>Kit, phrase & fills</summary>
+            <Select label="Phrase length" value={String(bars)} options={["1","2","4","8"]} set={value=>{transport.stop();setBars(Number(value));setVisibleBar(0);setSavedLoop(null);}} />
+            <Select label="Drum kit" value={voice} set={value => setVoice(value as DrumKit)} options={["current", "rock", "prog metal"]} />
+            <label className="range-control"><span>Fill chance · {Math.round(fill*100)}%</span><input aria-label="Fill chance" type="range" min="0" max="1" step=".1" value={fill} onChange={e=>{setFill(Number(e.target.value));setSavedLoop(null);}} /></label>
+          </details>
           <button
             className="primary-button coral-button wide"
             onClick={regenerate}
           >
             Generate new phrase <span>↻</span>
           </button>
-        </GeneratorSettings>
+        </GeneratorSettings>}
         <section className="result-panel">
-          <VariationControls percussion value={loop} apply={value=>{transport.stop();setSavedLoop(value);}} vary={(kind,locks)=>{
+          {workspaceMode==="generate"&&<VariationControls percussion value={loop} apply={value=>{transport.stop();setSavedLoop(value);}} vary={(kind,locks)=>{
             setSeed(seed+1);
             let next=loop.map(hit=>({...hit,velocity:Math.max(.2,Math.min(1,hit.velocity*(kind==="space"?.82:kind==="energy"?1.15:(hit.step%4===0?1.04:.92))))}));
             if(!locks.rhythm && kind==="space") next=next.filter(hit=>hit.instrument!=="hihat" || hit.step%4===0);
             if(!locks.rhythm && kind==="energy") for(let step=0;step<phraseBeats*4;step+=2) if(!next.some(hit=>hit.instrument==="hihat"&&hit.step===step))next.push({instrument:"hihat",step,velocity:.5});
             return next.sort((a,b)=>a.step-b.step);
-          }} />
+          }} />}
           <div className="result-heading">
             <div>
               <p className="eyebrow coral-text">
@@ -4679,15 +4738,15 @@ function DrumTool({
               onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} />
           </div>
           <div className="phrase-bars" aria-label="Phrase bars">{Array.from({length:bars},(_,i)=><button key={i} aria-pressed={activeBar===i} onClick={()=>setVisibleBar(i)}>Bar {i+1}{i===bars-1 && bars>1 ? " · fill" : ""}</button>)}</div>
-          <div className="drum-edit-tools"><span>Hit strength</span><Segment options={["ghost", "normal", "accent"]} value={editVelocity<.4?"ghost":editVelocity>.9?"accent":"normal"} set={value=>setEditVelocity(value==="ghost"?.3:value==="accent"?1:.75)} /></div>
-          <p className="drum-audition-hint">Tap to add a hit or apply the selected strength. Tap again at the same strength to remove it. Brighter steps play louder.</p>
+          {workspaceMode==="edit"&&<><div className="drum-edit-tools"><span>Hit strength</span><Segment options={["ghost", "normal", "accent"]} value={editVelocity<.4?"ghost":editVelocity>.9?"accent":"normal"} set={value=>setEditVelocity(value==="ghost"?.3:value==="accent"?1:.75)} /></div>
+          <p className="drum-audition-hint">Tap a step to add, change or remove a hit. Brighter steps play louder.</p></>}
           <div
             className="drum-sequencer"
             role="grid"
             aria-label="Drum pattern editor"
           >
             <div className="drum-ruler" aria-hidden="true" style={{gridTemplateColumns:`76px repeat(${steps.length}, minmax(24px,1fr))`}}><span>BAR {activeBar+1}</span>{steps.map((step,i)=><span key={step}>{i%4===0 ? i/4+1 : i%4===2 ? "+" : "·"}</span>)}</div>
-            {DRUM_INSTRUMENTS.map((instrument) => (
+            {DRUM_INSTRUMENTS.map((instrument) => workspaceMode==="generate"&&!["kick","snare","hihat","crash"].includes(instrument) ? null : (
               <div
                 className="drum-row"
                 role="row"
@@ -4711,13 +4770,14 @@ function DrumTool({
                         ? "active"
                         : ""
                     }
-                    aria-label={`${DRUM_LABELS[instrument]}, bar ${activeBar+1}, step ${step-activeBar*beatsPerBar*4+1}, velocity ${Math.round((loop.find(hit=>hit.instrument===instrument&&hit.step===step)?.velocity ?? 0)*100)}%`}
-                    onClick={() => toggleHit(instrument, step)}
+                    aria-label={workspaceMode==="edit"?`${DRUM_LABELS[instrument]}, bar ${activeBar+1}, step ${step-activeBar*beatsPerBar*4+1}, velocity ${Math.round((loop.find(hit=>hit.instrument===instrument&&hit.step===step)?.velocity ?? 0)*100)}%`:`Open editor for ${DRUM_LABELS[instrument]}`}
+                    onClick={() => workspaceMode==="edit" ? toggleHit(instrument, step) : setWorkspaceMode("edit")}
                   />
                 ))}
               </div>
             ))}
           </div>
+          {workspaceMode==="generate"&&<button className="edit-pattern-callout" onClick={()=>setWorkspaceMode("edit")}>Edit all drum lanes and velocities <span>→</span></button>}
           <div
             className={`playback-bar coral-wave ${transport.mode !== "stopped" ? "is-playing" : ""}`}
           >

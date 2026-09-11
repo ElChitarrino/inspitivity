@@ -91,6 +91,19 @@ test("arrangement sections expose repeats, energy, copies, and variations withou
   assert.match(theme, /\.project-actions\{bottom:12px\}/);
 });
 
+test("the workspace reveals one focused task at a time and fills desktop width", () => {
+  assert.match(source, /selectedSectionId/);
+  assert.match(source, /sectionPanel/);
+  assert.match(source, /className="section-timeline"/);
+  assert.match(source, /aria-label="Chord workspace"/);
+  assert.match(source, /aria-label="Drum workspace"/);
+  assert.match(source, /is-\$\{workspaceMode\}/);
+  assert.match(theme, /\.app-shell\{width:100%;max-width:none\}/);
+  assert.match(theme, /\.studio-workspace\{max-width:none;margin-right:0\}/);
+  assert.match(theme, /\.section-detail-tabs/);
+  assert.match(theme, /\.instrument-mode-tabs/);
+});
+
 test("arrangement guidance turns structural critique into reversible actions", async()=>{
   const arrangement=await readFile(resolve(process.cwd(),"packages/workspace/arrangement.ts"),"utf8");
   assert.match(source,/Arrangement check/);
