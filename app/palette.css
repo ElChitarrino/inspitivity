@@ -1,0 +1,53 @@
+/* One color language, two accents. Only this file owns literal UI colors.
+   Instrument/section identity is metadata; surfaces and actions stay neutral. */
+:root, html[data-theme="electric"] {
+  color-scheme: dark;
+  --ink: #f5f5f0;
+  --muted: #b7bbb8;
+  --black: #0c0e0d;
+  --surface: #151917;
+  --surface2: #202622;
+  --surface-hover: #2b332e;
+  --line: #414c44;
+  --control-line: #78847b;
+  --mint: #c8ff3d;
+  --mint-dark: #c8ff3d;
+  --accent-soft: #27321c;
+  --on-accent: #111609;
+  --violet: #bcaee2;
+  --amber: #dcc086;
+  --coral: #e4a394;
+  --blue: #a0bddc;
+  --play-bg: #173b2a;
+  --play-ink: #c7ffda;
+  --play-line: #67ba89;
+  --play-hover: #205038;
+  --pause-bg: #4a171e;
+  --pause-ink: #ffe1e5;
+  --pause-line: #e57584;
+  --pause-hover: #5b1b24;
+  --warning-bg: #382918;
+  --warning-ink: #ffd092;
+  --warning-line: #bb8e58;
+  --shadow: #00000066;
+  --scrim: #000000b8;
+  --keyboard-white: #f1f0ec;
+  --keyboard-black: #171918;
+  --keyboard-ink: #202420;
+  --preview-electric: #c8ff3d;
+  --preview-crimson: #f76577;
+}
+html[data-theme="crimson"] {
+  --ink: #fffaf6;
+  --muted: #c3bcbc;
+  --black: #100d0f;
+  --surface: #1b171a;
+  --surface2: #282125;
+  --surface-hover: #352c31;
+  --line: #51444a;
+  --control-line: #918087;
+  --mint: #f76577;
+  --mint-dark: #f76577;
+  --accent-soft: #3a2028;
+  --on-accent: #21090e;
+}

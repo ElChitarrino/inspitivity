@@ -18,6 +18,8 @@ import {
   generateChordProgression,
   generateMelody,
   getScale,
+  SCALE_MODES,
+  MODE_LABELS,
   MelodyMood,
   PhraseShape,
   Mode,
@@ -27,6 +29,7 @@ import {
   seededRandom,
 } from "../packages/music-theory";
 import { createMidiFile, type MidiNoteEvent } from "../packages/midi";
+import { CHORD_RHYTHMS, chordNoteEvents, decodeRhythmicChord, encodeChordAttacks, generateChordRhythm, type ChordRhythm, type ChordAttack } from "../packages/music-theory/chord-rhythm";
 import {
   beatDurationSeconds,
   calculateTapTempo,
@@ -97,8 +100,14 @@ type Screen =
   | "transition"
   | "metronome"
   | "settings";
-type ChordDraft = { id: string; name: string; beats: number; pitches?: number[] };
-const encodeChord = (c: ChordDraft) => `${c.name}|${c.beats}|${(c.pitches ?? decodeVoicing(c.name)).join(",")}`;
+type ChordDraft = { id: string; name: string; beats: number; pitches?: number[]; attacks?: ChordAttack[] };
+const encodeChord = (c: ChordDraft) => `${c.name}|${c.beats}|${(c.pitches ?? decodeVoicing(c.name)).join(",")}|${encodeChordAttacks(c.attacks)}`;
+const rhythmizeChords = (chords: ChordDraft[], seed: number, style: ChordRhythm = "adaptive", meter = "4/4", section?: SongSection) => {
+  const drumIdea = section?.ideas.find(idea => idea.type === "drums");
+  const drums = drumIdea ? decodeDrumIdea(drumIdea) : [];
+  const rhythms = generateChordRhythm(chords, {seed,style,beatsPerBar:meterBeats(meter),kickSteps:drums.filter(hit=>hit.instrument==="kick").map(hit=>hit.step),snareSteps:drums.filter(hit=>hit.instrument==="snare").map(hit=>hit.step)});
+  return chords.map((chord,index) => ({...chord,attacks:rhythms[index]}));
+};
 type SynthVoice =
   | "air flute"
   | "warm pad"
@@ -225,16 +234,7 @@ const ROOTS: Root[] = [
   "Bb",
   "B",
 ];
-const MODES: Mode[] = [
-  "major",
-  "minor",
-  "dorian",
-  "phrygian",
-  "lydian",
-  "mixolydian",
-  "harmonic minor",
-  "minor pentatonic",
-];
+const MODES: readonly Mode[] = SCALE_MODES;
 const COLORS = ["mint", "violet", "amber", "blue", "coral"];
 const SKETCH_PRESETS: SketchPreset[] = [
   {
@@ -395,8 +395,7 @@ const makeChordDrafts = (
   );
 const decodeChordDrafts = (idea: Idea): ChordDraft[] =>
   (idea.data?.length ? idea.data : idea.detail.split(" · ")).map((value) => {
-    const [name, savedBeats, pitches] = value.split("|");
-    return { id: uid(), name, beats: Number(savedBeats) || 4, pitches:decodeVoicing(name,pitches) };
+    return { id: uid(), ...decodeRhythmicChord(value) };
   });
 const decodeMelodyIdea = (idea: Idea) =>
   (idea.data?.length ? idea.data : idea.detail.split(" · ")).map(
@@ -593,13 +592,13 @@ function buildPlayableSketch(preset: SketchPreset): Project {
     const bars = pick(preset.id === "emotive" ? [4,4,6,8] : [4,4,8]);
     const density = Math.max(.25, Math.min(.9, formSection.energy + (random()-.5)*.12));
     const chordCount = pick(preset.id === "neo-soul" || preset.id === "prog" ? [4,4,5,6] : [3,4,4,5]);
-    const chords = makeChordDrafts(
+    const chords = rhythmizeChords(makeChordDrafts(
       preset.root, preset.mode, chordCount,
       preset.id === "neo-soul" || preset.id === "prog" ? "advanced" : "medium",
       sectionSeed, beatsPerBar, finalSection ? pick([0,8,14]) : pick([0,0,6]),
       preset.colour, finalSection && random() > .45 ? "tonic" : preset.opening,
       pick(["mixed","open","drop 2"] as VoicingStyle[]), preset.tension,
-    );
+    ),sectionSeed,preset.id==="emotive"?"sparse":preset.id==="heavy"?"driving":"adaptive",preset.meter);
     const melody = fitMelodyToChords(generateMelody({
       root:preset.root, mode:preset.mode,
       notes:Math.round(10+density*pick([18,22,26])), density,
@@ -661,12 +660,12 @@ function buildGuidedSection(
   const previousHarmony=previous?.ideas.find(idea=>idea.type==="chords");
   const chords=direction==="return" && previousHarmony
     ? decodeChordDrafts(previousHarmony).map((chord,index)=>({...chord,id:uid(),pitches:voiceChord(chord.name,seed+index*41,index%2?"open":"mixed")}))
-    : makeChordDrafts(
+    : rhythmizeChords(makeChordDrafts(
         root,mode,heavy||direction==="contrast"?5:4,heavy?"advanced":"medium",seed,beatsPerBar,
         direction==="contrast"?12:4,direction==="contrast"?"modal interchange":"diatonic",
         direction==="return"?"tonic":direction==="contrast"?"surprise":"away",
         heavy?"open":"mixed",energy==="mellow"?"smooth":"balanced",sectionPitchContext(previous,"chords"),
-      );
+      ),seed,energy==="mellow"?"sparse":heavy?"driving":"adaptive",project.meter,previous);
   const previousMelody=previous?.ideas.find(idea=>idea.type==="melody");
   const mood:MelodyMood=energy==="mellow"?(mode==="major"?"calm":"melancholic"):energy==="powerful"?(heavy?"dark":"bright"):"calm";
   const melody=direction==="return" && previousMelody?.data?.length
@@ -1723,7 +1722,7 @@ export default function InspitivityApp({ account, signOutPath }: {
         <div className="account-sync"><b>{account.displayName}</b><span role="status">{cloud.status}</span></div>
         <div className="account-actions"><button onClick={() => void cloud.sync()}>Sync now</button><a href={signOutPath} target="_top">Sign out</a></div>
       </div>
-      {selected && returnToArrangement && ["drums", "chords", "melody", "bass", "riff", "metronome"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} chooseSection={(id) => { setDraftSectionId(id); setEditingIdea(null); }} updateProject={updateSelected} />}
+      {selected && ["project", "drums", "chords", "melody", "bass", "riff", "transition", "metronome"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} chooseSection={(id) => { setDraftSectionId(id); setEditingIdea(null); }} updateProject={updateSelected} />}
       <DraftSession key={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} id={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} publish={publishPreview}>
       {screen === "home" && (
         <Home
@@ -1746,6 +1745,8 @@ export default function InspitivityApp({ account, signOutPath }: {
       {screen === "project" && selected && (
         <ProjectView
           project={selected}
+          selectedSectionId={draftSectionId}
+          setSelectedSectionId={setDraftSectionId}
           update={updateSelected}
           back={() => navigate("projects")}
           record={() => setModal("record")}
@@ -2166,6 +2167,8 @@ type UndoRemoval =
 
 function ProjectView({
   project,
+  selectedSectionId,
+  setSelectedSectionId,
   update,
   back,
   record,
@@ -2176,6 +2179,8 @@ function ProjectView({
   clearAssetDraft,
 }: {
   project: Project;
+  selectedSectionId: string | null;
+  setSelectedSectionId: (id: string | null) => void;
   update: (fn: (p: Project) => Project) => void;
   back: () => void;
   record: () => void;
@@ -2189,9 +2194,6 @@ function ProjectView({
   clearAssetDraft: (sectionId: string, idea: Idea, removeDraft?: boolean) => void;
 }) {
   const [adding, setAdding] = useState(false);
-  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(
-    project.sections[0]?.id ?? null,
-  );
   const [sectionPanel, setSectionPanel] = useState<"parts" | "mix" | "notes">("parts");
   const [ideaSection, setIdeaSection] = useState<string | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -2487,24 +2489,10 @@ function ProjectView({
       );
     };
     if (idea.type === "chords") {
-      let start = 0;
-      (idea.data?.length ? idea.data : idea.detail.split(" · ")).forEach(
-        (value) => {
-          const [name, savedBeats, savedPitches] = value.split("|");
-          const beats = Number(savedBeats) || 4;
-          playChord(
-            engine,
-            name,
-            start * beat,
-            beats * beat * 0.9,
-            0.045,
-            (idea.voice as SynthVoice) || "warm pad",
-            decodeVoicing(name,savedPitches),
-          );
-          start += beats;
-        },
-      );
-      finishAt(start * beat * 1000);
+      const saved = (idea.data?.length ? idea.data : idea.detail.split(" · ")).map(decodeRhythmicChord);
+      for (const note of chordNoteEvents(saved))
+        engine.tone(note.pitch,note.start*beat,note.duration*beat,.045*note.velocity,(idea.voice as SynthVoice)||"warm pad");
+      finishAt(saved.reduce((sum,chord)=>sum+chord.beats,0)*beat*1000);
       return;
     }
     if (idea.type === "melody") {
@@ -2954,11 +2942,12 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
     }));
   };
   return <section className="section-player" aria-label="Current section player">
-    <div className="section-player-heading"><div><p className="eyebrow">CURRENT SECTION</p><b>{selectedSection?.name}</b></div>
-      <label>Section<select aria-label="Current section" value={selectedSection?.id ?? ""} onChange={e => { stop(); chooseSection(e.target.value); }}>
+    <div className="section-player-heading"><div className="section-player-caption"><p className="eyebrow">Play current section</p></div>
+      <label><span className="sr-only">Section</span><select aria-label="Current section" disabled={!selectedSection} value={selectedSection?.id ?? ""} onChange={e => { stop(); chooseSection(e.target.value); }}>
+        {!selectedSection && <option value="">No sections yet</option>}
         {project.sections.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
       </select></label>
-      <PlayButton playing={playing} label="section preview" onClick={() => playing ? stop() : void start()} />
+      <PlayButton playing={playing} label="current section" disabled={!selectedSection} onClick={() => playing ? stop() : void start()} />
     </div>
     <progress aria-label="Playback position" max={1} value={progress} />
     <details className="section-mixer"><summary>Mix tracks</summary><div className="mixer-grid">
@@ -2985,7 +2974,7 @@ function PlayButton({ playing, onClick, label, compact = false, className = "", 
     className={`play-control ${playing ? "playing" : ""} ${compact ? "compact" : ""} ${className}`}
     onClick={onClick} disabled={disabled} aria-label={`${playing ? "Stop" : "Play"} ${label}`}
     aria-pressed={playing} title={hint ?? `${playing ? "Stop" : "Play"} ${label}`}>
-    <span className="play-symbol" aria-hidden="true">{playing ? "■" : "▶"}</span>
+    <svg className="play-symbol" aria-hidden="true" viewBox="0 0 20 20" width="20" height="20" fill="currentColor">{playing ? <rect x="4" y="4" width="12" height="12" rx="1" /> : <path d="M5 3 L17 10 L5 17 Z" />}</svg>
     {!compact && <span>{playing ? "Stop" : "Play"}</span>}
   </button>;
 }
@@ -3103,7 +3092,7 @@ function ProjectContext({
           onChange={(event) => changeHarmony(root, event.target.value as Mode)}
         >
           {MODES.map((option) => (
-            <option key={option}>{option}</option>
+            <option key={option} value={option}>{MODE_LABELS[option]}</option>
           ))}
         </select>
       </label>
@@ -3182,7 +3171,7 @@ function ChordTool({
   const [initialSeed] = useState(() => freshSeed() + Math.max(0, sectionIndex));
   const supportPitchClasses = useMemo(() => sectionPitchContext(section,"chords"),[section]);
   const [count, setCount] = useDraftState("count", initialCount);
-  const [defaultBeats, setDefaultBeats] = useDraftState("defaultBeats", 4);
+  const [defaultBeats, setDefaultBeats] = useDraftState("defaultBeats", meterBeats(project.meter));
   const [lengthVariation, setLengthVariation] = useDraftState("lengthVariation", 0);
   const [complexity, setComplexity] = useDraftState<Complexity>("complexity", "medium");
   const [harmonyColour, setHarmonyColour] = useDraftState<HarmonyColour>("harmonyColour", "diatonic");
@@ -3190,11 +3179,12 @@ function ChordTool({
   const [tension, setTension] = useDraftState<HarmonicTension>("harmonicTension", "balanced");
   const [voice, setVoice] = useDraftState<SynthVoice>("voice", (idea?.voice as SynthVoice) || "distorted guitar");
   const [voicing, setVoicing] = useDraftState<VoicingStyle>("voicing", "mixed");
+  const [chordRhythm,setChordRhythm] = useDraftState<ChordRhythm>("chordRhythm",idea && !idea.data?.some(value=>value.split("|")[3]) ? "sustain" : "adaptive");
   const [seed, setSeed] = useDraftState("seed", initialSeed);
   const [chords, setChords] = useDraftState<ChordDraft[]>("chords", () =>
     idea
       ? decodeChordDrafts(idea)
-      : makeChordDrafts(root, mode, initialCount, "medium", initialSeed,4,0,"diatonic","away","mixed","balanced",supportPitchClasses),
+      : rhythmizeChords(makeChordDrafts(root, mode, initialCount, "medium", initialSeed,meterBeats(project.meter),0,"diatonic","away","mixed","balanced",supportPitchClasses),initialSeed,"adaptive",project.meter,section),
   );
   const [previousChords, setPreviousChords] = useDraftState<ChordDraft[] | null>("previousChords", null);
   const engine = useAudioEngine();
@@ -3203,7 +3193,7 @@ function ChordTool({
     const nextSeed = seed + 1;
     setSeed(nextSeed);
     setChords(
-      makeChordDrafts(
+      rhythmizeChords(makeChordDrafts(
         nextRoot,
         nextMode,
         count,
@@ -3216,28 +3206,16 @@ function ChordTool({
         voicing,
         tension,
         supportPitchClasses,
-      ),
+      ),nextSeed,chordRhythm,project.meter,section),
     );
   };
   const totalBeats = chords.reduce((sum, chord) => sum + chord.beats, 0);
   const beatSeconds = beatDurationSeconds(project.bpm);
   const play = useCallback(() => {
-    let startBeat = 0;
-    chords.forEach((chord) => {
-      playChord(
-        engine,
-        chord.name,
-        startBeat * beatSeconds,
-        chord.beats * beatSeconds * 0.92,
-        0.045,
-        voice,
-        chord.pitches,
-      );
-      startBeat += chord.beats;
-    });
+    chordNoteEvents(chords).forEach(note => engine.tone(note.pitch,note.start*beatSeconds,note.duration*beatSeconds,.045*note.velocity,voice));
     if (metronomeEnabled)
-      scheduleClickTrack(engine, startBeat, beatSeconds, project.meter);
-  }, [chords, beatSeconds, engine, metronomeEnabled, project.meter, voice]);
+      scheduleClickTrack(engine, totalBeats, beatSeconds, project.meter);
+  }, [chords, totalBeats, beatSeconds, engine, metronomeEnabled, project.meter, voice]);
   const transport = useLoopTransport(
     play,
     progressionLoopDurationMs(totalBeats, project.bpm),
@@ -3247,7 +3225,7 @@ function ChordTool({
   const updateChord = (id: string, changes: Partial<ChordDraft>) =>
     setChords((items) =>
       items.map((chord) =>
-        chord.id === id ? { ...chord, ...changes, ...(changes.name ? {pitches:voiceChord(changes.name,seed,voicing)} : {}) } : chord,
+        chord.id === id ? { ...chord, ...changes, ...(changes.beats && chord.attacks ? {attacks:chord.attacks.map(a=>({...a,start:a.start*changes.beats!/chord.beats,duration:a.duration*changes.beats!/chord.beats}))} : {}), ...(changes.name ? {pitches:voiceChord(changes.name,seed,voicing)} : {}) } : chord,
       ),
     );
   const updateVoicingPitch = (chordId: string, pitchIndex: number, pitch: number) =>
@@ -3312,7 +3290,7 @@ function ChordTool({
                 setComplexity(level); setDefaultBeats(beats); setVoice(sound);
                 setHarmonyColour("diatonic"); setLengthVariation(0);
                 setSeed(seed + 1);
-                setChords(makeChordDrafts(root, mode, count, level, seed + 1, beats, 0, "diatonic", opening, voicing, tension, supportPitchClasses));
+                setChords(rhythmizeChords(makeChordDrafts(root, mode, count, level, seed + 1, beats, 0, "diatonic", opening, voicing, tension, supportPitchClasses),seed+1,chordRhythm,project.meter,section));
               }}>{label}</button>
             ))}
           </div>
@@ -3419,11 +3397,12 @@ function ChordTool({
             setSeed(seed+1);
             const candidate=makeChordDrafts(root,mode,chords.length,complexity,seed+97,defaultBeats,lengthVariation,harmonyColour,opening,voicing,tension,supportPitchClasses);
             const changeCount=kind==="subtle"?1:Math.max(2,Math.ceil(chords.length/3));
-            return chords.map((chord,index)=>({...chord,
+            const varied = chords.map((chord,index)=>({...chord,
               name:!locks.notes && index>=chords.length-changeCount && candidate[index].name!==chord.name ? candidate[index].name : chord.name,
               pitches:!locks.notes && index>=chords.length-changeCount ? candidate[index].pitches : chord.pitches,
               beats:locks.rhythm ? chord.beats : kind==="space" ? Math.min(8,chord.beats*2) : kind==="energy" ? Math.max(1,chord.beats/2) : chord.beats
             }));
+            return locks.rhythm ? varied : rhythmizeChords(varied,seed+1,kind==="space"?"sparse":kind==="energy"?"driving":chordRhythm,project.meter,section);
           }} />}
           <div className="result-heading">
             <div>
@@ -3435,9 +3414,15 @@ function ChordTool({
             <PlayButton playing={transport.mode !== "stopped"} label="progression"
               onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} />
           </div>
+          <details className="chord-rhythm-controls">
+            <summary>Strum rhythm <span>{chords.reduce((sum,c)=>sum+(c.attacks?.length??1),0)} attacks · edit rhythm</span></summary>
+            <div><Select label="Strum rhythm" value={chordRhythm} options={CHORD_RHYTHMS} set={value=>{transport.stop();setPreviousChords(chords);setChordRhythm(value as ChordRhythm);setSeed(seed+1);setChords(rhythmizeChords(chords,seed+1,value as ChordRhythm,project.meter,section));}} />
+            <button className="secondary-button" onClick={()=>{transport.stop();setPreviousChords(chords);setSeed(seed+1);setChords(rhythmizeChords(chords,seed+1,chordRhythm,project.meter,section));}}>↻ New rhythm · keep chords</button></div>
+          </details>
           {workspaceMode==="generate"?<div className="chord-overview" aria-label="Generated chord progression">
             {chords.map((chord,index)=><button key={chord.id} onClick={()=>setWorkspaceMode("edit")} aria-label={`Edit chord ${index+1}: ${chord.name}`}>
               <span>{index+1}</span><b>{chord.name}</b><small>{chordRole(chord.name,root,mode)} · {chord.beats} beats</small>
+              <span className="chord-rhythm-strip" aria-label={`${chord.attacks?.length??1} attacks; ${(chord.attacks?.[0]?.start??0)<0?"anticipated entry":(chord.attacks?.[0]?.start??0)>0?"offbeat entry":"on beat"}`}>{(chord.attacks??[{start:0}]).map((attack,i)=><i key={i} style={{left:`${Math.max(0,attack.start/chord.beats)*94}%`}} />)}</span>
             </button>)}
           </div>:<>
           <div className="chord-editor">
@@ -3511,7 +3496,7 @@ function ChordTool({
                 ...items,
                 {
                   id: uid(),
-                  name: `${root}${["minor", "dorian", "phrygian", "harmonic minor", "minor pentatonic"].includes(mode) ? "m" : ""}`,
+                  name: generateChordProgression({root,mode,bars:1,complexity:"simple",opening:"tonic",seed})[0].name,
                   beats: defaultBeats,
                 },
               ])
@@ -3561,16 +3546,7 @@ function ChordTool({
           <button
             className="export-button wide"
             onClick={() => {
-              let cursor = 0;
-              const notes: MidiNoteEvent[] = [];
-              chords.forEach((chord) => {
-                const pitch = notePitchClass(chord.name);
-                if (pitch !== null)
-                  (chord.pitches ?? decodeVoicing(chord.name)).forEach((pitch) =>
-                    notes.push({ pitch, start: cursor, duration: chord.beats * 0.92, velocity: 0.68 }),
-                  );
-                cursor += chord.beats;
-              });
+              const notes: MidiNoteEvent[] = chordNoteEvents(chords);
               downloadMidi(`${project.name}-chords`, createMidiFile({ name: `${project.name} chords`, bpm: project.bpm, meter: project.meter, notes, program: MIDI_PROGRAMS[voice] }));
             }}
           >
@@ -4163,7 +4139,7 @@ function BassTool({
             </article>)}
           </div>
         </div>
-        <div className={`playback-bar ${transport.mode !== "stopped" ? "is-playing" : ""}`}><button aria-label="Play bass line" onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()}>{transport.mode === "stopped" ? "▶" : "■"}</button><Wave tone="blue" bars={12}/><button className={`loop-button ${transport.mode === "loop" ? "active" : ""}`} aria-pressed={transport.mode === "loop"} onClick={() => transport.mode === "loop" ? transport.stop() : void transport.start(true)}>↻ <small>Loop</small></button></div>
+        <div className={`playback-bar ${transport.mode !== "stopped" ? "is-playing" : ""}`}><PlayButton label="bass line" playing={transport.mode!=="stopped"} onClick={()=>transport.mode==="stopped"?void transport.start(false):transport.stop()} /><Wave tone="blue" bars={12}/><button className={`loop-button ${transport.mode === "loop" ? "active" : ""}`} aria-pressed={transport.mode === "loop"} onClick={() => transport.mode === "loop" ? transport.stop() : void transport.start(true)}>↻ <small>Loop</small></button></div>
         <SaveActions section={section} editing={!!idea} submit={(chooseDestination) => save("bass", `${pattern} bass`, `${bass.length} notes · ${movement} · ${lockToKick ? "kick aware" : "independent pulse"}`, bass.map(encodeBassEvent), chooseDestination, "deep bass")} />
         <button className="export-button wide" onClick={() => downloadMidi(`${project.name}-bass`, createMidiFile({name:`${project.name} bass`,bpm:project.bpm,meter:project.meter,notes:bass,program:MIDI_PROGRAMS["deep bass"]}))}>⇩ Export bass as MIDI</button>
       </section>
@@ -4992,7 +4968,7 @@ function Select({
       <span>{label}</span>
       <select value={value} onChange={(e) => set(e.target.value)}>
         {options.map((o) => (
-          <option key={o}>{o}</option>
+          <option key={o} value={o}>{MODE_LABELS[o as Mode] ?? o}</option>
         ))}
       </select>
     </label>
@@ -5282,7 +5258,7 @@ function ProjectModal({
   const [name, setName] = useState("");
   const [bpm, setBpm] = useState(120);
   const [root, setRoot] = useState("E");
-  const [mode, setMode] = useState("Dorian");
+  const [mode, setMode] = useState("dorian");
   return (
     <div className="modal-layer">
       <div className="modal">
@@ -5314,7 +5290,7 @@ function ProjectModal({
           label="Mode"
           value={mode}
           set={setMode}
-          options={["Major", "Minor", "Dorian", "Mixolydian", "Lydian"]}
+          options={[...SCALE_MODES]}
         />
         <button
           className="primary-button wide"

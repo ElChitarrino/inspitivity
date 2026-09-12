@@ -1,5 +1,6 @@
 import { DRUM_PITCHES, drumPatternBeats, type DrumInstrument } from "../sequencing/index.js";
 import { decodeVoicing, notePitchClass } from "../music-theory/index.js";
+import { chordNoteEvents, decodeRhythmicChord } from "../music-theory/chord-rhythm.js";
 import type { Project, SongSection } from "./index.js";
 import type { GrooveEnergy } from "../sequencing/index.js";
 
@@ -59,15 +60,11 @@ export function buildSongPlan(project: Project) {
       const data = idea?.data ?? (layer === "chords" && idea ? idea.detail.split(" · ") : []);
       if (!data.length) continue;
       if (layer === "chords") {
-        let cursor = 0, i = 0;
-        while (cursor < length) {
-          const [symbol, beat, pitches] = data[i++ % data.length].split("|");
-          const duration = Math.max(0.25, Number(beat) || 4), root = notePitchClass(symbol);
-          if (root !== null) {
-            for (const pitch of decodeVoicing(symbol,pitches)) add(layer,pitch,cursor,duration*.9,.65);
-          }
-          cursor += duration;
-        }
+        const chords = data.map(decodeRhythmicChord);
+        const cycle = chords.reduce((sum,chord) => sum+chord.beats,0);
+        const notes = chordNoteEvents(chords);
+        for (let offset=0;offset<length;offset+=cycle)
+          for (const note of notes) add(layer,note.pitch,offset+note.start,note.duration,note.velocity);
       } else if (layer === "drums") {
         const cycle=drumPatternBeats(data,0);
         if(cycle>0) {

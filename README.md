@@ -1,13 +1,23 @@
 # Inspitivity
 
-Inspitivity is a local-first songwriting workspace for creating chord progressions, melodies, recordings, and section-based arrangements. Project data stays in the browser on the device.
+Inspitivity is a local-first songwriting workspace for chords, drums, bass, melodies, patterns, recordings, and section-based arrangements. Saved projects and recordings sync under the signed-in ChatGPT account through the Site's database and recording storage. Each device keeps a working copy; unsaved instrument drafts and appearance preferences stay device-local.
 
 ## Install on a phone
 
 - iPhone or iPad: open the hosted site in Safari, tap **Share**, then **Add to Home Screen**.
 - Android: open the hosted site, open the browser menu, then choose **Install app** or **Add to Home screen**.
 
-The installed app opens full-screen. Its app shell remains available offline, while projects and recordings stay in local browser storage on that device.
+The installed web app opens full-screen. Its cached shell and local working copies support offline use. Cloud synchronization requires a valid account session and a connection. This is a PWA, not a native App Store app.
+
+## Design and music behavior
+
+- `app/palette.css` is the sole source for interface color values. Both themes share semantic roles: theme accent for selection, green playback, red stop, amber destructive warnings, and neutral editing surfaces.
+- `SCALE_MODES` in `packages/music-theory/index.ts` drives both new-project and editor scale selectors. Melodic minor means the ascending/jazz form; Ionian and Aeolian explicitly alias major and natural minor. Pentatonic harmonization uses its diatonic parent scale.
+- Chord data remains backward compatible: `symbol|beats|voicing-pitches|rhythm-attacks`. The optional fourth field stores semicolon-separated `start,duration,velocity,upstroke` events. Old three-field chords retain sustained playback until the user changes their rhythm.
+- `packages/music-theory/chord-rhythm.ts` supplies the same strummed-note events to instrument audition, current-section preview, arrangement playback, and MIDI export.
+- The project transport is pinned above the bottom safe area, with an expandable mixer and shared section selection.
+
+See [the requirements audit](docs/requirements-audit.md) for evidence, remaining work, and verification limits.
 
 ## Run locally
 

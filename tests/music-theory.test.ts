@@ -1,6 +1,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { voiceChord, decodeVoicing, chordIntervals, generateChordProgression, generateMelody, getScale, notePitchClass, type MelodyMood, type Mode, type Root } from "../packages/music-theory/index.js";
+import { SCALE_MODES, voiceChord, decodeVoicing, chordIntervals, generateChordProgression, generateMelody, getScale, notePitchClass, type MelodyMood, type Mode, type Root } from "../packages/music-theory/index.js";
+
+test("the shared catalog includes all church modes, minor variants and both pentatonics",()=>{
+  assert.deepEqual(getScale("C","locrian"),["C","Db","Eb","F","Gb","Ab","Bb"]);
+  assert.deepEqual(getScale("C","melodic minor"),["C","D","Eb","F","G","A","B"]);
+  assert.deepEqual(getScale("C","major pentatonic"),["C","D","E","G","A"]);
+  assert.deepEqual(getScale("E","ionian"),getScale("E","major"));
+  assert.deepEqual(getScale("E","aeolian"),getScale("E","minor"));
+});
+test("every supported scale generates valid melodies and diatonic chord tones in all keys",()=>{
+  const roots:Root[]=["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
+  for(const root of roots) for(const mode of SCALE_MODES){
+    const scale=new Set(getScale(root,mode).map(notePitchClass));
+    const parent=mode==="major pentatonic"?"major":mode==="minor pentatonic"?"minor":mode;
+    const harmonyScale=new Set(getScale(root,parent).map(notePitchClass));
+    const melody=generateMelody({root,mode,mood:"calm",density:.6,seed:18});
+    assert.ok(melody.every(n=>scale.has(n.pitch%12)),`${root} ${mode} melody`);
+    for(const tension of ["balanced","bold"] as const){
+      const chords=generateChordProgression({root,mode,bars:16,complexity:"advanced",seed:8,tension});
+      assert.ok(chords.every(c=>Number.isFinite(c.pitch)&&chordIntervals(c.name).every(n=>harmonyScale.has((c.pitch+n)%12))),`${root} ${mode} harmony`);
+      if(tension==="balanced")assert.ok(chords.every(c=>!chordIntervals(c.name).includes(6)),`${root} ${mode} diminished default`);
+    }
+  }
+});
 
 test("scale engine returns the correct notes for major and modal scales", () => {
   assert.deepEqual(getScale("C", "major"), ["C", "D", "E", "F", "G", "A", "B"]);
@@ -108,7 +131,7 @@ test("default harmony avoids diminished chords while bold tension keeps them int
   const defaults=Array.from({length:128},(_,seed)=>generateChordProgression({root:"C",mode:"major",bars:6,complexity:"advanced",opening:"surprise",seed})).flat();
   const bold=Array.from({length:128},(_,seed)=>generateChordProgression({root:"C",mode:"major",bars:6,complexity:"advanced",opening:"surprise",tension:"bold",seed})).flat();
   assert.equal(defaults.some(chord=>/dim|°/.test(chord.name)),false);
-  assert.ok(bold.some(chord=>/dim|°/.test(chord.name)));
+  assert.ok(bold.some(chord=>/dim|°|m7b5/.test(chord.name)));
 });
 
 test("section pitch context biases new harmony without removing variation",()=>{

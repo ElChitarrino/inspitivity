@@ -1,14 +1,8 @@
 export type Root =
   "C" | "Db" | "D" | "Eb" | "E" | "F" | "Gb" | "G" | "Ab" | "A" | "Bb" | "B";
-export type Mode =
-  | "major"
-  | "minor"
-  | "dorian"
-  | "phrygian"
-  | "lydian"
-  | "mixolydian"
-  | "harmonic minor"
-  | "minor pentatonic";
+export const SCALE_MODES = ["major", "minor", "dorian", "phrygian", "lydian", "mixolydian", "locrian", "harmonic minor", "melodic minor", "major pentatonic", "minor pentatonic", "ionian", "aeolian"] as const;
+export type Mode = typeof SCALE_MODES[number];
+export const MODE_LABELS: Record<Mode, string> = Object.fromEntries(SCALE_MODES.map(mode => [mode, mode === "ionian" ? "Ionian · major" : mode === "aeolian" ? "Aeolian · natural minor" : mode === "melodic minor" ? "Melodic minor · ascending / jazz" : mode])) as Record<Mode, string>;
 export type Complexity = "simple" | "medium" | "advanced";
 export type MelodyMood = "calm" | "bright" | "melancholic" | "dark";
 export type PhraseShape = "flow" | "hook" | "answer" | "floating";
@@ -59,7 +53,12 @@ const MODES: Record<Mode, number[]> = {
   phrygian: [0, 1, 3, 5, 7, 8, 10],
   lydian: [0, 2, 4, 6, 7, 9, 11],
   mixolydian: [0, 2, 4, 5, 7, 9, 10],
+  locrian: [0, 1, 3, 5, 6, 8, 10],
+  ionian: [0, 2, 4, 5, 7, 9, 11],
+  aeolian: [0, 2, 3, 5, 7, 8, 10],
   "harmonic minor": [0, 2, 3, 5, 7, 8, 11],
+  "melodic minor": [0, 2, 3, 5, 7, 9, 11],
+  "major pentatonic": [0, 2, 4, 7, 9],
   "minor pentatonic": [0, 3, 5, 7, 10],
 };
 
@@ -80,6 +79,10 @@ export function notePitchClass(note: string) {
 
 export function chordIntervals(symbol: string) {
   const normalized = symbol.replace(/\s/g, "");
+  if (/m7b5|ø/.test(normalized)) return [0, 3, 6, 10];
+  if (/augMaj7/.test(normalized)) return [0, 4, 8, 11];
+  if (/aug7/.test(normalized)) return [0, 4, 8, 10];
+  if (/aug|\+/.test(normalized)) return [0, 4, 8];
   if (/dim7|°7/.test(normalized)) return [0, 3, 6, 9];
   if (/dim|°/.test(normalized)) return [0, 3, 6];
   if (/mMaj9/.test(normalized)) return [0, 3, 7, 11, 14];
@@ -124,16 +127,19 @@ export function generateChordProgression({
   tension?: HarmonicTension;
   preferredPitchClasses?: number[];
 }) {
-  const scale = getScale(root, mode);
+  // Pentatonic melodies use the harmony of their parent diatonic scale.
+  const harmonicMode = mode === "minor pentatonic" ? "minor" : mode === "major pentatonic" ? "major" : mode;
+  const scale = getScale(root, harmonicMode);
+  const intervals = MODES[harmonicMode];
   const random = seededRandom(seed);
   const pick = <T,>(values: T[]) => values[Math.floor(random() * values.length)];
   const triad = (degree: number) => {
-    const size = MODES[mode].length;
+    const size = intervals.length;
     const normalized = ((degree % size) + size) % size;
     const intervalAt = (offset: number) =>
-      MODES[mode][(normalized + offset) % size] +
+      intervals[(normalized + offset) % size] +
       (normalized + offset >= size ? 12 : 0) -
-      MODES[mode][normalized];
+      intervals[normalized];
     return { degree: normalized, third: intervalAt(2), fifth: intervalAt(4) };
   };
   const isDiminished = (degree: number) => triad(degree).fifth === 6;
@@ -159,13 +165,6 @@ export function generateChordProgression({
   const openingPool = opening === "away" ? [1,2,3,4,5] : [1,2,3,4,5,6];
   let previous = opening === "tonic" ? 0 : pickSupported(openingPool);
   const used = new Set<number>();
-  const minorLike = [
-    "minor",
-    "dorian",
-    "phrygian",
-    "harmonic minor",
-    "minor pentatonic",
-  ].includes(mode);
   return Array.from({ length: bars }, (_, index) => {
     let degree = previous;
     if (index > 0) {
@@ -178,15 +177,27 @@ export function generateChordProgression({
     }
     previous = degree; used.add(degree);
     const { third, fifth } = triad(degree);
-    let quality = fifth === 6 ? "dim" : third === 3 ? "m" : "";
-    if (degree === 0 && minorLike) quality = "m";
-    const seventh = (MODES[mode][(degree+6)%scale.length] + (degree+6 >= scale.length ? 12 : 0) - MODES[mode][degree]) % 12;
-    const extension = complexity === "simple" ? "" : quality === "dim" ? "7"
-      : quality === "m" ? (complexity === "advanced" ? pick(["9","11","9"]) : "7")
-      : seventh === 11 ? (complexity === "advanced" ? pick(["maj9","maj13","maj9"]) : "maj7")
-      : (complexity === "advanced" ? pick(["9","13","9"]) : "7");
+    const quality = fifth === 6 ? "dim" : fifth === 8 ? "aug" : third === 3 ? "m" : "";
+    const relative = (steps: number) => (intervals[(degree+steps)%scale.length] + 12 - intervals[degree]) % 12;
+    const seventh = relative(6);
+    let suffix = quality;
+    if (complexity !== "simple") {
+      if (quality === "dim") suffix = seventh === 10 ? "m7b5" : "dim7";
+      else if (quality === "aug") suffix = seventh === 11 ? "augMaj7" : "aug7";
+      else if (quality === "m" && seventh === 11) suffix = "mMaj7";
+      else {
+        const prefix = quality === "m" ? "m" : seventh === 11 ? "maj" : "";
+        const extensions = ["7"];
+        if (relative(1) === 2) {
+          extensions.push("9");
+          if (quality === "m" && relative(3) === 5) extensions.push("11");
+          if (quality !== "m" && relative(5) === 9) extensions.push("13");
+        }
+        suffix = prefix + (complexity === "advanced" ? pick(extensions) : "7");
+      }
+    }
     return {
-      name: `${scale[degree]}${quality}${extension}`,
+      name: `${scale[degree]}${suffix}`,
       degree,
       roman: romanNumeral(degree, quality),
       pitch: notePitchClass(scale[degree]) ?? 0,
@@ -196,6 +207,7 @@ export function generateChordProgression({
 
 function romanNumeral(degree: number, quality: string) {
   const romans = ["I", "II", "III", "IV", "V", "VI", "VII"];
+  if (quality === "aug") return romans[degree] + "+";
   return quality
     ? romans[degree].toLowerCase() + (quality === "dim" ? "°" : "")
     : romans[degree];

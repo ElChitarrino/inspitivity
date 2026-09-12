@@ -24,7 +24,7 @@ test("the product surface retains the core songwriting workflows", () => {
 
 test("project tool navigation stays visible above a compact section player", () => {
   assert.match(source, /returnToArrangement \? "inside-project" : ""/);
-  assert.match(source, /\["drums", "chords", "melody", "bass", "riff", "metronome"\]\.includes\(screen\)/);
+  assert.match(source, /\["project", "drums", "chords", "melody", "bass", "riff", "transition", "metronome"\]\.includes\(screen\)/);
   assert.match(source, /back=\{backFromMusicTool\}/);
   assert.match(source, /projectName=\{project\.name\}/);
   assert.match(theme, /\.inside-project \.topbar\{order:-2/);
@@ -36,8 +36,8 @@ test("project tool navigation stays visible above a compact section player", () 
 
 test("shared play controls are larger, green at rest, and red while playing", () => {
   assert.match(theme, /button\.play-control\{min-width:108px;min-height:50px/);
-  assert.match(theme, /background:#173b2a;color:#c7ffda/);
-  assert.match(theme, /button\.play-control\.playing\{background:#4a171e/);
+  assert.match(theme, /background:var\(--play-bg\);color:var\(--play-ink\)/);
+  assert.match(theme, /button\.play-control\.playing\{background:var\(--pause-bg\)/);
 });
 
 test("arrangement playback exposes timing, looping, count-in, and automatic balance", () => {
@@ -193,8 +193,8 @@ test("the songwriting workspace is installable on a phone", async () => {
 });
 
 test("native select values and options remain readable in both dark themes", () => {
-  assert.match(theme, /\.app-shell select\{color:#fff;color-scheme:dark\}/);
-  assert.match(theme, /\.app-shell select option\{color:#fff;background:#111317\}/);
+  assert.match(theme, /\.app-shell select\{color:var\(--ink\);color-scheme:dark\}/);
+  assert.match(theme, /select option\{color:var\(--ink\);background:var\(--surface\)/);
 });
 
 test("mobile playback explicitly unlocks and masters the Web Audio graph", () => {
@@ -249,7 +249,7 @@ test("arrangement sections own playback and persistent per-track mixing", async 
   assert.match(source, /DEFAULT_SECTION_MIX/);
   assert.match(source, /mix: \{ \.\.\.section\.mix/);
   assert.match(source, /event\.sectionId/);
-  assert.match(source, /\["drums", "chords", "melody", "bass", "riff", "metronome"\]\.includes\(screen\)/);
+  assert.match(source, /\["project", "drums", "chords", "melody", "bass", "riff", "transition", "metronome"\]\.includes\(screen\)/);
   assert.match(theme, /\.project-screen \.topbar,\.inside-project \.topbar\{position:sticky/);
 });
 
@@ -370,7 +370,7 @@ test("chords, melody, drums, and patterns can add a synchronized project-tempo c
   assert.match(source, /Enable click during listening/);
   assert.match(
     source,
-    /scheduleClickTrack\(engine, startBeat, beatSeconds, project\.meter\)/,
+    /scheduleClickTrack\(engine, totalBeats, beatSeconds, project\.meter\)/,
   );
   assert.doesNotMatch(source, /useWorkspaceMetronome/);
   assert.match(source, /metronomeEnabled=\{toolMetronomeEnabled\}/);

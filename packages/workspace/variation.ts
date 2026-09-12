@@ -1,3 +1,4 @@
+import { decodeRhythmicChord, encodeChordAttacks, generateChordRhythm } from "../music-theory/chord-rhythm.js";
 export type VariationKind = "subtle" | "space" | "energy";
 export type VariationLocks = { rhythm: boolean; notes: boolean };
 export function varyNotes<T extends { pitch: number; start: number; duration: number }>(notes: T[], kind: VariationKind, locks: VariationLocks, scale: number[], seed: number): T[] {
@@ -26,17 +27,20 @@ export function varyNotes<T extends { pitch: number; start: number; duration: nu
 }
 
 export function varyIdeaData(type:string,data:string[],seed:number):string[] {
-  if(data.length<2) return [...data];
+  if(!data.length) return [];
   if(type==="chords") {
     const next=[...data];
     if(next.length>2) [next[next.length-2],next[next.length-1]]=[next[next.length-1],next[next.length-2]];
+    const rhythms = generateChordRhythm(next.map(decodeRhythmicChord),{seed,style:"adaptive"});
     return next.map((value,index)=>{
       const fields=value.split("|");
       const pitches=(fields[2]??"").split(",").map(Number).filter(Number.isFinite);
       if(pitches.length>2&&index%2===Math.abs(seed)%2) fields[2]=[...pitches.slice(1),Math.min(96,pitches[0]+12)].join(",");
+      fields[3]=encodeChordAttacks(rhythms[index]);
       return fields.join("|");
     });
   }
+  if(data.length<2) return [...data];
   if(type==="drums") {
     let next=data.map((value,index)=>{const fields=value.split("|");fields[2]=String(Math.max(.2,Math.min(1,(Number(fields[2])||.7)*(index%3===0?1.12:.84))));return fields.join("|");});
     next=next.filter((value,index)=>!value.startsWith("hihat|")||index%4!==2);
