@@ -232,6 +232,9 @@ html[data-theme="crimson"] .piano-note{background:var(--mint)}
 .section-timeline>button>span{grid-row:1/3;color:var(--muted);font:12px var(--font-geist-mono),monospace}.section-timeline>button>b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}.section-timeline>button>small{color:var(--muted);font-size:12px}.section-timeline>button>i{grid-column:1/-1;display:flex;gap:4px;margin-top:9px}.section-timeline>button>i em{width:13px;height:4px;border-radius:4px;background:var(--surface-hover)}.section-timeline>button>i em.filled{background:var(--mint);box-shadow:0 0 8px var(--shadow)}
 .section-timeline>button.selected{border-color:var(--control-line);background:linear-gradient(145deg,var(--surface2),var(--surface));box-shadow:0 0 0 1px var(--shadow),0 12px 30px var(--shadow)}.section-timeline>button.playing{box-shadow:0 0 0 1px var(--mint),0 0 28px color-mix(in srgb,var(--mint) 18%,transparent)}
 .section-timeline>.add-section-tile{place-content:center;justify-items:center;border-style:dashed;background:transparent;color:var(--muted)}.section-timeline>.add-section-tile:before{display:none}.section-timeline>.add-section-tile span{grid-row:auto;font-size:24px;color:var(--mint)}
+.section-timeline .section-drag-grip{touch-action:none;cursor:grab;user-select:none;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center}
+.section-timeline .section-drag-grip:active{cursor:grabbing}
+html[data-theme] .section-timeline>button[data-drop-target="true"]{outline:3px solid var(--mint);outline-offset:-3px}
 
 .arrangement-timeline .asset-section{width:100%;max-width:none;gap:16px;padding:22px;background:linear-gradient(145deg,var(--surface),var(--surface))}
 .section-detail-tabs,.instrument-mode-tabs{display:flex;gap:4px;padding:4px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
@@ -342,6 +345,16 @@ html[data-theme] .section-player{position:fixed;z-index:54;left:calc(var(--playe
   .app-shell:has(.section-player) .note-keyboard-dock{position:relative;bottom:auto}
 }
 /* Compact chord-rhythm inspector remains available in Generate and Edit. */
+@media(max-width:1199px){
+  .project-context{flex-wrap:wrap;gap:12px}
+  .project-context-title{flex:1 1 100%}
+  .project-context .key-highlight{flex-wrap:wrap;min-width:0}
+}
+.bass-audition svg{width:18px;height:18px;fill:currentColor}
+@media(max-width:700px){
+  .project-screen .topbar,.inside-project .topbar{padding-left:72px}
+  .section-timeline{margin-inline:0;padding-inline:2px}
+}
 .chord-rhythm-controls{margin:16px 0;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
 .chord-rhythm-controls>summary{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;min-height:46px;padding:12px 14px;font-size:14px;cursor:pointer}
 .chord-rhythm-controls>summary span{color:var(--muted);font-size:13px}

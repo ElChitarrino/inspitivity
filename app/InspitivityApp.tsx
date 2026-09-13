@@ -31,6 +31,9 @@ import {
 import { createMidiFile, type MidiNoteEvent } from "../packages/midi";
 import { playbackBeat, activeChordIndex } from "../packages/sequencing/playhead";
 import { scheduleWindow } from "../packages/sequencing/schedule-window";
+import { reorderSection, timelineDuration } from "../packages/workspace/arrangement-order";
+import { bassHarmonics } from "../packages/sequencing/bass-timbre";
+import { activityGain } from "../packages/workspace/mix-activity";
 import { CHORD_RHYTHMS, chordNoteEvents, decodeRhythmicChord, encodeChordAttacks, generateChordRhythm, type ChordRhythm, type ChordAttack } from "../packages/music-theory/chord-rhythm";
 import {
   beatDurationSeconds,
@@ -142,7 +145,7 @@ const sectionMix = (section?: SongSection): Record<SongLayer, TrackMix> =>
     ]),
   ) as Record<SongLayer, TrackMix>;
 
-const automaticSectionMix = (section: SongSection): Record<SongLayer, TrackMix> => {
+const automaticSectionMix = (section: SongSection, context?: Project): Record<SongLayer, TrackMix> => {
   const present = new Set(section.ideas.map((idea) => idea.type));
   const energy = section.energy ?? "balanced";
   const mix = Object.fromEntries(LAYER_LABELS.map(([layer]) => [layer, { ...DEFAULT_SECTION_MIX[layer] }])) as Record<SongLayer, TrackMix>;
@@ -150,6 +153,10 @@ const automaticSectionMix = (section: SongSection): Record<SongLayer, TrackMix> 
   if (energy === "powerful") { mix.drums.volume = .78; mix.bass.volume = .66; mix.chords.volume = .52; }
   if (present.has("chords") && present.has("riff")) { mix.chords.volume -= .08; mix.riff.volume -= .05; }
   if (present.has("melody")) mix.melody.volume = energy === "powerful" ? .68 : .74;
+  if(context){
+    const plan=buildSongPlan({...context,sections:[{...section,repeats:1}]});
+    for(const [layer] of LAYER_LABELS)mix[layer].volume=Number((mix[layer].volume*activityGain(plan.events,plan.seconds,layer)).toFixed(2));
+  }
   return mix;
 };
 
@@ -634,7 +641,7 @@ function buildPlayableSketch(preset: SketchPreset): Project {
       sectionSeed+29,
     );
     ideas.push({ id:uid(),type:"bass",name:`${formSection.name} bass`,detail:`${bass.length} notes · chord and kick aware`,data:bass.map(encodeBassEvent),voice:"deep bass" });
-    section.mix=automaticSectionMix(section);
+    section.mix=automaticSectionMix(section,sketchContext);
     return section;
   });
   return {
@@ -697,7 +704,7 @@ function buildGuidedSection(
     const riff=fitMelodyToChords(generateProgRiff({root,mode,beats:beatsPerBar,cycle:beatsPerBar===7?7:5,grouping:beatsPerBar===7?"2+2+3":"3+3+2",density:energy==="powerful"?.72:.52,seed:seed+37,startOffset:.5,motion:direction==="contrast"?"rise":"orbit"}).map(note=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),chords);
     ideas.push({id:uid(),type:"riff",name:`${name} pattern`,detail:`${riff.length} notes · supports the generated harmony`,data:riff.map(note=>`${note.pitch}|${note.start}|${note.duration}|${note.accent?1:0}|${note.muted?1:0}`),voice:heavy?"distorted guitar":"analog pulse"});
   }
-  section.mix=automaticSectionMix(section);
+  section.mix=automaticSectionMix(section,context);
   return section;
 }
 
@@ -966,6 +973,7 @@ function useAudioEngine() {
     const sources = new Set<AudioScheduledSourceNode>();
     const noiseSamples = new Map<string, AudioBuffer>();
     const driveCurves = new Map<number, Float32Array<ArrayBuffer>>();
+    let bassWave: PeriodicWave | null=null;
     const driveCurve = (amount: number) => {
       let curve = driveCurves.get(amount);
       if (!curve) {
@@ -1057,6 +1065,7 @@ function useAudioEngine() {
       const ctx = get();
       const when = ctx.currentTime + start;
       if (voice === "deep bass") {
+        if(!bassWave){const harmonics=bassHarmonics();bassWave=ctx.createPeriodicWave(new Float32Array(harmonics.length),harmonics,{disableNormalization:true});}
         const frequency = 440 * Math.pow(2, (midi - 69) / 12);
         const voiceMix = ctx.createGain();
         const filter = ctx.createBiquadFilter();
@@ -1066,32 +1075,31 @@ function useAudioEngine() {
         const drive = ctx.createWaveShaper();
         const volume = ctx.createGain();
         const voiceNodes: AudioNode[] = [voiceMix,filter,cabinet,body,rumble,drive,volume];
-        let remainingLayers=3;
-        drive.curve = driveCurve(1.75);
+        let remainingLayers=2;
+        drive.curve = driveCurve(1.2);
         drive.oversample = "2x";
         filter.type = "lowpass";
-        filter.Q.value = .85;
-        filter.frequency.setValueAtTime(1550, when);
-        filter.frequency.exponentialRampToValueAtTime(520, when + .11);
+        filter.Q.value = .55;
+        filter.frequency.setValueAtTime(950+Math.min(1,gain/.07)*1100, when);
+        filter.frequency.exponentialRampToValueAtTime(420+frequency*2, when + .16);
         cabinet.type = "lowpass";
         cabinet.frequency.value = 2400;
         cabinet.Q.value = .55;
         body.type = "lowshelf";
         body.frequency.value = 105;
-        body.gain.value = 4.5;
+        body.gain.value = 2;
         rumble.type = "highpass";
-        rumble.frequency.value = 27;
+        rumble.frequency.value = 22;
         rumble.Q.value = .7;
         const layers = [
-          { type:"sine" as OscillatorType, level:.72, detune:0 },
-          { type:"triangle" as OscillatorType, level:.44, detune:-1.5 },
-          { type:"sawtooth" as OscillatorType, level:.085, detune:1.5 },
+          { type:"custom" as OscillatorType, level:1, detune:0 },
+          { type:"sine" as OscillatorType, level:.25, detune:0 },
         ].map((layer) => {
           const oscillator = ctx.createOscillator();
           const layerGain = ctx.createGain();
           voiceNodes.push(layerGain);
-          oscillator.type = layer.type;
-          oscillator.frequency.setValueAtTime(frequency * 1.008, when);
+          if(layer.type==="custom")oscillator.setPeriodicWave(bassWave!);else oscillator.type = layer.type;
+          oscillator.frequency.setValueAtTime(frequency * 1.002, when);
           oscillator.frequency.exponentialRampToValueAtTime(frequency, when + .035);
           oscillator.detune.value = layer.detune;
           layerGain.gain.value = layer.level;
@@ -1106,7 +1114,7 @@ function useAudioEngine() {
         const pickup = ctx.createOscillator();
         const pickupFilter = ctx.createBiquadFilter();
         const pickupGain = ctx.createGain();
-        pickup.type = "square";
+        pickup.type = "triangle";
         pickup.frequency.value = frequency * 3;
         pickupFilter.type = "bandpass";
         pickupFilter.frequency.value = 920;
@@ -1117,12 +1125,12 @@ function useAudioEngine() {
         sources.add(pickup);
         pickup.onended = () => { sources.delete(pickup); pickup.disconnect(); pickupFilter.disconnect(); pickupGain.disconnect(); };
         voiceMix.connect(filter).connect(drive).connect(cabinet).connect(body).connect(rumble).connect(volume).connect(getGraph().dryInput);
-        const peak = gain * 1.55;
+        const peak = gain * 1.8;
         volume.gain.setValueAtTime(.0001, when);
         volume.gain.exponentialRampToValueAtTime(peak, when + .007);
-        volume.gain.exponentialRampToValueAtTime(peak * .72, when + Math.min(.09, duration * .35));
-        volume.gain.setValueAtTime(peak * .72, when + Math.max(.1, duration * .72));
-        volume.gain.exponentialRampToValueAtTime(.0001, when + duration + .16);
+        volume.gain.exponentialRampToValueAtTime(peak * .76, when + Math.min(.09, duration * .35));
+        volume.gain.exponentialRampToValueAtTime(peak * .48, when + Math.max(.1, duration));
+        volume.gain.exponentialRampToValueAtTime(.0001, when + Math.max(.1,duration) + .08);
         layers.forEach((oscillator) => {
           oscillator.start(when);
           oscillator.stop(when + duration + .18);
@@ -1724,7 +1732,7 @@ export default function InspitivityApp({ account, signOutPath }: {
     savedDraftId.current = null;
     const destination = returnToArrangement ? "project" : "home";
     setEditingIdea(null);
-    setDraftSectionId(null);
+    if(!returnToArrangement)setDraftSectionId(null);
     setReturnToArrangement(false);
     setScreen(destination);
   };
@@ -2258,6 +2266,10 @@ function ProjectView({
   const [playbackSeconds, setPlaybackSeconds] = useState(0);
   const [countIn, setCountIn] = useState(false);
   const [arrangementClick, setArrangementClick] = useState(false);
+  const dragSection=useRef<string|null>(null);
+  const dragTarget=useRef<string|null>(null);
+  const [dropTarget,setDropTarget]=useState<string|null>(null);
+  const [orderMessage,setOrderMessage]=useState("");
   const [loopArrangement, setLoopArrangement] = useState(false);
   const [audioStatus, setAudioStatus] = useState<string | null>(null);
   const [activeSectionIndex, setActiveSectionIndex] = useState<number | null>(
@@ -2409,11 +2421,11 @@ function ProjectView({
   };
   const autoBalanceSection = (sectionId: string) => {
     stopArrangement();
-    update((p) => ({ ...p, sections:p.sections.map((section) => section.id === sectionId ? { ...section, mix:automaticSectionMix(section) } : section) }));
+    update((p) => ({ ...p, sections:p.sections.map((section) => section.id === sectionId ? { ...section, mix:automaticSectionMix(section,p) } : section) }));
   };
   const autoBalanceAll = () => {
     stopArrangement();
-    update((p) => ({ ...p, sections:p.sections.map((section) => ({ ...section, mix:automaticSectionMix(section) })) }));
+    update((p) => ({ ...p, sections:p.sections.map((section) => ({ ...section, mix:automaticSectionMix(section,p) })) }));
   };
   const setSectionRepeats = (sectionId: string, repeats: number) => {
     stopArrangement();
@@ -2421,7 +2433,7 @@ function ProjectView({
   };
   const setSectionEnergy = (sectionId: string, energy: SectionEnergy) => {
     stopArrangement();
-    update((p) => ({ ...p, sections:p.sections.map((section) => section.id === sectionId ? { ...section, energy, mix:automaticSectionMix({ ...section, energy }) } : section) }));
+    update((p) => ({ ...p, sections:p.sections.map((section) => section.id === sectionId ? { ...section, energy, mix:automaticSectionMix({ ...section, energy },p) } : section) }));
   };
   const finishAddingSection=()=>{setSectionName("");setSectionDirection("continue");setNewSectionEnergy("balanced");setAdding(false);};
   const addEmptySection=()=>{
@@ -2455,7 +2467,7 @@ function ProjectView({
   });
   const shapeEnergyArc=()=>update(p=>({...p,sections:p.sections.map((section,index)=>{
     const energy:SectionEnergy=index===0?"mellow":index===p.sections.length-1?"powerful":"balanced";
-    const next={...section,energy};return {...next,mix:automaticSectionMix(next)};
+    const next={...section,energy};return {...next,mix:automaticSectionMix(next,p)};
   })}));
   const applyArrangementInsight=(insight:ArrangementInsight)=>{
     if(insight.action==="add_section")setAdding(true);
@@ -2641,8 +2653,14 @@ function ProjectView({
     setNote("");
     setIdeaSection(sectionId);
   };
-  const arrangementPlan = buildSongPlan(project);
-  const arrangementCheck=analyzeArrangement(project);
+  const arrangementPlan = useMemo(()=>buildSongPlan(project),[project]);
+  const arrangementCheck=useMemo(()=>analyzeArrangement(project),[project]);
+  const shortestSection=Math.max(1,Math.min(...project.sections.map(s=>timelineDuration(s,project.meter))));
+  const commitSectionMove=(source:string,target:string)=>{
+    stopArrangement();stopIdea();
+    update(p=>({...p,sections:reorderSection(p.sections,source,target)}));
+    setOrderMessage(`Moved ${project.sections.find(s=>s.id===source)?.name ?? "section"} to position ${project.sections.findIndex(s=>s.id===target)+1}`);
+  };
   const markerIndex = Math.max(0, arrangementPlan.markers.findLastIndex((marker) => marker.seconds <= playbackSeconds));
   const marker = arrangementPlan.markers[markerIndex];
   const beatInBar = marker ? Math.max(1, Math.floor((playbackSeconds-marker.seconds)/(60/marker.bpm))+1) : 1;
@@ -2667,7 +2685,7 @@ function ProjectView({
           {project.sections.map((section, index) => (
             <i
               className={`${section.color} ${activeSectionIndex === index ? "playing" : ""}`}
-              style={{ flex: section.bars*(section.repeats??1) }}
+              style={{ flex: timelineDuration(section,project.meter) }}
               key={section.id}
             />
           ))}
@@ -2706,11 +2724,42 @@ function ProjectView({
         {project.sections.map((section,index)=><button
           key={section.id}
           role="tab"
+          data-section-id={section.id}
+          data-drop-target={dropTarget===section.id}
+          style={{flex:`${timelineDuration(section,project.meter)} 0 ${120*timelineDuration(section,project.meter)/shortestSection}px`,maxWidth:"none",minWidth:120}}
+          title="Select section. Drag the grip to reorder, or use Alt + Left/Right."
+          onKeyDown={event=>{
+            if(!event.altKey || !["ArrowLeft","ArrowRight"].includes(event.key))return;
+            event.preventDefault();
+            const target=project.sections[index+(event.key==="ArrowLeft"?-1:1)];
+            if(target)commitSectionMove(section.id,target.id);
+          }}
           aria-selected={selectedSectionId===section.id}
           className={`${section.color} ${selectedSectionId===section.id?"selected":""} ${activeSectionIndex===index?"playing":""}`}
           onClick={()=>{setSelectedSectionId(section.id);setSectionPanel("parts");}}
         >
-          <span>{String(index+1).padStart(2,"0")}</span>
+          <span className="section-drag-grip" title={`Drag ${section.name} to reorder`}
+            onClick={event=>event.stopPropagation()}
+            onPointerDown={event=>{
+              if(event.button!==0)return;
+              event.stopPropagation();event.currentTarget.setPointerCapture(event.pointerId);
+              dragSection.current=section.id;dragTarget.current=null;
+            }}
+            onPointerMove={event=>{
+              if(!dragSection.current)return;
+              const strip=event.currentTarget.closest('.section-timeline');
+              const bounds=strip?.getBoundingClientRect();
+              if(strip&&bounds){if(event.clientX>bounds.right-40)strip.scrollLeft+=16;else if(event.clientX<bounds.left+40)strip.scrollLeft-=16;}
+              const target=document.elementFromPoint(event.clientX,event.clientY)?.closest('[data-section-id]')?.getAttribute('data-section-id')??null;
+              dragTarget.current=target;setDropTarget(target);
+            }}
+            onPointerUp={event=>{
+              event.stopPropagation();
+              if(dragSection.current&&dragTarget.current&&dragSection.current!==dragTarget.current)commitSectionMove(dragSection.current,dragTarget.current);
+              dragSection.current=null;dragTarget.current=null;setDropTarget(null);
+            }}
+            onPointerCancel={()=>{dragSection.current=null;dragTarget.current=null;setDropTarget(null);}}
+          >⠿ {String(index+1).padStart(2,"0")}</span>
           <b>{section.name}</b>
           <small>{section.bars} bars{(section.repeats??1)>1?` · ×${section.repeats}`:""}</small>
           <i aria-label={`${section.ideas.filter(idea=>idea.type!=="text").length} parts`}>
@@ -2719,6 +2768,7 @@ function ProjectView({
         </button>)}
         <button className="add-section-tile" onClick={()=>setAdding(true)}><span>＋</span><b>Add section</b></button>
       </div>
+      <p className="sr-only" role="status">{orderMessage}</p>
       <div className="arrangement-list arrangement-timeline" aria-label="Song sections, top to bottom">
         {project.sections.filter(section=>section.id===selectedSectionId).map((section) => {
           const index=project.sections.findIndex(item=>item.id===section.id);
@@ -4231,7 +4281,7 @@ function BassTool({
               <label><span>Beat</span><input aria-label={`Bass note ${index+1} start`} type="number" min="0" max={Math.max(1,length)} step="0.25" value={Number(event.start.toFixed(3))} onChange={change=>updateBassEvent(index,{start:Math.max(0,Number(change.target.value))})}/></label>
               <label><span>Length</span><input aria-label={`Bass note ${index+1} duration`} type="number" min="0.125" max="8" step="0.125" value={Number(event.duration.toFixed(3))} onChange={change=>updateBassEvent(index,{duration:Math.max(.125,Number(change.target.value))})}/></label>
               <label className="bass-accent"><input type="checkbox" checked={event.accent} onChange={change=>updateBassEvent(index,{accent:change.target.checked})}/><span>Accent</span></label>
-              <button className="bass-audition" aria-label={`Audition bass note ${index+1}`} onClick={()=>void auditionBassEvent(event)}>▶</button>
+              <button className="bass-audition" aria-label={`Audition bass note ${index+1}`} onClick={()=>void auditionBassEvent(event)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l14-8z"/></svg></button>
               <button className="bass-remove" aria-label={`Remove bass note ${index+1}`} disabled={bass.length===1} onClick={()=>removeBassEvent(index)}>×</button>
             </article>)}
           </div>

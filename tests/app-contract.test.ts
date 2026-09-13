@@ -74,8 +74,8 @@ test("bass connects harmony and drums and participates in playback and mixing", 
 test("deep bass uses a layered, dry electric-bass signal path", () => {
   assert.match(source, /if \(voice === "deep bass"\)/);
   assert.match(source, /type:"sine" as OscillatorType/);
-  assert.match(source, /type:"triangle" as OscillatorType/);
-  assert.match(source, /type:"sawtooth" as OscillatorType/);
+  assert.match(source, /oscillator.setPeriodicWave\(bassWave!/);
+  assert.match(source, /bassHarmonics\(\)/);
   assert.match(source, /body\.type = "lowshelf"/);
   assert.match(source, /connect\(getGraph\(\)\.dryInput\)/);
   assert.match(source, /"deep bass": 33/);
@@ -232,7 +232,7 @@ test("existing songs can generate a complete context-aware section", () => {
   assert.match(source, /generated with the section/);
   assert.match(source, /sectionPitchContext\(previous,"chords"\)/);
   assert.match(source, /generateBassLine\(context,section/);
-  assert.match(source, /automaticSectionMix\(section\)/);
+  assert.match(source, /automaticSectionMix\(section,context\)/);
 });
 
 test("arrangement sections expose vertical ordering and a single current length", () => {
