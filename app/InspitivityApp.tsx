@@ -30,6 +30,7 @@ import {
 } from "../packages/music-theory";
 import { createMidiFile, type MidiNoteEvent } from "../packages/midi";
 import { playbackBeat, activeChordIndex } from "../packages/sequencing/playhead";
+import { scheduleWindow } from "../packages/sequencing/schedule-window";
 import { CHORD_RHYTHMS, chordNoteEvents, decodeRhythmicChord, encodeChordAttacks, generateChordRhythm, type ChordRhythm, type ChordAttack } from "../packages/music-theory/chord-rhythm";
 import {
   beatDurationSeconds,
@@ -963,6 +964,17 @@ function silentWavUrl() {
 function useAudioEngine() {
   return useMemo(() => {
     const sources = new Set<AudioScheduledSourceNode>();
+    const noiseSamples = new Map<string, AudioBuffer>();
+    const driveCurves = new Map<number, Float32Array<ArrayBuffer>>();
+    const driveCurve = (amount: number) => {
+      let curve = driveCurves.get(amount);
+      if (!curve) {
+        curve = new Float32Array(2048);
+        for (let i=0;i<curve.length;i++) curve[i]=Math.tanh(amount*(2*i/(curve.length-1)-1));
+        driveCurves.set(amount,curve);
+      }
+      return curve;
+    };
     const getGraph = (): SharedAudioGraph => {
       if (sharedAudioGraph && sharedAudioGraph.context.state !== "closed")
         return sharedAudioGraph;
@@ -1053,12 +1065,9 @@ function useAudioEngine() {
         const rumble = ctx.createBiquadFilter();
         const drive = ctx.createWaveShaper();
         const volume = ctx.createGain();
-        const curve = new Float32Array(2048);
-        for (let index = 0; index < curve.length; index++) {
-          const x = 2 * index / (curve.length - 1) - 1;
-          curve[index] = Math.tanh(1.75 * x);
-        }
-        drive.curve = curve;
+        const voiceNodes: AudioNode[] = [voiceMix,filter,cabinet,body,rumble,drive,volume];
+        let remainingLayers=3;
+        drive.curve = driveCurve(1.75);
         drive.oversample = "2x";
         filter.type = "lowpass";
         filter.Q.value = .85;
@@ -1080,6 +1089,7 @@ function useAudioEngine() {
         ].map((layer) => {
           const oscillator = ctx.createOscillator();
           const layerGain = ctx.createGain();
+          voiceNodes.push(layerGain);
           oscillator.type = layer.type;
           oscillator.frequency.setValueAtTime(frequency * 1.008, when);
           oscillator.frequency.exponentialRampToValueAtTime(frequency, when + .035);
@@ -1087,7 +1097,10 @@ function useAudioEngine() {
           layerGain.gain.value = layer.level;
           oscillator.connect(layerGain).connect(voiceMix);
           sources.add(oscillator);
-          oscillator.onended = () => sources.delete(oscillator);
+          oscillator.onended = () => {
+            sources.delete(oscillator); oscillator.disconnect();
+            if (--remainingLayers===0) voiceNodes.forEach(node=>node.disconnect());
+          };
           return oscillator;
         });
         const pickup = ctx.createOscillator();
@@ -1102,7 +1115,7 @@ function useAudioEngine() {
         pickupGain.gain.exponentialRampToValueAtTime(.0001, when + .045);
         pickup.connect(pickupFilter).connect(pickupGain).connect(voiceMix);
         sources.add(pickup);
-        pickup.onended = () => sources.delete(pickup);
+        pickup.onended = () => { sources.delete(pickup); pickup.disconnect(); pickupFilter.disconnect(); pickupGain.disconnect(); };
         voiceMix.connect(filter).connect(drive).connect(cabinet).connect(body).connect(rumble).connect(volume).connect(getGraph().dryInput);
         const peak = gain * 1.55;
         volume.gain.setValueAtTime(.0001, when);
@@ -1120,6 +1133,7 @@ function useAudioEngine() {
       }
       const volume = ctx.createGain();
       const filter = ctx.createBiquadFilter();
+      const voiceNodes: AudioNode[] = [volume,filter];
       const profiles = {
         "air flute": {
           type: "sine" as OscillatorType,
@@ -1137,6 +1151,7 @@ function useAudioEngine() {
         click: { type: "sine" as OscillatorType, attack: 0.001, cutoff: 7000, release: 0.025, detune: 0 },
       } as const;
       const profile = profiles[voice] ?? profiles.pluck;
+      let remainingOscillators=profile.detune ? 3 : 1;
       const oscillators = [0, ...(profile.detune ? [-profile.detune, profile.detune] : [])].map((detune) => {
         const oscillator = ctx.createOscillator();
         oscillator.type = profile.type;
@@ -1144,7 +1159,10 @@ function useAudioEngine() {
         oscillator.detune.value = detune;
         oscillator.connect(filter);
         sources.add(oscillator);
-        oscillator.onended = () => sources.delete(oscillator);
+        oscillator.onended = () => {
+          sources.delete(oscillator); oscillator.disconnect();
+          if (--remainingOscillators===0) voiceNodes.forEach(node=>node.disconnect());
+        };
         return oscillator;
       });
       filter.type = "lowpass";
@@ -1170,12 +1188,11 @@ function useAudioEngine() {
       );
       if (voice === "distorted guitar") {
         const drive = ctx.createWaveShaper();
-        const curve = new Float32Array(2048);
-        for (let i=0; i<curve.length; i++) curve[i] = Math.tanh(5 * (2*i/(curve.length-1)-1));
-        drive.curve = curve; drive.oversample = "4x";
+        drive.curve = driveCurve(5); drive.oversample = "2x";
         const cabinet = ctx.createBiquadFilter();
         cabinet.type = "lowpass"; cabinet.frequency.value = 4200; cabinet.Q.value = 0.7;
         const rumble = ctx.createBiquadFilter(); rumble.type = "highpass"; rumble.frequency.value = 85;
+        voiceNodes.push(drive,cabinet,rumble);
         filter.connect(drive).connect(cabinet).connect(rumble).connect(volume).connect(getGraph().input);
       } else filter.connect(volume).connect(getGraph().input);
       oscillators.forEach((oscillator) => {
@@ -1193,7 +1210,7 @@ function useAudioEngine() {
           vibratoDepth.connect(oscillator.detune),
         );
         sources.add(vibrato);
-        vibrato.onended = () => sources.delete(vibrato);
+        vibrato.onended = () => { sources.delete(vibrato); vibrato.disconnect(); vibratoDepth.disconnect(); };
         vibrato.start(when);
         vibrato.stop(when + duration + profile.release);
       }
@@ -1203,6 +1220,9 @@ function useAudioEngine() {
       duration: number,
       decay: number,
     ) => {
+      const key = `${ctx.sampleRate}/${duration}/${decay}`;
+      const cached = noiseSamples.get(key);
+      if (cached) return cached;
       const buffer = ctx.createBuffer(
         1,
         Math.ceil(ctx.sampleRate * duration),
@@ -1212,6 +1232,7 @@ function useAudioEngine() {
       for (let index = 0; index < data.length; index++)
         data[index] =
           (Math.random() * 2 - 1) * Math.exp(-index / (ctx.sampleRate * decay));
+      noiseSamples.set(key,buffer);
       return buffer;
     };
     const cymbalNoise = (
@@ -1233,7 +1254,7 @@ function useAudioEngine() {
       volume.gain.exponentialRampToValueAtTime(0.0001, when + duration);
       source.connect(filter).connect(volume).connect(getGraph().input);
       sources.add(source);
-      source.onended = () => sources.delete(source);
+      source.onended = () => { sources.delete(source); source.disconnect(); filter.disconnect(); volume.disconnect(); };
       source.start(when);
       source.stop(when + duration);
     };
@@ -1253,7 +1274,7 @@ function useAudioEngine() {
         volume.gain.exponentialRampToValueAtTime(0.0001, when + 0.18 * tail);
         oscillator.connect(volume).connect(getGraph().input);
         sources.add(oscillator);
-        oscillator.onended = () => sources.delete(oscillator);
+        oscillator.onended = () => { sources.delete(oscillator); oscillator.disconnect(); volume.disconnect(); };
         oscillator.start(when);
         oscillator.stop(when + 0.19 * tail);
         return;
@@ -1271,7 +1292,7 @@ function useAudioEngine() {
         volume.gain.setValueAtTime(.18*velocity,when);
         volume.gain.exponentialRampToValueAtTime(.0001,when+.32*tail);
         oscillator.connect(volume).connect(getGraph().input); sources.add(oscillator);
-        oscillator.onended=()=>sources.delete(oscillator); oscillator.start(when); oscillator.stop(when+.34*tail);
+        oscillator.onended=()=>{sources.delete(oscillator);oscillator.disconnect();volume.disconnect();}; oscillator.start(when); oscillator.stop(when+.34*tail);
         cymbalNoise(start,.035,.025*velocity,1400,.012); return;
       }
       if (instrument === "openhat") { cymbalNoise(start,.38*tail,.085*velocity,6500,.12*tail); return; }
@@ -1436,13 +1457,16 @@ function playRiff(
 function publishPlayhead(seconds: number | null) {
   window.dispatchEvent(new CustomEvent("inspitivity-playhead",{detail:seconds}));
 }
-function usePlaybackPosition(bpm: number, length: number) {
+function usePlaybackPosition(bpm: number, length: number, resolution = 0) {
   const [seconds,setSeconds]=useState<number|null>(null);
   useEffect(()=>{
-    const receive=(event:Event)=>setSeconds((event as CustomEvent<number|null>).detail);
+    const receive=(event:Event)=>{
+      const next=(event as CustomEvent<number|null>).detail;
+      setSeconds(next===null?null:resolution ? Math.floor(next*bpm/60/resolution)*resolution*60/bpm : next);
+    };
     window.addEventListener("inspitivity-playhead",receive);
     return ()=>window.removeEventListener("inspitivity-playhead",receive);
-  },[]);
+  },[bpm,resolution]);
   return seconds===null?null:playbackBeat(seconds,bpm,length);
 }
 function PlaybackCursor({bpm,length,inset=0,span=100}:{bpm:number;length:number;inset?:number;span?:number}) {
@@ -2447,38 +2471,53 @@ function ProjectView({
     if(!plan.events.length) { setAudioStatus("Create a drum, bass, chord, melody or pattern asset to hear this section."); return; }
     const countInBeats = countIn && !skipCountIn ? meterBeats(project.meter) : 0;
     const countInSeconds = countInBeats * beatDurationSeconds(project.bpm);
-    if (countInBeats) scheduleClickTrack(engine,countInBeats,beatDurationSeconds(project.bpm),project.meter);
-    if (arrangementClick) scheduleClickTrack(engine,Math.ceil(plan.seconds/beatDurationSeconds(project.bpm)),beatDurationSeconds(project.bpm),project.meter,countInSeconds);
-    for(const event of plan.events) {
-      const mix = sectionMix(sections.find((section) => section.id === event.sectionId));
+    // Keep only a short audio-clock window of voices alive, even for long songs.
+    const origin=engine.get().currentTime+.08;
+    const beatSeconds=beatDurationSeconds(project.bpm);
+    const clickCount=countInBeats+(arrangementClick ? Math.ceil(plan.seconds/beatSeconds) : 0);
+    let nextClick=0;
+    const mixes=new Map(sections.map(section=>[section.id,sectionMix(section)]));
+    let eventIndex=0;
+    const schedule=()=>{
+      const now=engine.get().currentTime;
+      while(nextClick<clickCount && origin+nextClick*beatSeconds<=now+.2){
+        const beat=nextClick++, when=origin+beat*beatSeconds;
+        if(when<now-.02)continue;
+        const accented=(beat<countInBeats?beat:beat-countInBeats)%(Number(project.meter.split("/")[0])||4)===0;
+        engine.tone(accented?88:80,Math.max(0,when-now),.04,accented?.11:.055,"click");
+      }
+      eventIndex=scheduleWindow(plan.events,eventIndex,now-origin-countInSeconds,(event,delay)=>{
+      const mix = mixes.get(event.sectionId) ?? sectionMix(undefined);
       const settings = mix[event.layer];
       const hasSolo = Object.values(mix).some((layer) => layer.solo);
-      if (settings.muted || (hasSolo && !settings.solo) || settings.volume <= 0) continue;
+      if (settings.muted || (hasSolo && !settings.solo) || settings.volume <= 0) return;
       if(event.layer === "drums") {
         const instrument=Object.entries(DRUM_PITCHES).find(([,pitch])=>pitch===event.pitch)?.[0] as DrumInstrument | undefined;
-        if(instrument)engine.drum(instrument,event.seconds+countInSeconds,event.velocity*settings.volume*.9,(event.voice as DrumKit)||"current");
+        if(instrument)engine.drum(instrument,delay,event.velocity*settings.volume*.9,(event.voice as DrumKit)||"current");
       } else {
         const baseGain = event.layer === "chords" ? .052 : event.layer === "melody" ? .058 : event.layer === "bass" ? .065 : .055;
-        engine.tone(event.pitch,event.seconds+countInSeconds,event.secondsDuration,baseGain*event.velocity*settings.volume,(event.voice as SynthVoice)||(event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : event.layer === "bass" ? "deep bass" : "analog pulse"));
+        engine.tone(event.pitch,delay,event.secondsDuration,baseGain*event.velocity*settings.volume,(event.voice as SynthVoice)||(event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : event.layer === "bass" ? "deep bass" : "analog pulse"));
       }
-    }
+      });
+      setPlaybackSeconds(Math.floor(Math.max(0,now-origin-countInSeconds)*10)/10);
+    };
+    schedule();
     let offset=0;
     sections.forEach((section,index)=>{
       const sectionIndex=firstIndex+index;
       for(let repeat=0;repeat<(section.repeats??1);repeat++) {
-        sectionTimers.current.push(window.setTimeout(()=>setActiveSectionIndex(sectionIndex),(offset+countInSeconds)*1000));
+        sectionTimers.current.push(window.setTimeout(()=>setActiveSectionIndex(sectionIndex),(offset+countInSeconds+.08)*1000));
         offset+=sectionBeatTotal(section,project.meter)*beatDurationSeconds(project.bpm);
       }
     });
-    const startedAt=engine.get().currentTime+countInSeconds;
-    playbackTimer.current=window.setInterval(()=>setPlaybackSeconds(Math.max(0,engine.get().currentTime-startedAt)),50);
+    playbackTimer.current=window.setInterval(schedule,25);
     setArrangementPlaying(true);setActiveSectionIndex(countInSeconds ? null : firstIndex);
     setAudioStatus(countInSeconds ? `Count-in · ${countInBeats} beats` : "Playing saved assets · empty parts stay silent");
     if(countInSeconds) sectionTimers.current.push(window.setTimeout(()=>setAudioStatus("Playing saved assets · empty parts stay silent"),countInSeconds*1000));
     arrangementTimer.current=window.setTimeout(()=>{
       if(loopArrangementRef.current) void playSavedSections(sections,firstIndex,true);
       else { stopArrangement();setAudioStatus(null); }
-    },(plan.seconds+countInSeconds)*1000);
+    },(plan.seconds+countInSeconds+.08)*1000);
   };
   const playArrangement = async () => {
     if(arrangementPlaying) { stopArrangement(); return; }
@@ -2934,7 +2973,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
       if (!latest.current.plan.events.length) { setMessage("Add or generate a part to hear this section."); return; }
       window.dispatchEvent(new Event("inspitivity-context-play"));
       setMessage(""); setPlaying(true);
-      let cyclePlan=latest.current.plan, origin=engine.get().currentTime+.04, index=0;
+      let cyclePlan=latest.current.plan, origin=engine.get().currentTime+.08, index=0;
       const schedule = () => {
         if(pausedRef.current)return;
         const now=engine.get().currentTime;
@@ -2945,12 +2984,12 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
         let guard=0;
         while (guard++ < 5000) {
           if (index >= cyclePlan.events.length) {
-            if (origin+cyclePlan.seconds > now+.12 || cyclePlan.seconds <= 0) break;
+            if (origin+cyclePlan.seconds > now+.2 || cyclePlan.seconds <= 0) break;
             origin+=cyclePlan.seconds; cyclePlan=latest.current.plan; index=0;
             if (!cyclePlan.events.length) break;
           }
           const event=cyclePlan.events[index];
-          if (!event || origin+event.seconds > now+.12) break;
+          if (!event || origin+event.seconds > now+.2) break;
           index++;
           if (origin+event.seconds < now-.02) continue;
           const settings=latest.current.mix[event.layer], solo=Object.values(latest.current.mix).some(m=>m.solo);
@@ -2965,7 +3004,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
             engine.tone(event.pitch,delay,event.secondsDuration,baseGain*event.velocity*settings.volume,voice);
           }
         }
-        setProgress(Math.max(0,Math.min(1,(now-origin)/Math.max(.1,cyclePlan.seconds))));
+        setProgress(Math.round(Math.max(0,Math.min(1,(now-origin)/Math.max(.1,cyclePlan.seconds)))*100)/100);
         publishPlayhead(Math.max(0,now-origin));
       };
       schedule(); timer.current=setInterval(schedule,25);
@@ -3263,7 +3302,7 @@ function ChordTool({
   const beatSeconds = beatDurationSeconds(project.bpm);
   const [selectedChordId,setSelectedChordId]=useState<string|null>(null);
   const selectedChord=chords.find(c=>c.id===selectedChordId)??chords[0];
-  const chordPosition=usePlaybackPosition(project.bpm,totalBeats);
+  const chordPosition=usePlaybackPosition(project.bpm,totalBeats,.25);
   const soundingChord=chordPosition===null?-1:activeChordIndex(chords.map(c=>c.beats),chordPosition);
   const play = useCallback(() => {
     chordNoteEvents(chords).forEach(note => engine.tone(note.pitch,note.start*beatSeconds,note.duration*beatSeconds,.045*note.velocity,voice));
@@ -4615,7 +4654,7 @@ function DrumTool({
   const [visibleBar, setVisibleBar] = useState(0);
   const [editVelocity, setEditVelocity] = useState(.75);
   const phraseBeats = bars*beatsPerBar;
-  const drumPosition=usePlaybackPosition(project.bpm,phraseBeats);
+  const drumPosition=usePlaybackPosition(project.bpm,phraseBeats,.25);
   const playingStep=drumPosition===null?-1:Math.floor(drumPosition*4);
   const [selectedDrum,setSelectedDrum]=useState<DrumInstrument>("kick");
   const [followPlayback,setFollowPlayback]=useState(true);
