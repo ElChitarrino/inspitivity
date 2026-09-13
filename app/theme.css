@@ -359,3 +359,21 @@ html[data-theme] .section-player{position:fixed;z-index:54;left:calc(var(--playe
 .section-player .mixer-channel button:nth-of-type(1){grid-column:2}.section-player .mixer-channel button:nth-of-type(2){grid-column:3}
 .asset-section .section-title-editor h3{font-family:var(--font-geist-sans),Arial,sans-serif;font-weight:650}
 @media(max-width:480px){.section-player .mixer-grid{grid-template-columns:1fr}.section-player .mixer-channel>b{grid-column:1;align-self:center}}
+/* Playback is a shared semantic state, separate from selection. */
+.editor-playhead{position:absolute;z-index:8;top:0;bottom:0;width:2px;background:var(--play-line);pointer-events:none;box-shadow:0 0 0 1px var(--black)}
+html[data-theme] .chord-overview button[aria-pressed=true]{border-color:var(--mint);background:var(--accent-soft)}
+html[data-theme] .chord-overview button[data-playing=true]{box-shadow:inset 0 -4px 0 var(--play-line)}
+html[data-theme] .drum-row button[data-playing=true]{outline:2px solid var(--play-line);outline-offset:1px;filter:brightness(1.35)}
+.focused-chord-editor{grid-template-columns:minmax(0,1fr);max-width:760px;margin-inline:auto;width:100%}
+.drum-lane-picker{display:none}.follow-playback{display:flex;align-items:center;gap:8px;margin:8px 0 14px;font-size:14px;color:var(--muted)}
+.follow-playback input{accent-color:var(--mint);width:18px;height:18px}
+.section-reset{min-width:40px;min-height:44px;border:1px solid var(--control-line);background:var(--surface2);color:var(--ink);font-size:22px}
+@media(max-width:700px){
+  .section-player .section-player-heading{grid-template-columns:minmax(0,1fr) auto auto}
+  .section-player .section-player-heading>.section-player-caption{grid-column:1/-1}
+  .drum-lane-picker{display:grid;gap:8px;margin:12px 0;font-size:14px;color:var(--muted)}
+  .drum-lane-picker select{min-height:44px;padding:8px;border:1px solid var(--control-line);border-radius:7px;background:var(--surface2);color:var(--ink)}
+  .drum-row[data-mobile-hidden=true]{display:none}
+  .chord-overview{display:flex;overflow-x:auto;gap:8px;padding-bottom:8px}
+  .chord-overview button{flex:0 0 132px}
+}

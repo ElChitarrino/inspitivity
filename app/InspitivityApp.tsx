@@ -29,6 +29,7 @@ import {
   seededRandom,
 } from "../packages/music-theory";
 import { createMidiFile, type MidiNoteEvent } from "../packages/midi";
+import { playbackBeat, activeChordIndex } from "../packages/sequencing/playhead";
 import { CHORD_RHYTHMS, chordNoteEvents, decodeRhythmicChord, encodeChordAttacks, generateChordRhythm, type ChordRhythm, type ChordAttack } from "../packages/music-theory/chord-rhythm";
 import {
   beatDurationSeconds,
@@ -1432,6 +1433,23 @@ function playRiff(
 }
 
 
+function publishPlayhead(seconds: number | null) {
+  window.dispatchEvent(new CustomEvent("inspitivity-playhead",{detail:seconds}));
+}
+function usePlaybackPosition(bpm: number, length: number) {
+  const [seconds,setSeconds]=useState<number|null>(null);
+  useEffect(()=>{
+    const receive=(event:Event)=>setSeconds((event as CustomEvent<number|null>).detail);
+    window.addEventListener("inspitivity-playhead",receive);
+    return ()=>window.removeEventListener("inspitivity-playhead",receive);
+  },[]);
+  return seconds===null?null:playbackBeat(seconds,bpm,length);
+}
+function PlaybackCursor({bpm,length,inset=0,span=100}:{bpm:number;length:number;inset?:number;span?:number}) {
+  const position=usePlaybackPosition(bpm,length);
+  return position===null?null:<i className="editor-playhead" aria-label={`Playback beat ${Math.floor(position)+1}`} style={{left:`${inset+position/Math.max(.25,length)*span}%`}} />;
+}
+
 function useLoopTransport(
   playOnce: () => void,
   durationMs: number,
@@ -1440,6 +1458,7 @@ function useLoopTransport(
 ) {
   const [mode, setMode] = useState<"stopped" | "once" | "loop">("stopped");
   const timer = useRef<number | null>(null);
+  const visualTimer = useRef<ReturnType<typeof setInterval>|null>(null);
   const startGeneration = useRef(0);
   const playRef = useRef(playOnce);
   const durationRef = useRef(durationMs);
@@ -1448,9 +1467,13 @@ function useLoopTransport(
     durationRef.current = durationMs;
   }, [playOnce, durationMs]);
   const clear = useCallback(() => {
+    const ownedPlayhead=visualTimer.current!==null;
     startGeneration.current++;
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = null;
+    if(visualTimer.current)clearInterval(visualTimer.current);
+    visualTimer.current=null;
+    if(ownedPlayhead)publishPlayhead(null);
     stopAudio();
   }, [stopAudio]);
   const stop = useCallback(() => {
@@ -1470,9 +1493,12 @@ function useLoopTransport(
       }
       setMode(loop ? "loop" : "once");
       const run = () => {
+        const origin=sharedAudioGraph?.context.currentTime??0;
         playRef.current();
+        if(visualTimer.current)clearInterval(visualTimer.current);
+        visualTimer.current=setInterval(()=>publishPlayhead(Math.max(0,(sharedAudioGraph?.context.currentTime??origin)-origin)),25);
         timer.current = window.setTimeout(
-          () => (loop ? run() : setMode("stopped")),
+          () => {if(loop)run();else {clear();setMode("stopped");}},
           Math.max(120, durationRef.current),
         );
       };
@@ -2444,8 +2470,8 @@ function ProjectView({
         offset+=sectionBeatTotal(section,project.meter)*beatDurationSeconds(project.bpm);
       }
     });
-    const startedAt=performance.now()+countInSeconds*1000;
-    playbackTimer.current=window.setInterval(()=>setPlaybackSeconds(Math.max(0,(performance.now()-startedAt)/1000)),50);
+    const startedAt=engine.get().currentTime+countInSeconds;
+    playbackTimer.current=window.setInterval(()=>setPlaybackSeconds(Math.max(0,engine.get().currentTime-startedAt)),50);
     setArrangementPlaying(true);setActiveSectionIndex(countInSeconds ? null : firstIndex);
     setAudioStatus(countInSeconds ? `Count-in · ${countInBeats} beats` : "Playing saved assets · empty parts stay silent");
     if(countInSeconds) sectionTimers.current.push(window.setTimeout(()=>setAudioStatus("Playing saved assets · empty parts stay silent"),countInSeconds*1000));
@@ -2860,6 +2886,9 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
 }) {
   const engine = useAudioEngine();
   const [playing, setPlaying] = useState(false);
+  const [paused,setPaused]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const pausedRef=useRef(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
   const selectedSection = project.sections.find(s => s.id === activeSectionId) ?? project.sections[0];
@@ -2883,12 +2912,21 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
     generation.current++;
     if (timer.current) clearInterval(timer.current);
     timer.current=null; engine.stopAll(); setPlaying(false); setProgress(0);
+    pausedRef.current=false;setPaused(false);publishPlayhead(null);
   }, [engine]);
   useEffect(() => {
     window.addEventListener("inspitivity-solo-preview",stop);
     return () => { window.removeEventListener("inspitivity-solo-preview",stop); stop(); };
   }, [stop, project.id, selectedSection?.id]);
   const start = async () => {
+    if(pausedRef.current){
+      setBusy(true);
+      const token=generation.current;
+      try {if(await engine.unlock() && token===generation.current){pausedRef.current=false;setPaused(false);setPlaying(true);}}
+      catch {setMessage("Audio could not resume. Try Play again.");}
+      finally {setBusy(false);}
+      return;
+    }
     stop();
     const token = generation.current;
     try {
@@ -2898,6 +2936,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
       setMessage(""); setPlaying(true);
       let cyclePlan=latest.current.plan, origin=engine.get().currentTime+.04, index=0;
       const schedule = () => {
+        if(pausedRef.current)return;
         const now=engine.get().currentTime;
         if (now > origin+cyclePlan.seconds) {
           origin += Math.max(1,Math.floor((now-origin)/Math.max(.1,cyclePlan.seconds)))*cyclePlan.seconds;
@@ -2927,9 +2966,17 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
           }
         }
         setProgress(Math.max(0,Math.min(1,(now-origin)/Math.max(.1,cyclePlan.seconds))));
+        publishPlayhead(Math.max(0,now-origin));
       };
       schedule(); timer.current=setInterval(schedule,25);
     } catch { setMessage("Audio could not start. Tap Play again."); stop(); }
+  };
+  const pause=async()=>{
+    setBusy(true);pausedRef.current=true;
+    const token=generation.current;
+    try {await engine.get().suspend();if(token===generation.current){setPaused(true);setPlaying(false);}}
+    catch {pausedRef.current=false;setMessage("Pause unavailable. Stop playback and try again.");}
+    finally {setBusy(false);}
   };
   const updateMix = (layer: SongLayer, settings: Partial<TrackMix>) => {
     stop();
@@ -2947,7 +2994,8 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
         {!selectedSection && <option value="">No sections yet</option>}
         {project.sections.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
       </select></label>
-      <PlayButton playing={playing} label="current section" disabled={!selectedSection} onClick={() => playing ? stop() : void start()} />
+      <PlayButton playing={playing} pausable label="current section" disabled={!selectedSection||busy} hint={paused?"Resume current section":undefined} onClick={() => playing ? void pause() : void start()} />
+      <button className="section-reset" aria-label="Stop and rewind current section" disabled={busy||(!playing&&!paused)} onClick={stop}>↤</button>
     </div>
     <progress aria-label="Playback position" max={1} value={progress} />
     <details className="section-mixer"><summary>Mix tracks</summary><div className="mixer-grid">
@@ -2961,7 +3009,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, chooseSection
   </section>;
 }
 
-function PlayButton({ playing, onClick, label, compact = false, className = "", disabled = false, hint }: {
+function PlayButton({ playing, onClick, label, compact = false, className = "", disabled = false, hint, pausable=false }: {
   playing: boolean;
   onClick: () => void;
   label: string;
@@ -2969,13 +3017,15 @@ function PlayButton({ playing, onClick, label, compact = false, className = "", 
   className?: string;
   disabled?: boolean;
   hint?: string;
+  pausable?: boolean;
 }) {
+  const action=playing?(pausable?"Pause":"Stop"):"Play";
   return <button type="button"
     className={`play-control ${playing ? "playing" : ""} ${compact ? "compact" : ""} ${className}`}
-    onClick={onClick} disabled={disabled} aria-label={`${playing ? "Stop" : "Play"} ${label}`}
-    aria-pressed={playing} title={hint ?? `${playing ? "Stop" : "Play"} ${label}`}>
-    <svg className="play-symbol" aria-hidden="true" viewBox="0 0 20 20" width="20" height="20" fill="currentColor">{playing ? <rect x="4" y="4" width="12" height="12" rx="1" /> : <path d="M5 3 L17 10 L5 17 Z" />}</svg>
-    {!compact && <span>{playing ? "Stop" : "Play"}</span>}
+    onClick={onClick} disabled={disabled} aria-label={`${action} ${label}`}
+    aria-pressed={playing} title={hint ?? `${action} ${label}`}>
+    <svg className="play-symbol" aria-hidden="true" viewBox="0 0 20 20" width="20" height="20" fill="currentColor">{playing ? pausable?<path d="M4 3h4v14H4zM12 3h4v14h-4z" />:<rect x="4" y="4" width="12" height="12" rx="1" /> : <path d="M5 3 L17 10 L5 17 Z" />}</svg>
+    {!compact && <span>{action}</span>}
   </button>;
 }
 
@@ -3211,6 +3261,10 @@ function ChordTool({
   };
   const totalBeats = chords.reduce((sum, chord) => sum + chord.beats, 0);
   const beatSeconds = beatDurationSeconds(project.bpm);
+  const [selectedChordId,setSelectedChordId]=useState<string|null>(null);
+  const selectedChord=chords.find(c=>c.id===selectedChordId)??chords[0];
+  const chordPosition=usePlaybackPosition(project.bpm,totalBeats);
+  const soundingChord=chordPosition===null?-1:activeChordIndex(chords.map(c=>c.beats),chordPosition);
   const play = useCallback(() => {
     chordNoteEvents(chords).forEach(note => engine.tone(note.pitch,note.start*beatSeconds,note.duration*beatSeconds,.045*note.velocity,voice));
     if (metronomeEnabled)
@@ -3419,14 +3473,15 @@ function ChordTool({
             <div><Select label="Strum rhythm" value={chordRhythm} options={CHORD_RHYTHMS} set={value=>{transport.stop();setPreviousChords(chords);setChordRhythm(value as ChordRhythm);setSeed(seed+1);setChords(rhythmizeChords(chords,seed+1,value as ChordRhythm,project.meter,section));}} />
             <button className="secondary-button" onClick={()=>{transport.stop();setPreviousChords(chords);setSeed(seed+1);setChords(rhythmizeChords(chords,seed+1,chordRhythm,project.meter,section));}}>↻ New rhythm · keep chords</button></div>
           </details>
-          {workspaceMode==="generate"?<div className="chord-overview" aria-label="Generated chord progression">
-            {chords.map((chord,index)=><button key={chord.id} onClick={()=>setWorkspaceMode("edit")} aria-label={`Edit chord ${index+1}: ${chord.name}`}>
+          <div className="chord-overview" aria-label="Generated chord progression">
+            {chords.map((chord,index)=><button key={chord.id} aria-pressed={workspaceMode==="edit"&&selectedChord?.id===chord.id} data-playing={soundingChord===index} onClick={()=>{setSelectedChordId(chord.id);setWorkspaceMode("edit");}} aria-label={`Edit chord ${index+1}: ${chord.name}`}>
               <span>{index+1}</span><b>{chord.name}</b><small>{chordRole(chord.name,root,mode)} · {chord.beats} beats</small>
               <span className="chord-rhythm-strip" aria-label={`${chord.attacks?.length??1} attacks; ${(chord.attacks?.[0]?.start??0)<0?"anticipated entry":(chord.attacks?.[0]?.start??0)>0?"offbeat entry":"on beat"}`}>{(chord.attacks??[{start:0}]).map((attack,i)=><i key={i} style={{left:`${Math.max(0,attack.start/chord.beats)*94}%`}} />)}</span>
             </button>)}
-          </div>:<>
-          <div className="chord-editor">
-            {chords.map((chord, index) => (
+          </div>
+          {workspaceMode==="edit"&&<>
+          <div className="chord-editor focused-chord-editor" aria-label="Selected chord inspector">
+            {chords.map((chord, index) => chord.id!==selectedChord?.id?null:(
               <article key={chord.id}>
                 <span className="chord-number">{index + 1}</span>
                 <label>
@@ -3491,16 +3546,17 @@ function ChordTool({
           </div>
           <button
             className="add-chord"
-            onClick={() =>
+            onClick={() => {
+              const id=uid();setSelectedChordId(id);
               setChords((items) => [
                 ...items,
                 {
-                  id: uid(),
+                  id,
                   name: generateChordProgression({root,mode,bars:1,complexity:"simple",opening:"tonic",seed})[0].name,
                   beats: defaultBeats,
                 },
-              ])
-            }
+              ]);
+            }}
           >
             ＋ Add chord
           </button>
@@ -3934,6 +3990,7 @@ function MelodyTool({
               onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} />
           </div>
           <div className="piano-roll">
+            <PlaybackCursor bpm={project.bpm} length={melodyBeats} inset={2} span={94} />
             <p className="roll-hint">
               Drag notes up/down for pitch. Drag the right edge to change
               duration.
@@ -4123,6 +4180,7 @@ function BassTool({
       <section className="result-panel bass-result">
         <div className="result-heading"><div><p className="eyebrow">Five-string electric bass</p><h2>{pattern} · {movement} · {bass.length} notes</h2></div><PlayButton playing={transport.mode !== "stopped"} label="bass line" onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} /></div>
         <div className="bass-roll" aria-label="Bass timing preview">
+          <PlaybackCursor bpm={project.bpm} length={length} />
           {bass.map((event,index)=><span key={`${event.start}-${index}`} className={event.accent ? "accent" : ""} style={{left:`${(event.start/length)*100}%`,width:`${Math.max(2,(event.duration/length)*100)}%`,bottom:`${18+Math.max(0,Math.min(32,event.pitch-23))*4.3}px`}} title={`${midiNoteName(event.pitch)} · beat ${event.start+1}`}>{midiNoteName(event.pitch)}</span>)}
         </div>
         <div className="bass-note-editor" aria-label="Edit bass notes">
@@ -4318,6 +4376,7 @@ function RiffTool({
               onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} />
           </div>
           <div className="riff-grid" aria-label="Generated synth pattern events">
+            <PlaybackCursor bpm={project.bpm} length={beats} span={94} />
             {riff.map((note, index) => (
               <span
                 key={index}
@@ -4556,8 +4615,12 @@ function DrumTool({
   const [visibleBar, setVisibleBar] = useState(0);
   const [editVelocity, setEditVelocity] = useState(.75);
   const phraseBeats = bars*beatsPerBar;
+  const drumPosition=usePlaybackPosition(project.bpm,phraseBeats);
+  const playingStep=drumPosition===null?-1:Math.floor(drumPosition*4);
+  const [selectedDrum,setSelectedDrum]=useState<DrumInstrument>("kick");
+  const [followPlayback,setFollowPlayback]=useState(true);
   const supportingAnchors = useMemo(() => sectionRhythmicAnchors(section,"drums"),[section]);
-  const activeBar = Math.min(visibleBar,bars-1);
+  const activeBar = Math.min(followPlayback&&drumPosition!==null?Math.floor(drumPosition/beatsPerBar):visibleBar,bars-1);
   const [seed, setSeed] = useDraftState("seed", () => freshSeed() + Math.max(0, sectionIndex));
   const [voice, setVoice] = useDraftState<DrumKit>("kit", (idea?.voice as DrumKit) || "current");
   const [savedLoop, setSavedLoop] = useDraftState<DrumHit[] | null>("savedLoop", () =>
@@ -4713,7 +4776,9 @@ function DrumTool({
             <PlayButton playing={transport.mode !== "stopped"} label="drum loop"
               onClick={() => transport.mode === "stopped" ? void transport.start(false) : transport.stop()} />
           </div>
-          <div className="phrase-bars" aria-label="Phrase bars">{Array.from({length:bars},(_,i)=><button key={i} aria-pressed={activeBar===i} onClick={()=>setVisibleBar(i)}>Bar {i+1}{i===bars-1 && bars>1 ? " · fill" : ""}</button>)}</div>
+          <div className="phrase-bars" aria-label="Phrase bars">{Array.from({length:bars},(_,i)=><button key={i} aria-pressed={activeBar===i} onClick={()=>{setFollowPlayback(false);setVisibleBar(i);}}>Bar {i+1}{i===bars-1 && bars>1 ? " · fill" : ""}</button>)}</div>
+          <label className="follow-playback"><input type="checkbox" checked={followPlayback} onChange={e=>setFollowPlayback(e.target.checked)} /> Follow playback</label>
+          {workspaceMode==="edit"&&<label className="drum-lane-picker">Drum lane<select value={selectedDrum} onChange={e=>setSelectedDrum(e.target.value as DrumInstrument)}>{DRUM_INSTRUMENTS.map(instrument=><option key={instrument} value={instrument}>{DRUM_LABELS[instrument]}</option>)}</select></label>}
           {workspaceMode==="edit"&&<><div className="drum-edit-tools"><span>Hit strength</span><Segment options={["ghost", "normal", "accent"]} value={editVelocity<.4?"ghost":editVelocity>.9?"accent":"normal"} set={value=>setEditVelocity(value==="ghost"?.3:value==="accent"?1:.75)} /></div>
           <p className="drum-audition-hint">Tap a step to add, change or remove a hit. Brighter steps play louder.</p></>}
           <div
@@ -4726,6 +4791,7 @@ function DrumTool({
               <div
                 className="drum-row"
                 role="row"
+                data-mobile-hidden={workspaceMode==="edit"&&selectedDrum!==instrument}
                 key={instrument}
                 style={{
                   gridTemplateColumns: `76px repeat(${steps.length}, minmax(24px, 1fr))`,
@@ -4736,6 +4802,7 @@ function DrumTool({
                   <button
                     key={step}
                     role="gridcell"
+                    data-playing={playingStep===step}
                     aria-selected={loop.some(hit=>hit.instrument===instrument&&hit.step===step)}
                     style={{ opacity:loop.find(hit=>hit.instrument===instrument&&hit.step===step) ? .35+.65*(loop.find(hit=>hit.instrument===instrument&&hit.step===step)?.velocity ?? 0) : 1 }}
                     className={

@@ -1,4 +1,4 @@
-# Inspitivity requirements audit — 12 September 2026
+# Inspitivity requirements audit — updated 13 September 2026
 
 ## Scope and evidence standard
 
@@ -46,9 +46,9 @@ Reviewed the visible conversation backlog, retrievable prior project context, cu
 
 ## Still partial, unverified or not implemented
 
-1. **Precise visual playback across every editor.** Arrangement/current-section progress exists; drum-step and individual chord/note playhead highlighting is not consistently driven by a shared audio clock.
-2. **True pause/resume.** Existing transport stops and resets; it is labeled Stop and shown in red. It must not be presented as resumable pause until that behavior exists.
-3. **More focused note editing.** Generate/Edit separation exists, but Edit currently renders every chord. A selected-chord inspector and a single drum-lane phone editor remain potential refinements, not completed features.
+1. **Visual playback: implemented for the primary editors.** Chord highlighting, drum-step highlighting with optional bar following, and melody/bass/pattern cursors consume audio-clock positions from solo and current-section playback. Arrangement elapsed time now uses the audio clock. Chord highlighting indicates the harmonic region, not each individual strum. Device latency and background-tab acceptance remain unverified.
+2. **True pause/resume: current-section player implemented.** Its Pause suspends the shared audio clock, retaining source/envelope positions; Play resumes. A separate Stop/rewind resets the section. Solo instrument and full-song transports still use Stop, not resumable pause. Cross-device browser audio acceptance remains outstanding.
+3. **Focused editing: implemented.** Chord editing shows one selected voicing while keeping the progression overview available. Adding a chord selects it. Phone drum editing exposes a single selectable lane; desktop/tablet retain the full grid. Real-device usability remains unverified.
 4. **Arrangement drag reordering / duration-proportional timeline.** Up/down reordering exists. Timeline tiles are not duration-proportional drag blocks.
 5. **Audio consistency and bass realism.** Defaults, gain staging, compressor and heuristic auto-balance exist. No measured perceptual-loudness normalization, audio golden-master tests or sampled five-string bass.
 6. **Cross-device acceptance.** Server ownership/sync is implemented and API-tested; a real two-device signed-in save/edit/conflict/recording round trip remains unverified. The local QA identity does not authenticate to production; its session warning is not evidence of a production outage.
@@ -57,6 +57,8 @@ Reviewed the visible conversation backlog, retrievable prior project context, cu
 9. **Full accessibility and physical-device acceptance.** Semantic palette contrast checks and responsive source contracts are not a full WCAG audit or a substitute for screen-reader, 200%-text and physical mobile testing.
 
 ## Verification performed
+
+13 September continuation: TypeScript and 120 automated tests passed, including musical-clock wrapping, held paused positions, chord boundaries, and wiring contracts for pause/reset and focused editors. These are unit/source checks, not browser audio acceptance tests. No new real-device or authenticated sync acceptance was performed. Production build is required before publishing this continuation.
 
 - TypeScript check and the complete unit/API/source-contract suite.
 - Semantic foreground/background contrast: at least 4.5:1 for tested normal-text pairs and 3:1 for tested meaningful control boundaries in both themes. Prevent new fixed component palettes and self-referencing color tokens.
