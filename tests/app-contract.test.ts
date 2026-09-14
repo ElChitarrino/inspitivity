@@ -41,8 +41,8 @@ test("shared play controls are larger, green at rest, and red while playing", ()
 });
 
 test("arrangement playback exposes timing, looping, count-in, and automatic balance", () => {
-  assert.match(source, /className="arrangement-playhead"/);
-  assert.match(source, /Bar \{markerIndex\+1\} · Beat \{beatInBar\}/);
+  assert.match(source, /aria-label="Playback position"/);
+  assert.match(source, /Bar \$\{markerIndex\+1\} · Beat/);
   assert.match(source, /> Count-in</);
   assert.match(source, /↻ Loop/);
   assert.match(source, /automaticSectionMix/);
@@ -125,14 +125,16 @@ test("home omits the duplicate creative-tools directory", () => {
 
 test("navigation groups related work and becomes an expandable mobile drawer", () => {
   assert.match(source, /label: "Workspace"/);
-  assert.match(source, /label: "Create parts"/);
+  assert.match(source, /label: "Preferences"/);
+  assert.match(source, /aria-label="Capture"/);
+  assert.doesNotMatch(source, /label: "Create parts"/);
   assert.match(source, /className="studio-nav-toggle"/);
   assert.match(source, /studio-nav-backdrop/);
   assert.match(theme, /\.studio-nav\.is-collapsed/);
   assert.match(theme, /\.studio-nav\.is-open\{transform:translateX\(0\)\}/);
   assert.match(source, /Collapse sidebar/);
   assert.match(theme, /@media\(min-width:701px\) and \(max-width:1199px\)[\s\S]*\.studio-nav-collapse\{display:none\}/);
-  assert.match(source, /aria-label="Project tools"/);
+  assert.match(source, /aria-label="Switch part editor"/);
 });
 
 test("project action dock uses clear icon-only recording and deletion actions", () => {
@@ -198,12 +200,12 @@ test("native select values and options remain readable in both dark themes", () 
 });
 
 test("mobile playback explicitly unlocks and masters the Web Audio graph", () => {
-  assert.match(source, /const unlock = async \(\) =>/);
+  assert.match(source, /const unlock = async \(kit\?:DrumKit\) =>/);
   assert.match(source, /context\.state === "running" \? Promise\.resolve\(\) : context\.resume\(\)/);
   assert.match(source, /sharedAudioGraph/);
   assert.match(source, /sharedNativeAudioUnlock\.play/);
   assert.match(source, /const diagnostics = \(\) =>/);
-  assert.match(source, /Playing saved assets/);
+  assert.match(source, /Preparing audio/);
   assert.match(source, /createDynamicsCompressor/);
   assert.match(source, /createConvolver/);
   assert.match(source, /engine\.unlock/);
@@ -311,20 +313,22 @@ test("settings expose both persistent app themes", async () => {
   assert.match(layout, /inspitivity-theme/);
 });
 
-test("asset tiles expose playback and deletion, with unavailable audio disabled", () => {
-  assert.match(source, /<PlayButton compact className="asset-play"/);
+test("part actions retain audition and deletion without competing inline buttons", () => {
+  assert.match(source, /className="part-actions"/);
+  assert.match(source, /Audition saved part/);
   assert.match(source, /disabled=\{!playable\}/);
-  assert.match(source, /className="asset-trash"/);
+  assert.match(source, /Remove part/);
   assert.match(source, /clearAssetDraft\(sectionId,removed,true\)/);
 });
 
 test("song and section audition use the saved musical plan without generating missing parts", () => {
-  const player=source.slice(source.indexOf("const playSavedSections"),source.indexOf("const playIdea"));
+  const player=source.slice(source.indexOf("function SharedSectionPlayer"),source.indexOf("function PlayButton"));
   assert.match(player,/buildSongPlan/);
   assert.doesNotMatch(player,/generateChordProgression|generateMelody|generateDrumLoop/);
-  assert.match(source,/playSavedSections\(project.sections,0\)/);
-  assert.match(source,/playSavedSections\(\[section\],index\)/);
-  assert.match(source,/setActiveSectionIndex\(sectionIndex\)/);
+  assert.match(player,/playbackProject/);
+  assert.match(player,/value="song"/);
+  assert.match(player,/value="section"/);
+  assert.match(player,/inspitivity-song-position/);
 });
 
 test("the metronome supports 9/8 projects", () => {
@@ -339,10 +343,12 @@ test("the app gives music tools distinct accessible visual identities", () => {
   assert.match(source, /title="Bass line"/);
 });
 
-test("both generators expose accessible play and loop controls", () => {
-  assert.match(source, /Loop progression/);
-  assert.match(source, /Loop melody/);
-  assert.match(source, /aria-pressed=\{transport\.mode === "loop"\}/);
+test("all editors share one accessible transport and its loop setting", () => {
+  assert.match(source, /aria-label="Playback scope"/);
+  assert.match(source, /checked=\{loop\}/);
+  assert.match(source, /value="part">This part/);
+  const editors=source.slice(source.indexOf("function ChordTool"),source.indexOf("function Metronome"));
+  assert.doesNotMatch(editors, /<PlayButton/);
 });
 
 test("songwriting tools offer varied synth voices and MIDI export", () => {
@@ -367,7 +373,7 @@ test("project tempo and key are shared by every musical tool", () => {
 
 test("chords, melody, drums, and patterns can add a synchronized project-tempo click while listening", () => {
   assert.match(source, /function scheduleClickTrack/);
-  assert.match(source, /Enable click during listening/);
+  assert.match(source, /checked=\{click\}/);
   assert.match(
     source,
     /scheduleClickTrack\(engine, totalBeats, beatSeconds, project\.meter\)/,
@@ -442,7 +448,7 @@ test("drum loops are section-aware, editable, and support the expanded kit", () 
   assert.match(source, /inferGrooveContext/);
   assert.match(source, /openSectionTool\(section.id,type\)/);
   assert.match(source, /decodeDrumIdea/);
-  assert.match(source, /Loop drum loop/);
+  assert.match(source, /options=\{DRUM_KITS\}/);
 });
 
 test("chords, melody, and rhythm ask for a project and section unless opened inside one", () => {

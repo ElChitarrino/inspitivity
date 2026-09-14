@@ -9,7 +9,7 @@ export function VariationControls<T>({ value, apply, vary, percussion=false }: {
   const [a,setA]=useDraftState<T|null>("compareA",null);
   const [b,setB]=useDraftState<T|null>("compareB",null);
   const [side,setSide]=useDraftState("compareSide","A");
-  return <div className="variation-controls" aria-label="Controlled variations">
+  return <details className="variation-controls" aria-label="Controlled variations"><summary>Variations & comparison</summary>
     <div className="variation-heading"><b>Keep what works</b><label><input type="checkbox" checked={rhythm} onChange={e=>setRhythm(e.target.checked)} />Lock rhythm</label>
       {!percussion && <label><input type="checkbox" checked={notes} onChange={e=>setNotes(e.target.checked)} />Lock notes</label>}
     </div>
@@ -21,5 +21,5 @@ export function VariationControls<T>({ value, apply, vary, percussion=false }: {
       <button disabled={b===null} aria-pressed={side==="B"} onClick={()=>{if(b!==null){apply(b);setSide("B");}}}>Compare B</button>
     </div>
     <small>{rhythm ? "Timing is locked. Unlock rhythm for fewer or extra notes." : "Rhythm can change; the phrase keeps its musical shape."}</small>
-  </div>;
+  </details>;
 }

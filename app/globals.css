@@ -3,6 +3,7 @@
 @import "./studio.css" layer(studio);
 @import "./palette.css";
 @import "./theme.css";
+@import "./workspace.css";
 @layer legacy, studio;
 @layer legacy {
 

@@ -1,0 +1,72 @@
+/* Songwriting workspace hierarchy. Structural rules shared by both themes. */
+.part-switcher { display:flex; align-items:center; gap:12px; margin:0 0 12px; color:var(--muted); font-size:13px; }
+.part-switcher select { min-height:44px; min-width:160px; max-width:100%; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 12px; }
+.project-settings-disclosure { margin:0 0 18px; }
+:is(.project-settings-disclosure,.section-settings,.tension-details,.variation-controls)>summary { min-height:44px; display:flex; align-items:center; gap:12px; cursor:pointer; color:var(--muted); font-size:13px; list-style:none; }
+:is(.project-settings-disclosure,.section-settings,.tension-details,.variation-controls)>summary::after { content:"＋"; margin-left:auto; }
+:is(.project-settings-disclosure,.section-settings,.tension-details,.variation-controls)[open]>summary::after { content:"−"; }
+.project-settings-disclosure>summary span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.project-settings-disclosure .project-context { margin:4px 0 0; }
+.project-settings-disclosure .project-context-title { display:none; }
+.section-settings .asset-section-meta { padding:8px 0 16px; }
+.section-length-summary { color:var(--muted); font-size:13px; text-align:right; }
+.section-assets { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.app-shell .asset-tile { grid-template-columns:minmax(0,1fr) 44px; min-width:0; padding:12px 14px; border-radius:10px; }
+.asset-tile.is-empty { border-style:dashed; }
+.asset-open { min-height:52px; }
+.asset-open>span:last-child { min-width:0; overflow-wrap:anywhere; }
+.asset-open>span:first-child { width:34px; height:34px; border-radius:8px; display:grid; place-items:center; background:var(--surface-hover); color:var(--ink); font-size:21px; }
+.is-empty .asset-open>span:first-child { color:var(--muted); background:transparent; }
+.part-actions { position:relative; }
+.part-actions>summary { display:grid; place-items:center; width:44px; min-height:44px; list-style:none; cursor:pointer; color:var(--muted); border-radius:8px; }
+.part-actions>summary:hover { background:var(--surface-hover); color:var(--ink); }
+.part-actions>div { position:absolute; z-index:30; right:0; top:calc(100% + 4px); width:210px; padding:8px; display:grid; gap:4px; background:var(--surface); border:1px solid var(--control-line); border-radius:10px; box-shadow:0 12px 32px var(--shadow); }
+.part-actions button { display:flex; align-items:center; gap:8px; min-height:44px; padding:8px 10px; text-align:left; background:var(--surface2); border:0; border-radius:6px; color:var(--ink); }
+.app-shell .section-order-controls { align-items:center; }
+.app-shell .section-order-controls>button:first-child { padding:8px 12px; margin-right:auto; }
+.app-shell .project-actions { justify-content:flex-end; gap:8px; margin-top:16px; padding:0; border:0; background:none; box-shadow:none; }
+.app-shell .project-actions button { flex:none; }
+.variation-controls:not([open]) { padding:0 12px; margin:0 0 16px; }
+.variation-controls[open]>summary { border-bottom:1px solid var(--line); margin-bottom:12px; }
+.tension-details { margin:16px 0; }
+.instrument-workspace .result-heading { margin-bottom:18px; }
+.instrument-workspace .result-heading h2 { font-size:clamp(19px,2vw,24px); }
+.instrument-workspace.is-edit .bass-note-editor { max-height:60dvh; overflow:auto; }
+.instrument-workspace .control-note { font-size:12px; line-height:1.6; }
+html[data-theme] .section-player { grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:0 8px; }
+.section-player .section-player-heading { gap:8px; }
+.section-player .section-player-heading .transport-scope { flex:0 0 118px; }
+.section-player .section-player-caption { max-width:132px; }
+.section-player .section-player-caption .eyebrow { font-size:11px; }
+.section-player .section-reset { min-width:44px; min-height:44px; }
+.section-player .transport-preferences { grid-column:3; grid-row:1; }
+.transport-preferences>summary { display:grid; place-items:center; list-style:none; min-height:44px; width:44px; cursor:pointer; color:var(--ink); border:1px solid var(--control-line); border-radius:8px; }
+.transport-preferences>div { position:absolute; right:0; bottom:calc(100% + 10px); width:min(300px,100%); max-height:55dvh; overflow:auto; display:grid; gap:8px; padding:16px; border:1px solid var(--control-line); border-radius:12px; background:var(--surface); box-shadow:0 10px 40px var(--shadow); }
+.transport-preferences label,.transport-preferences button { min-height:44px; display:flex; align-items:center; gap:10px; padding:8px; font-size:14px; }
+.transport-preferences input { width:18px; height:18px; accent-color:var(--mint); }
+.transport-preferences b { color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums; }
+.section-player .mixer-grid { bottom:calc(100% + 10px); }
+@media(max-width:1100px) {
+  .app-shell:has(.section-player) { --player-clearance:152px; }
+  html[data-theme] .section-player { grid-template-columns:minmax(0,1fr) 44px auto 44px; padding:10px; gap:8px; }
+  .section-player .section-player-heading { display:contents; }
+  .section-player .section-player-heading>.section-player-caption { display:none; }
+  .section-player .section-player-heading>.transport-scope { grid-column:1/3; grid-row:1; }
+  .section-player .section-player-heading>label:not(.transport-scope) { grid-column:3/5; grid-row:1; }
+  .section-player .section-player-heading>.play-control { grid-column:1; grid-row:2; width:100%; }
+  .section-player .section-reset { grid-column:2; grid-row:2; }
+  .section-player .section-mixer { grid-column:3; grid-row:2; margin:0; }
+  .section-player .transport-preferences { grid-column:4; grid-row:2; }
+  .section-player>progress { grid-row:3; margin:0; }
+  .section-player>p { margin:0; }
+}
+@media(max-width:700px) {
+  .section-assets { grid-template-columns:minmax(0,1fr); }
+  .part-switcher { margin:0 0 8px; }
+  .project-settings-disclosure>summary { flex-wrap:wrap; gap:4px 8px; }
+  .project-settings-disclosure>summary span { font-size:12px; }
+  .section-length-summary { max-width:120px; }
+  .arrangement-timeline .asset-section { padding:14px; gap:12px; }
+  .app-shell .asset-tile { padding:8px 10px; }
+  .instrument-workspace.is-edit .bass-note-editor { max-height:none; }
+}

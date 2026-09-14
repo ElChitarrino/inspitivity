@@ -5,6 +5,13 @@ import { buildSongPlan } from "../packages/workspace/music.js";
 import type { Project } from "../packages/workspace/index.js";
 
 const chords = ["Am7","Fmaj7","Cmaj7","G7"].map(name=>({name,beats:4,pitches:[48,52,55,59]}));
+test("named chord rhythms have explicit, seed-independent attack positions",()=>{
+  const expected={sustain:[0],quarters:[0,1,2,3],eighths:[0,.5,1,1.5,2,2.5,3,3.5],offbeat:[.5,1.5,2.5,3.5],backbeat:[1,3],tresillo:[0,1.5,3]};
+  for(const [style,starts] of Object.entries(expected))for(const seed of [1,19,721]){
+    const hits=generateChordRhythm(chords,{seed,style:style as typeof CHORD_RHYTHMS[number]});
+    assert.ok(hits.every(chord=>JSON.stringify(chord.map(h=>h.start))===JSON.stringify(starts)));
+  }
+});
 test("rhythm generation is repeatable, varied across seeds, and not locked to chord downbeats",()=>{
   assert.deepEqual(generateChordRhythm(chords,{seed:11}),generateChordRhythm(chords,{seed:11}));
   const results=Array.from({length:50},(_,seed)=>generateChordRhythm(chords,{seed}));

@@ -2,6 +2,9 @@ export type Root =
   "C" | "Db" | "D" | "Eb" | "E" | "F" | "Gb" | "G" | "Ab" | "A" | "Bb" | "B";
 export const SCALE_MODES = ["major", "minor", "dorian", "phrygian", "lydian", "mixolydian", "locrian", "harmonic minor", "melodic minor", "major pentatonic", "minor pentatonic", "ionian", "aeolian"] as const;
 export type Mode = typeof SCALE_MODES[number];
+// Keep legacy values valid in saved projects, but show each scale only once.
+export const SELECTABLE_MODES = SCALE_MODES.filter(mode=>mode!=="major"&&mode!=="minor");
+export const canonicalMode = (mode: string) => mode === "major" ? "ionian" : mode === "minor" ? "aeolian" : mode;
 export const MODE_LABELS: Record<Mode, string> = Object.fromEntries(SCALE_MODES.map(mode => [mode, mode === "ionian" ? "Ionian · major" : mode === "aeolian" ? "Aeolian · natural minor" : mode === "melodic minor" ? "Melodic minor · ascending / jazz" : mode])) as Record<Mode, string>;
 export type Complexity = "simple" | "medium" | "advanced";
 export type MelodyMood = "calm" | "bright" | "melancholic" | "dark";

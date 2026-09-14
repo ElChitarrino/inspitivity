@@ -1,7 +1,10 @@
 import { decodeVoicing, seededRandom } from "./index.js";
 
-export const CHORD_RHYTHMS = ["adaptive", "sustain", "offbeat", "syncopated", "driving", "sparse"] as const;
+export const CHORD_RHYTHMS = ["sustain", "quarters", "eighths", "offbeat", "backbeat", "tresillo", "adaptive", "syncopated", "driving", "sparse"] as const;
 export type ChordRhythm = typeof CHORD_RHYTHMS[number];
+export const CHORD_RHYTHM_LABELS: Record<ChordRhythm,string> = {
+  sustain:"On the one · one hit per chord",quarters:"Quarter-note pulse",eighths:"Eighth-note strum",offbeat:"Offbeat upstrokes",backbeat:"Backbeat · 2 and 4",tresillo:"3–3–2 groove",adaptive:"Follow the section",syncopated:"Syncopated variation",driving:"Driving variation",sparse:"Sparse variation",
+};
 export type ChordAttack = { start: number; duration: number; velocity: number; up: boolean };
 export type RhythmicChord = { name: string; beats: number; pitches?: number[]; attacks?: ChordAttack[] };
 
@@ -14,6 +17,17 @@ export function generateChordRhythm(chords: Pick<RhythmicChord, "beats">[], {
   return chords.map((chord, index) => {
     const beats = Math.max(.25, chord.beats);
     if (style === "sustain") { cursor += beats; return [{ start: 0, duration: beats * .9, velocity: .65, up: false }]; }
+    if (["quarters","eighths","offbeat","backbeat","tresillo"].includes(style)) {
+      const starts:number[]=[];
+      for(let at=0;at<beats;at+=.25){
+        const position=(cursor+at)%bar;
+        const take=style==="quarters"?at%1===0:style==="eighths"?at%.5===0:style==="offbeat"?position%1===.5:style==="backbeat"?position%2===1:[0,1.5,3].includes(position%4);
+        if(take)starts.push(at);
+      }
+      if(!starts.length)starts.push(0);
+      cursor+=beats;
+      return starts.map((start,i)=>({start,duration:Math.max(.1,Math.min((starts[i+1]??beats)-start-.04,style==="eighths"?.38:.7)),velocity:start%1===0?.72:.58,up:start%1!==0}));
+    }
     const starts: number[] = [];
     const step = style === "driving" ? .5 : .25;
     // Anticipate a new chord, or leave its downbeat empty. Never force beat one.
