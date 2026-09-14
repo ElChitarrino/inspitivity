@@ -1,5 +1,10 @@
 /* Songwriting workspace hierarchy. Structural rules shared by both themes. */
+.project-screen .studio-workspace { display:flex; flex-direction:column; }
+.project-screen .topbar { order:-2; }
+.project-screen .sync-status { margin-bottom:8px; }
 .part-switcher { display:flex; align-items:center; gap:12px; margin:0 0 12px; color:var(--muted); font-size:13px; }
+.draft-toolbar { display:grid; grid-template-columns:minmax(0,1fr) auto auto; }
+.draft-toolbar span { min-width:0; }
 .part-switcher select { min-height:44px; min-width:160px; max-width:100%; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 12px; }
 .project-settings-disclosure { margin:0 0 18px; }
 :is(.project-settings-disclosure,.section-settings,.tension-details,.variation-controls)>summary { min-height:44px; display:flex; align-items:center; gap:12px; cursor:pointer; color:var(--muted); font-size:13px; list-style:none; }
@@ -61,6 +66,9 @@ html[data-theme] .section-player { grid-template-columns:minmax(0,1fr) auto auto
   .section-player>p { margin:0; }
 }
 @media(max-width:700px) {
+  .project-screen .studio-workspace,.inside-project .studio-workspace { padding-top:0; }
+  .project-screen .topbar,.inside-project .topbar { margin-bottom:12px; }
+  .project-screen .project-settings-disclosure { margin-bottom:8px; }
   .section-assets { grid-template-columns:minmax(0,1fr); }
   .part-switcher { margin:0 0 8px; }
   .project-settings-disclosure>summary { flex-wrap:wrap; gap:4px 8px; }

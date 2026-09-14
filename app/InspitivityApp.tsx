@@ -1811,7 +1811,7 @@ export default function InspitivityApp({ account, signOutPath }: {
         <div className="account-sync"><b>{account.displayName}</b><span role="status">{cloud.status}</span></div>
         <div className="account-actions"><button onClick={() => void cloud.sync()}>Sync now</button><a href={signOutPath} target="_top">Sign out</a></div>
       </div>
-      {selected && ["project", "drums", "chords", "melody", "bass", "riff", "transition", "metronome"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} activeTool={screen} go={navigate} chooseSection={(id) => { setDraftSectionId(id); setEditingIdea(null); }} updateProject={updateSelected} />}
+      {selected && ["project", "drums", "chords", "melody", "bass", "riff", "transition", "metronome"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} activeTool={screen} go={navigate} chooseSection={(id) => { savedDraftId.current=null; setDraftSectionId(id); setEditingIdea(selected.sections.find(section=>section.id===id)?.ideas.find(idea=>idea.type===screen)??null); }} updateProject={updateSelected} />}
       <DraftSession key={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} id={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} publish={publishPreview}>
       {screen === "home" && (
         <Home
@@ -2651,10 +2651,6 @@ function ProjectView({
         onBack={back}
       />
       <ProjectContext project={project} update={update}/>
-      <details className={`arrangement-check ${arrangementCheck.ready?"is-ready":""}`}>
-        <summary aria-label="Arrangement check"><span>Song check</span><b>{arrangementCheck.ready?"Ready":"Next moves"}</b></summary>
-        {arrangementCheck.ready ? <p>Repetition, contrast and the core musical layers are covered.</p> : <div className="arrangement-insights">{arrangementCheck.insights.map(insight=><article key={insight.id}><div><b>{insight.title}</b><p>{insight.detail}</p></div><button onClick={()=>applyArrangementInsight(insight)}>{insight.action==="create_return"?"Create return":insight.action==="shape_energy"?"Shape energy":insight.action==="add_foundation"?`Add ${insight.tool}`:"Add section"}</button></article>)}</div>}
-      </details>
       {undoRemoval&&<div className="undo-removal" role="status"><span>Removed {undoRemoval.label}</span><button onClick={restoreRemoval}>Undo</button><button aria-label="Dismiss undo" onClick={()=>setUndoRemoval(null)}>×</button></div>}
       <SectionTitle
         eyebrow=""
@@ -2809,6 +2805,10 @@ function ProjectView({
           </article>
         )})}
       </div>
+      <details className={`arrangement-check ${arrangementCheck.ready?"is-ready":""}`}>
+        <summary aria-label="Arrangement check"><span>Song check</span><b>{arrangementCheck.ready?"Ready":"Next moves"}</b></summary>
+        {arrangementCheck.ready ? <p>Repetition, contrast and the core musical layers are covered.</p> : <div className="arrangement-insights">{arrangementCheck.insights.map(insight=><article key={insight.id}><div><b>{insight.title}</b><p>{insight.detail}</p></div><button onClick={()=>applyArrangementInsight(insight)}>{insight.action==="create_return"?"Create return":insight.action==="shape_energy"?"Shape energy":insight.action==="add_foundation"?`Add ${insight.tool}`:"Add section"}</button></article>)}</div>}
+      </details>
       <div className="project-actions">
         <button className="capture-action icon-action" aria-label="Record idea" title="Record idea" onClick={record}>●</button>
         <button className="share-action icon-action" aria-label="Share project" title="Share project" onClick={shareProject}><ShareIcon /></button>
@@ -3058,8 +3058,8 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
       <button className="section-reset" aria-label="Stop and rewind current section" disabled={busy||(!playing&&!paused)} onClick={stop}>↤</button>
     </div>
     <progress aria-label="Playback position" max={1} value={progress} />
-    <details className="transport-preferences"><summary aria-label="Playback options">•••</summary><div><b>{busy?"Preparing audio…":position}</b><label><input type="checkbox" checked={loop} onChange={e=>setLoop(e.target.checked)}/> ↻ Loop</label><label><input type="checkbox" checked={countIn} onChange={e=>setCountIn(e.target.checked)}/> Count-in</label><label><input type="checkbox" checked={click} onChange={e=>setClick(e.target.checked)}/> Click</label><button onClick={()=>{stop();go("metronome");}}>Open metronome</button><button onClick={()=>{stop();updateProject(p=>({...p,sections:p.sections.map(s=>({...s,mix:automaticSectionMix(s,p)}))}));}}>Auto balance all tracks</button></div></details>
-    <details className="section-mixer"><summary>Mix tracks</summary><div className="mixer-grid">
+    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="transport-preferences"><summary aria-label="Playback options">•••</summary><div><b>{busy?"Preparing audio…":position}</b><label><input type="checkbox" checked={loop} onChange={e=>setLoop(e.target.checked)}/> ↻ Loop</label><label><input type="checkbox" checked={countIn} onChange={e=>setCountIn(e.target.checked)}/> Count-in</label><label><input type="checkbox" checked={click} onChange={e=>setClick(e.target.checked)}/> Click</label><button onClick={()=>{stop();go("metronome");}}>Open metronome</button><button onClick={()=>{stop();updateProject(p=>({...p,sections:p.sections.map(s=>({...s,mix:automaticSectionMix(s,p)}))}));}}>Auto balance all tracks</button></div></details>
+    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="section-mixer"><summary>Mix tracks</summary><div className="mixer-grid">
       {LAYER_LABELS.map(([layer,label])=><div className="mixer-channel" key={layer}><b>{label}</b>
         <button aria-label={`Mute ${label}`} aria-pressed={mix[layer].muted} onClick={()=>updateMix(layer,{muted:!mix[layer].muted})}>Mute</button>
         <button aria-label={`Solo ${label}`} aria-pressed={mix[layer].solo} onClick={()=>updateMix(layer,{solo:!mix[layer].solo})}>Solo</button>
@@ -3215,7 +3215,7 @@ function EditorModeTabs({label,value,set}:{label:string;value:"generate"|"edit";
   return <div className="instrument-mode-tabs" role="tablist" aria-label={label}>{(["generate","edit"] as const).map(mode=><button role="tab" key={mode} aria-selected={value===mode} onClick={()=>set(mode)}>{mode==="generate"?"Generate":"Edit"}</button>)}</div>;
 }
 function GeneratorSettings({ children, className="" }: { children: React.ReactNode; className?: string }) {
-  const [open,setOpen]=useState(true);
+  const [open,setOpen]=useState(false);
   useEffect(()=>{const media=window.matchMedia("(max-width:700px)"); const update=()=>setOpen(!media.matches); update(); media.addEventListener("change",update); return ()=>media.removeEventListener("change",update);},[]);
   return <details className={`control-panel ${className}`} open={open} onToggle={event=>setOpen(event.currentTarget.open)}><summary>Generation settings <span>{open ? "−" : "+"}</span></summary><div className="generator-settings-body">{children}</div></details>;
 }
