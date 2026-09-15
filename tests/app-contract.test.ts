@@ -9,6 +9,14 @@ const source = await readFile(
 );
 const theme = await readFile(resolve(process.cwd(), "app/theme.css"), "utf8");
 
+test("recording cleanup and save recovery remain wired", () => {
+  assert.match(source, /media\.onstop = null/);
+  assert.match(source, /media\.stream\.getTracks\(\)\.forEach\(track => track\.stop\(\)\)/);
+  assert.match(source, /if \(!mounted\.current\) \{ stream\.getTracks/);
+  assert.match(source, /Retry saving recording/);
+  assert.match(source, /if \(mounted\.current\) void saveBlob\(blob\)/);
+});
+
 test("the product surface retains the core songwriting workflows", () => {
   for (const feature of [
     "Projects",

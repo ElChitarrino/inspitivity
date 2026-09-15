@@ -33,6 +33,7 @@ import {
 import { createMidiFile, type MidiNoteEvent } from "../packages/midi";
 import { playbackBeat, activeChordIndex } from "../packages/sequencing/playhead";
 import { scheduleWindow } from "../packages/sequencing/schedule-window";
+import { AudioQueue } from "../packages/sequencing/audio-queue";
 import { reorderSection, timelineDuration } from "../packages/workspace/arrangement-order";
 import { playbackProject } from "../packages/workspace/playback";
 import { bassHarmonics } from "../packages/sequencing/bass-timbre";
@@ -972,6 +973,8 @@ function silentWavUrl() {
 function useAudioEngine() {
   return useMemo(() => {
     const sources = new Set<AudioScheduledSourceNode>();
+    const pendingAudio = new AudioQueue();
+    let pendingTimer: ReturnType<typeof setInterval> | null = null;
     const noiseSamples = new Map<string, AudioBuffer>();
     const driveCurves = new Map<number, Float32Array<ArrayBuffer>>();
     let bassWave: PeriodicWave | null=null;
@@ -1359,6 +1362,9 @@ function useAudioEngine() {
       };
     };
     const stopAll = () => {
+      pendingAudio.clear();
+      if (pendingTimer !== null) clearInterval(pendingTimer);
+      pendingTimer = null;
       sources.forEach((source) => {
         try {
           source.stop();
@@ -1368,7 +1374,21 @@ function useAudioEngine() {
       });
       sources.clear();
     };
-    return { tone, drum, get, unlock, diagnostics, stopAll };
+    const enqueue = (delay: number, emit: (remaining: number) => void) => {
+      if (!Number.isFinite(delay)) return;
+      if (delay <= .2) { emit(Math.max(0, delay)); return; }
+      pendingAudio.add(getGraph().context.currentTime + delay, emit);
+      if (pendingTimer === null) pendingTimer = setInterval(() => {
+        if (getGraph().context.state === "running") pendingAudio.flush(getGraph().context.currentTime);
+        if (!pendingAudio.size && pendingTimer !== null) {
+          clearInterval(pendingTimer);
+          pendingTimer = null;
+        }
+      }, 25);
+    };
+    const queuedTone: typeof tone = (pitch, start = 0, ...rest) => enqueue(start, delay => tone(pitch, delay, ...rest));
+    const queuedDrum: typeof drum = (instrument, start = 0, ...rest) => enqueue(start, delay => drum(instrument, delay, ...rest));
+    return { tone: queuedTone, drum: queuedDrum, get, unlock, diagnostics, stopAll };
   }, []);
 }
 
@@ -5540,50 +5560,99 @@ function RecorderModal({
   const [elapsed, setElapsed] = useState(0);
   const [sectionId, setSectionId] = useState(project.sections[0]?.id ?? "");
   const [name, setName] = useState("Voice idea");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [retryBlob, setRetryBlob] = useState<Blob | null>(null);
+  const mounted = useRef(true);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const clock = useRef<number | null>(null);
-  const start = async () => {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (clock.current !== null) clearInterval(clock.current);
+      const media = recorder.current;
+      if (media) {
+        media.onstop = null;
+        media.ondataavailable = null;
+        media.onerror = null;
+        if (media.state !== "inactive") media.stop();
+        media.stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+  const saveBlob = async (blob: Blob) => {
+    setBusy(true);
+    setError("");
+    setRetryBlob(blob);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!blob.size) throw new Error("empty recording");
+      const id = uid();
+      await saveRecording(id, blob);
+      if (!mounted.current) return;
+      attach(sectionId, {
+        id: uid(), type: "audio", name,
+        detail: `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")} · recorded locally`,
+        recordingId: id,
+      });
+      close();
+    } catch {
+      if (mounted.current) setError(blob.size ? "Could not save the recording. Keep this window open and retry." : "No audio was captured. Start a new recording.");
+      if (!blob.size) setRetryBlob(null);
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  };
+  const start = async () => {
+    if (busy || !sectionId) return;
+    setBusy(true);
+    setError("");
+    let stream: MediaStream | null = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!mounted.current) { stream.getTracks().forEach(track => track.stop()); return; }
       const media = new MediaRecorder(stream);
       recorder.current = media;
       chunks.current = [];
       media.ondataavailable = (e) => chunks.current.push(e.data);
+      media.onerror = () => {
+        media.onstop = null;
+        media.stream.getTracks().forEach(track => track.stop());
+        if (clock.current !== null) clearInterval(clock.current);
+        setRecording(false);
+        setError("Recording was interrupted. Start a new recording.");
+      };
       media.start();
       setElapsed(0);
       setRecording(true);
       clock.current = window.setInterval(() => setElapsed((t) => t + 1), 1000);
     } catch {
-      alert("Microphone access is needed to record an idea.");
+      stream?.getTracks().forEach(track => track.stop());
+      if (mounted.current) setError("Could not start recording. Check microphone permission and browser support.");
+    } finally {
+      if (mounted.current) setBusy(false);
     }
   };
   const stop = () => {
-    if (!recorder.current) return;
-    recorder.current.onstop = async () => {
+    const media = recorder.current;
+    if (!media || media.state === "inactive") return;
+    setBusy(true);
+    media.onstop = () => {
+      media.stream.getTracks().forEach(track => track.stop());
       const blob = new Blob(chunks.current, {
-        type: recorder.current?.mimeType || "audio/webm",
+        type: media.mimeType || "audio/webm",
       });
-      const id = uid();
-      await saveRecording(id, blob);
-      recorder.current?.stream.getTracks().forEach((t) => t.stop());
-      attach(sectionId, {
-        id: uid(),
-        type: "audio",
-        name,
-        detail: `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")} · recorded locally`,
-        recordingId: id,
-      });
-      close();
+      if (mounted.current) void saveBlob(blob);
     };
-    recorder.current.stop();
+    media.stop();
     if (clock.current) clearInterval(clock.current);
     setRecording(false);
   };
   return (
     <div className="modal-layer">
       <div className="modal recorder-modal">
-        <button className="modal-close" onClick={close}>
+        <button className="modal-close" aria-label="Close recorder and discard unsaved recording" disabled={busy} onClick={close}>
           ×
         </button>
         <p className="eyebrow coral-text">Quick record</p>
@@ -5610,10 +5679,12 @@ function RecorderModal({
         </p>
         <button
           className={`record-button ${recording ? "active" : ""}`}
-          onClick={recording ? stop : start}
+          disabled={busy || !sectionId}
+          onClick={retryBlob ? () => void saveBlob(retryBlob) : recording ? stop : start}
         >
-          {recording ? "■ Stop & save" : "● Start recording"}
+          {busy ? "Please wait…" : retryBlob ? "Retry saving recording" : recording ? "■ Stop & save" : "● Start recording"}
         </button>
+        {error && <p role="alert">{error}</p>}
       </div>
     </div>
   );

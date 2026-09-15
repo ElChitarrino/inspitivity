@@ -11,4 +11,6 @@ Changes:
 
 Validation: 122 unit/source-contract tests and TypeScript checks passed, including a 30,000-event, five-layer scheduling simulation and stalled-clock recovery without duplicate events. This is not a browser DSP benchmark or physical-device listening test.
 
-Remaining limitations: solo editors still prepare their whole phrase; full-song loop restarts still use a wall-clock timer; background-tab timer throttling can exhaust the lookahead. No guaranteed background/screen-locked playback or measured glitch-free device claim is made.
+15 September follow-up: solo editors, asset previews and their clicks now keep future events in an audio-clock queue rather than allocating every future voice up front. Only events within 200 ms create audio nodes; queued events are cleared on stop and expired events are skipped after stalls. The queue does not resume a suspended context. Deterministic tests cover a 1,000-event phrase, cancellation, suspended-clock behavior and stall recovery. This reduces startup allocation pressure; it is not a measured device-performance result.
+
+Remaining limitations: solo and full-song loop restarts still use a wall-clock timer; background-tab timer throttling can exhaust the lookahead. No guaranteed background/screen-locked playback or measured glitch-free device claim is made.
