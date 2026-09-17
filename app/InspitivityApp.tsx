@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  Children,
+  isValidElement,
   useCallback,
   useEffect,
   useMemo,
@@ -1598,6 +1600,9 @@ export default function InspitivityApp({ account, signOutPath }: {
 }) {
   const [projects, setProjects, cloud] = useCloudProjects(STARTER_PROJECTS, account.userId);
   const [theme, setTheme] = useTheme();
+  const [compact, setCompact] = useState(false);
+  useEffect(() => { try { setCompact(localStorage.getItem("inspitivity-density") === "compact"); } catch { /* default density */ } }, []);
+  const changeCompact = (value:boolean) => { setCompact(value); try { localStorage.setItem("inspitivity-density", value ? "compact" : "comfortable"); } catch { /* session-only preference */ } };
   const [previews, setPreviews] = useState<Record<string, DraftPreview>>({});
   const phoneInstall = usePhoneInstall();
   const [screen, setScreen] = useState<Screen>("home");
@@ -1613,12 +1618,14 @@ export default function InspitivityApp({ account, signOutPath }: {
   const savedDraftId = useRef<string | null>(null);
   const [draftSectionId, setDraftSectionId] = useState<string | null>(null);
   const [returnToArrangement, setReturnToArrangement] = useState(false);
+  const [standaloneProject, setStandaloneProject] = useState<Project>({ id:"standalone", name:"Standalone idea", bpm:120, meter:"4/4", key:"C ionian", updated:0, sections:[] });
   const [toolMetronomeEnabled, setToolMetronomeEnabled] = useState(false);
   const selected = projects.find((p) => p.id === selectedId) ?? projects[0];
   const publishPreview = useCallback((preview: DraftPreview) => {
+    if (!returnToArrangement) return;
     const key = `${selected?.id}/${draftSectionId ?? "scratch"}/${preview.type}`;
     setPreviews(current => JSON.stringify(current[key]) === JSON.stringify(preview) ? current : { ...current, [key]: preview });
-  }, [selected?.id, draftSectionId]);
+  }, [selected?.id, draftSectionId, returnToArrangement]);
 
   const notify = (message: string) => {
     setToast(message);
@@ -1637,6 +1644,17 @@ export default function InspitivityApp({ account, signOutPath }: {
   const openProject = (id: string) => {
     setSelectedId(id);
     navigate("project");
+  };
+  const createStandalone = (next: Screen) => {
+    window.dispatchEvent(new Event("inspitivity-solo-preview"));
+    window.dispatchEvent(new Event("inspitivity-context-play"));
+    savedDraftId.current = null;
+    setEditingIdea(null);
+    setDraftSectionId(null);
+    setReturnToArrangement(false);
+    setToolMetronomeEnabled(false);
+    setStandaloneProject({ id:`standalone-${uid()}`, name:"Standalone idea", bpm:120, meter:"4/4", key:"C ionian", updated:0, sections:[] });
+    setScreen(next);
   };
   const createProject = (name: string, bpm: number, key: string) => {
     const project: Project = {
@@ -1693,11 +1711,11 @@ export default function InspitivityApp({ account, signOutPath }: {
     chooseDestination = false,
     voice?: string,
   ) => {
-    if (!selected) return;
-    if (chooseDestination) {
+    if (chooseDestination || !returnToArrangement) {
       setPendingSave({ type, name, detail, data, voice });
       return;
     }
+    if (!selected) return;
     const existingId = editingIdea?.type === type ? editingIdea.id : savedDraftId.current;
     if (existingId) {
       updateSelected((project) => ({
@@ -1823,16 +1841,18 @@ export default function InspitivityApp({ account, signOutPath }: {
     draftSection && selected
       ? selected.sections.findIndex((section) => section.id === draftSection.id)
       : -1;
+  const editorProject = returnToArrangement ? (musicProject ?? selected ?? standaloneProject) : standaloneProject;
+  const updateEditorProject = returnToArrangement ? updateSelected : setStandaloneProject;
 
   return (
-    <main className={`app-shell ${screen}-screen ${returnToArrangement ? "inside-project" : ""}`}>
+    <main data-density={compact ? "compact" : "comfortable"} className={`app-shell ${screen}-screen ${returnToArrangement ? "inside-project" : ""}`}>
       <div className="studio-workspace">
       <div className="sync-status">
         <div className="account-sync"><b>{account.displayName}</b><span role="status">{cloud.status}</span></div>
         <div className="account-actions"><button onClick={() => void cloud.sync()}>Sync now</button><a href={signOutPath} target="_top">Sign out</a></div>
       </div>
-      {selected && ["project", "drums", "chords", "melody", "bass", "riff", "transition", "metronome"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} activeTool={screen} go={navigate} chooseSection={(id) => { savedDraftId.current=null; setDraftSectionId(id); setEditingIdea(selected.sections.find(section=>section.id===id)?.ideas.find(idea=>idea.type===screen)??null); }} updateProject={updateSelected} />}
-      <DraftSession key={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} id={`${selected?.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} publish={publishPreview}>
+      {selected && (screen === "project" || returnToArrangement) && ["project", "drums", "chords", "melody", "bass", "riff", "transition", "metronome"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} activeTool={screen} go={navigate} chooseSection={(id) => { savedDraftId.current=null; setDraftSectionId(id); setEditingIdea(selected.sections.find(section=>section.id===id)?.ideas.find(idea=>idea.type===screen)??null); }} updateProject={updateSelected} />}
+      <DraftSession key={`${returnToArrangement ? selected?.id : standaloneProject.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} id={`${returnToArrangement ? selected?.id : standaloneProject.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} publish={publishPreview}>
       {screen === "home" && (
         <Home
           projects={projects}
@@ -1872,14 +1892,14 @@ export default function InspitivityApp({ account, signOutPath }: {
           }}
         />
       )}
-      {screen === "chords" && selected && (
+      {screen === "chords" && (
         <ChordTool
           key={`${editingIdea?.id ?? "new-chords"}-${draftSectionId ?? "default"}`}
           idea={editingIdea?.type === "chords" ? editingIdea : undefined}
-          project={musicProject ?? selected}
+          project={editorProject}
           section={draftSection}
           sectionIndex={draftSectionIndex}
-          updateProject={updateSelected}
+          updateProject={updateEditorProject}
           back={backFromMusicTool}
           save={saveIdea}
           go={navigate}
@@ -1887,14 +1907,14 @@ export default function InspitivityApp({ account, signOutPath }: {
           toggleMetronome={() => setToolMetronomeEnabled((enabled) => !enabled)}
         />
       )}
-      {screen === "melody" && selected && (
+      {screen === "melody" && (
         <MelodyTool
           key={`${editingIdea?.id ?? "new-melody"}-${draftSectionId ?? "default"}`}
           idea={editingIdea?.type === "melody" ? editingIdea : undefined}
-          project={musicProject ?? selected}
+          project={editorProject}
           section={draftSection}
           sectionIndex={draftSectionIndex}
-          updateProject={updateSelected}
+          updateProject={updateEditorProject}
           back={backFromMusicTool}
           save={saveIdea}
           go={navigate}
@@ -1902,14 +1922,14 @@ export default function InspitivityApp({ account, signOutPath }: {
           toggleMetronome={() => setToolMetronomeEnabled((enabled) => !enabled)}
         />
       )}
-      {screen === "drums" && selected && (
+      {screen === "drums" && (
         <DrumTool
           key={`${editingIdea?.id ?? "new-drums"}-${draftSectionId ?? "default"}`}
           idea={editingIdea?.type === "drums" ? editingIdea : undefined}
-          project={musicProject ?? selected}
+          project={editorProject}
           section={draftSection}
           sectionIndex={draftSectionIndex}
-          updateProject={updateSelected}
+          updateProject={updateEditorProject}
           back={backFromMusicTool}
           save={saveIdea}
           go={navigate}
@@ -1917,14 +1937,14 @@ export default function InspitivityApp({ account, signOutPath }: {
           toggleMetronome={() => setToolMetronomeEnabled((enabled) => !enabled)}
         />
       )}
-      {screen === "bass" && selected && (
+      {screen === "bass" && (
         <BassTool
           key={`${editingIdea?.id ?? "new-bass"}-${draftSectionId ?? "default"}`}
           idea={editingIdea?.type === "bass" ? editingIdea : undefined}
-          project={musicProject ?? selected}
+          project={editorProject}
           section={draftSection}
           sectionIndex={draftSectionIndex}
-          updateProject={updateSelected}
+          updateProject={updateEditorProject}
           back={backFromMusicTool}
           save={saveIdea}
           go={navigate}
@@ -1932,14 +1952,14 @@ export default function InspitivityApp({ account, signOutPath }: {
           toggleMetronome={() => setToolMetronomeEnabled((enabled) => !enabled)}
         />
       )}
-      {screen === "riff" && selected && (
+      {screen === "riff" && (
         <RiffTool
           key={`${editingIdea?.id ?? "new-riff"}-${draftSectionId ?? "default"}`}
           idea={editingIdea?.type === "riff" ? editingIdea : undefined}
-          project={musicProject ?? selected}
+          project={editorProject}
           section={draftSection}
           sectionIndex={draftSectionIndex}
-          updateProject={updateSelected}
+          updateProject={updateEditorProject}
           back={backFromMusicTool}
           save={saveIdea}
           go={navigate}
@@ -1947,22 +1967,22 @@ export default function InspitivityApp({ account, signOutPath }: {
           toggleMetronome={() => setToolMetronomeEnabled((enabled) => !enabled)}
         />
       )}
-      {screen === "transition" && selected && (
+      {screen === "transition" && (
         <TransitionTool
           key={`${editingIdea?.id ?? "new-transition"}-${draftSectionId ?? "default"}`}
           idea={editingIdea?.type === "transition" ? editingIdea : undefined}
-          project={selected}
+          project={editorProject}
           section={draftSection}
-          updateProject={updateSelected}
+          updateProject={updateEditorProject}
           back={backFromMusicTool}
           save={saveIdea}
           go={navigate}
         />
       )}
-      {screen === "metronome" && selected && (
+      {screen === "metronome" && (
         <Metronome
-          project={selected}
-          updateProject={updateSelected}
+          project={editorProject}
+          updateProject={updateEditorProject}
           back={backFromMusicTool}
           go={navigate}
         />
@@ -1972,6 +1992,8 @@ export default function InspitivityApp({ account, signOutPath }: {
           projects={projects}
           theme={theme}
           setTheme={setTheme}
+          compact={compact}
+          setCompact={changeCompact}
           phoneInstall={phoneInstall}
           notify={notify}
           backUp={async () => {
@@ -2003,7 +2025,7 @@ export default function InspitivityApp({ account, signOutPath }: {
             setModal(null);
             if (action === "project") setModal("project");
             else if (action === "record") setModal("record");
-            else navigate(action);
+            else createStandalone(action);
           }}
         />
       )}
@@ -3232,12 +3254,37 @@ function ProjectContext({
 }
 
 function EditorModeTabs({label,value,set}:{label:string;value:"generate"|"edit";set:(value:"generate"|"edit")=>void}){
-  return <div className="instrument-mode-tabs" role="tablist" aria-label={label}>{(["generate","edit"] as const).map(mode=><button role="tab" key={mode} aria-selected={value===mode} onClick={()=>set(mode)}>{mode==="generate"?"Generate":"Edit"}</button>)}</div>;
+  return <div className="instrument-mode-tabs" role="group" aria-label={label}>{(["generate","edit"] as const).map(mode=><button key={mode} aria-pressed={value===mode} onClick={()=>set(mode)}>{mode==="generate"?"Explore ideas":"Edit notes"}</button>)}</div>;
+}
+function SoloPreview({transport,click,toggleClick}:{transport:ReturnType<typeof useLoopTransport>;click:boolean;toggleClick:()=>void}) {
+  const [loop,setLoop]=useState(true);
+  return <div className="solo-preview" role="group" aria-label="Standalone playback">
+    <PlayButton label="standalone idea" playing={transport.mode!=="stopped"} onClick={()=>transport.mode!=="stopped"?transport.stop():void transport.start(loop)} />
+    <label><input type="checkbox" checked={loop} onChange={e=>setLoop(e.target.checked)} />Loop</label>
+    <label><input type="checkbox" checked={click} onChange={toggleClick} />Click</label>
+  </div>;
 }
 function GeneratorSettings({ children, className="" }: { children: React.ReactNode; className?: string }) {
-  const [open,setOpen]=useState(false);
-  useEffect(()=>{const media=window.matchMedia("(max-width:700px)"); const update=()=>setOpen(!media.matches); update(); media.addEventListener("change",update); return ()=>media.removeEventListener("change",update);},[]);
-  return <details className={`control-panel ${className}`} open={open} onToggle={event=>setOpen(event.currentTarget.open)}><summary>Generation settings <span>{open ? "−" : "+"}</span></summary><div className="generator-settings-body">{children}</div></details>;
+  const groups: { title:string; content:React.ReactNode[] }[] = [];
+  const actions: React.ReactNode[] = [];
+  for (const child of Children.toArray(children)) {
+    if (isValidElement<{className?:string;title?:string}>(child) && child.type === "button" && child.props.className?.includes("primary-button")) {
+      actions.push(child);
+    } else if (isValidElement<{title:string}>(child) && child.type === ControlTitle) {
+      groups.push({title:child.props.title,content:[]});
+    } else {
+      if (!groups.length) groups.push({title:"Starting points",content:[]});
+      groups[groups.length-1].content.push(child);
+    }
+  }
+  return <section className={`control-panel generator-inspector ${className}`} aria-label="Idea generation">
+    <div className="generator-primary-actions">{actions}</div>
+    <details className="generator-options"><summary>Shape & sound <span>Customize this idea</span></summary>
+      <div className="generator-settings-body">{groups.map((group,index)=><details className="generator-group" name="generator-group" key={index}>
+        <summary>{group.title}</summary><div>{group.content}</div>
+      </details>)}</div>
+    </details>
+  </section>;
 }
 
 function SaveActions({ section, editing, submit }: {
@@ -3387,11 +3434,9 @@ function ChordTool({
           Editing {section.name} · {section.bars} bars{supportPitchClasses.length ? " · supporting its melody, bass and pattern" : ""}
         </p>
       )}
-      <div className="instrument-mode-tabs" role="tablist" aria-label="Chord workspace">
-        <button role="tab" aria-selected={workspaceMode==="generate"} onClick={()=>setWorkspaceMode("generate")}><span>✦</span> Generate</button>
-        <button role="tab" aria-selected={workspaceMode==="edit"} onClick={()=>setWorkspaceMode("edit")}><span>✎</span> Edit chords</button>
-      </div>
+      <EditorModeTabs label="Chord workspace" value={workspaceMode} set={setWorkspaceMode} />
       <DraftToolbar />
+      {!section && <SoloPreview transport={transport} click={metronomeEnabled} toggleClick={toggleMetronome} />}
       <div className={`tool-layout instrument-workspace is-${workspaceMode}`}>
         {workspaceMode==="generate"&&<GeneratorSettings className="">
           <div className="idea-starts" aria-label="Harmony starting points">
@@ -3530,7 +3575,7 @@ function ChordTool({
             </div>
 
           </div>
-          <details className="chord-rhythm-controls" open>
+          <details className="chord-rhythm-controls">
             <summary>Strum rhythm <span>{chords.reduce((sum,c)=>sum+(c.attacks?.length??1),0)} attacks · edit rhythm</span></summary>
             <div><Select label="Strum rhythm" value={chordRhythm} options={CHORD_RHYTHMS} set={value=>{transport.stop();setPreviousChords(chords);setChordRhythm(value as ChordRhythm);setSeed(seed+1);setChords(rhythmizeChords(chords,seed+1,value as ChordRhythm,project.meter,section));}} />
             <button className="secondary-button" onClick={()=>{transport.stop();setPreviousChords(chords);setSeed(seed+1);setChords(rhythmizeChords(chords,seed+1,chordRhythm,project.meter,section));}}>↻ New rhythm · keep chords</button></div>
@@ -3910,6 +3955,7 @@ function MelodyTool({
         </p>
       )}
       <DraftToolbar />
+      {!section && <SoloPreview transport={transport} click={metronomeEnabled} toggleClick={toggleMetronome} />}
       <EditorModeTabs label="Melody workspace" value={workspaceMode} set={setWorkspaceMode} />
       <div className={`tool-layout instrument-workspace is-${workspaceMode}`}>
         {workspaceMode==="generate"&&<GeneratorSettings className="violet-panel">
@@ -4046,6 +4092,8 @@ function MelodyTool({
                 className={`piano-note ${draggingNote?.index === i ? "dragging" : ""} ${selectedNoteIndex === i ? "selected" : ""}`}
                 aria-pressed={selectedNoteIndex === i}
                 title={`${note.note} · ${note.duration.toFixed(2)} beats`}
+                aria-label={`Edit melody note ${i+1}: ${note.note}, ${note.duration.toFixed(2)} beats`}
+                onClick={() => {setSelectedNoteIndex(i);setWorkspaceMode("edit");setKeyboardOpen(true);}}
                 onPointerDown={(event) => beginNoteDrag(event, i)}
                 onPointerMove={(event) => dragNote(event, i)}
                 onPointerUp={() => setDraggingNote(null)}
@@ -4190,6 +4238,7 @@ function BassTool({
     <ProjectContext project={project} update={updateProject} metronomeEnabled={metronomeEnabled} toggleMetronome={toggleMetronome} />
     {section && <p className="destination-name">Following {section.name} · {section.energy ?? sectionFeel(project,section).energy} energy</p>}
     <DraftToolbar />
+      {!section && <SoloPreview transport={transport} click={metronomeEnabled} toggleClick={toggleMetronome} />}
     <EditorModeTabs label="Bass workspace" value={workspaceMode} set={setWorkspaceMode} />
       <div className={`tool-layout instrument-workspace is-${workspaceMode}`}>
       {workspaceMode==="generate"&&<GeneratorSettings className="bass-panel">
@@ -4311,6 +4360,7 @@ function RiffTool({
         </p>
       )}
       <DraftToolbar />
+      {!section && <SoloPreview transport={transport} click={metronomeEnabled} toggleClick={toggleMetronome} />}
       <EditorModeTabs label="Riff workspace" value={workspaceMode} set={setWorkspaceMode} />
       <div className={`tool-layout instrument-workspace is-${workspaceMode}`}>
         {workspaceMode==="generate"&&<GeneratorSettings className="riff-panel">
@@ -4706,11 +4756,9 @@ function DrumTool({
           Editing {section.name} · repeats for {section.bars} bars
         </p>
       )}
-      <div className="instrument-mode-tabs" role="tablist" aria-label="Drum workspace">
-        <button role="tab" aria-selected={workspaceMode==="generate"} onClick={()=>setWorkspaceMode("generate")}><span>✦</span> Generate</button>
-        <button role="tab" aria-selected={workspaceMode==="edit"} onClick={()=>setWorkspaceMode("edit")}><span>▦</span> Edit pattern</button>
-      </div>
+      <EditorModeTabs label="Drum workspace" value={workspaceMode} set={setWorkspaceMode} />
       <DraftToolbar />
+      {!section && <SoloPreview transport={transport} click={metronomeEnabled} toggleClick={toggleMetronome} />}
       <div className={`tool-layout instrument-workspace is-${workspaceMode}`}>
         {workspaceMode==="generate"&&<GeneratorSettings className="drum-panel">
           <ControlTitle n="1" title="Groove" />
@@ -4799,6 +4847,17 @@ function DrumTool({
             className="drum-sequencer"
             role="grid"
             aria-label="Drum pattern editor"
+            aria-hidden={workspaceMode === "generate" ? true : undefined}
+            onKeyDown={event => {
+              if (!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Home","End"].includes(event.key)) return;
+              const cells = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button')).filter(cell => cell.getClientRects().length > 0);
+              const index = cells.indexOf(event.target as HTMLButtonElement);
+              if (index < 0) return;
+              event.preventDefault();
+              const rowStart = Math.floor(index / steps.length) * steps.length;
+              const next = event.key === "Home" ? rowStart : event.key === "End" ? rowStart + steps.length - 1 : index + (event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : event.key === "ArrowUp" ? -steps.length : steps.length);
+              cells[Math.max(0,Math.min(cells.length-1,next))]?.focus();
+            }}
           >
             <div className="drum-ruler" aria-hidden="true" style={{gridTemplateColumns:`76px repeat(${steps.length}, minmax(24px,1fr))`}}><span>BAR {activeBar+1}</span>{steps.map((step,i)=><span key={step}>{i%4===0 ? i/4+1 : i%4===2 ? "+" : "·"}</span>)}</div>
             {DRUM_INSTRUMENTS.map((instrument) => workspaceMode==="generate"&&!["kick","snare","hihat","crash"].includes(instrument) ? null : (
@@ -4811,11 +4870,12 @@ function DrumTool({
                   gridTemplateColumns: `76px repeat(${steps.length}, minmax(24px, 1fr))`,
                 }}
               >
-                <b>{DRUM_LABELS[instrument]}</b>
+                <b role="rowheader">{DRUM_LABELS[instrument]}</b>
                 {steps.map((step) => (
                   <button
                     key={step}
                     role="gridcell"
+                    tabIndex={workspaceMode === "edit" && step === steps[0] ? 0 : -1}
                     data-playing={playingStep===step}
                     aria-selected={loop.some(hit=>hit.instrument===instrument&&hit.step===step)}
                     style={{ opacity:loop.find(hit=>hit.instrument===instrument&&hit.step===step) ? .35+.65*(loop.find(hit=>hit.instrument===instrument&&hit.step===step)?.velocity ?? 0) : 1 }}
@@ -5060,6 +5120,8 @@ function Segment<T extends string | number>({
 }
 
 function Settings({
+  compact,
+  setCompact,
   restore,
   syncStatus,
   projects,
@@ -5069,6 +5131,8 @@ function Settings({
   theme,
   setTheme,
 }: {
+  compact: boolean;
+  setCompact: (value:boolean) => void;
   projects: Project[];
   backUp: () => void | Promise<void>;
   restore: (file: File) => Promise<void>;
@@ -5086,6 +5150,11 @@ function Settings({
   return (
     <>
       <Topbar title="Settings" subtitle="Your ideas, on every device" />
+      <div className="settings-card">
+        <h2>Interface density</h2>
+        <label className="density-choice"><input type="checkbox" checked={compact} onChange={event=>setCompact(event.target.checked)} /> Compact mode</label>
+        <p>Smaller text, tighter menus and a shorter playback bar. Saved on this device.</p>
+      </div>
       <div className="settings-card compact theme-settings">
         <p className="eyebrow">Appearance</p>
         <h2>Theme</h2>

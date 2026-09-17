@@ -1,4 +1,50 @@
 /* Songwriting workspace hierarchy. Structural rules shared by both themes. */
+.instrument-workspace .generator-inspector { padding:16px; align-self:start; }
+.generator-primary-actions { display:grid; gap:8px; }
+.generator-primary-actions:empty { display:none; }
+.generator-options { margin-top:12px; }
+.generator-options>summary,.generator-group>summary { min-height:48px; padding:12px 4px; cursor:pointer; font-size:1rem; color:var(--ink); }
+.generator-options>summary span { display:block; margin-top:4px; font-size:.875rem; color:var(--muted); }
+.generator-group { border-top:1px solid var(--line); }
+.generator-group>div { padding:4px 0 16px; }
+.instrument-mode-tabs button { min-height:48px; font-size:1rem; }
+html[data-theme] .instrument-mode-tabs button[aria-pressed=true] { background:var(--accent-soft); color:var(--ink); box-shadow:inset 0 0 0 1px var(--mint); }
+.instrument-workspace :is(button,select,summary,input):focus-visible,.instrument-mode-tabs button:focus-visible { outline:3px solid var(--mint); outline-offset:3px; }
+.instrument-workspace :is(button,select,summary) { min-height:44px; }
+.instrument-workspace .result-panel { display:flex; flex-direction:column; min-width:0; }
+.instrument-workspace .result-heading { order:-2; }
+.instrument-workspace .variation-controls { order:5; margin-top:16px; }
+.instrument-workspace :is(.control-note,.roll-hint,.drum-audition-hint) { font-size:.875rem; }
+.density-choice { display:flex; align-items:center; gap:12px; min-height:44px; font-size:1rem; }
+.density-choice input { width:20px; height:20px; }
+.solo-preview { display:flex; align-items:center; gap:16px; margin-bottom:12px; flex-wrap:wrap; }
+.solo-preview label { display:flex; align-items:center; gap:8px; min-height:44px; font-size:.875rem; }
+.app-shell:has(.instrument-workspace) .studio-workspace { display:flex; flex-direction:column; }
+.app-shell:has(.instrument-workspace) .topbar { order:-2; }
+.app-shell:has(.instrument-workspace) .sync-status { order:10; margin-top:24px; }
+.app-shell:has(.instrument-workspace) .topbar h1 { overflow-wrap:anywhere; }
+.app-shell:has(.instrument-workspace) .topbar { margin-bottom:12px; }
+.app-shell[data-density=compact] { font-size:.875rem; }
+.app-shell[data-density=compact] .topbar { padding-block:8px; margin-bottom:12px; }
+.app-shell[data-density=compact] .topbar h1 { font-size:clamp(1.25rem,2.2vw,1.75rem); }
+.app-shell[data-density=compact] :is(.generator-inspector,.result-panel) { padding:12px; }
+.app-shell[data-density=compact] :is(.generator-options,.generator-group)>summary { font-size:.875rem; padding-block:8px; min-height:44px; }
+.app-shell[data-density=compact] :is(.instrument-mode-tabs button,.studio-nav button,.section-player label,.section-player button) { font-size:.875rem; }
+.app-shell[data-density=compact] .studio-nav button { padding-block:8px; min-height:44px; }
+html[data-theme] .app-shell[data-density=compact] .section-player { padding:6px 10px; gap:4px 8px; }
+html[data-theme] .app-shell[data-density=compact] .section-player :is(button,select,summary) { min-height:44px; padding-block:6px; }
+.app-shell[data-density=compact] .draft-toolbar { margin-block:8px; }
+@media(max-width:900px) {
+  .app-shell:has(.instrument-workspace) .studio-workspace { padding-top:0; }
+  .app-shell:has(.instrument-workspace) .topbar { padding-left:60px; }
+  .tool-layout.instrument-workspace { grid-template-columns:minmax(0,1fr); gap:12px; }
+  .instrument-workspace .generator-inspector { padding:12px; }
+  .instrument-workspace select,.instrument-workspace input:not([type=checkbox]):not([type=range]) { font-size:1rem; }
+  .instrument-workspace .segment { flex-wrap:wrap; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .instrument-workspace *, .instrument-workspace *::before,.instrument-workspace *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
+}
 .project-screen .studio-workspace { display:flex; flex-direction:column; }
 .project-screen .topbar { order:-2; }
 .project-screen .sync-status { margin-bottom:8px; }

@@ -9,6 +9,32 @@ const source = await readFile(
 );
 const theme = await readFile(resolve(process.cwd(), "app/theme.css"), "utf8");
 
+test("fresh standalone instruments cannot inherit or overwrite the last project section", () => {
+  const create = source.slice(source.indexOf("const createStandalone ="), source.indexOf("const createProject ="));
+  for (const reset of ["setEditingIdea(null)", "setDraftSectionId(null)", "setReturnToArrangement(false)", "savedDraftId.current = null", "setStandaloneProject("]) assert.ok(create.includes(reset));
+  assert.match(source, /else createStandalone\(action\)/);
+  assert.match(source, /if \(chooseDestination \|\| !returnToArrangement\)/);
+  assert.match(source, /selected && \(screen === "project" \|\| returnToArrangement\)/);
+  assert.match(source, /const updateEditorProject = returnToArrangement \? updateSelected : setStandaloneProject/);
+  assert.match(source, /if \(!returnToArrangement\) return;/);
+  assert.match(source, /returnToArrangement \? selected\?\.id : standaloneProject\.id/);
+});
+
+test("instrument simplification preserves accessible generation, editing and compact density", async () => {
+  const css = await readFile(resolve(process.cwd(), "app/workspace.css"), "utf8");
+  assert.match(source, /generator-primary-actions/);
+  assert.match(source, /name="generator-group"/);
+  assert.match(source, /role="group" aria-label=\{label\}/);
+  assert.match(source, /aria-pressed=\{value===mode\}/);
+  assert.match(source, /localStorage\.getItem\("inspitivity-density"\)/);
+  assert.match(source, /localStorage\.setItem\("inspitivity-density"/);
+  assert.match(source, /ArrowLeft.*ArrowRight.*ArrowUp.*ArrowDown.*Home.*End/);
+  assert.match(css, /prefers-reduced-motion:reduce/);
+  assert.match(css, /:focus-visible/);
+  assert.match(css, /data-density=compact/);
+  assert.equal((source.match(/<SoloPreview transport=/g) ?? []).length, 5);
+});
+
 test("recording cleanup and save recovery remain wired", () => {
   assert.match(source, /media\.onstop = null/);
   assert.match(source, /media\.stream\.getTracks\(\)\.forEach\(track => track\.stop\(\)\)/);
@@ -103,8 +129,8 @@ test("the workspace reveals one focused task at a time and fills desktop width",
   assert.match(source, /selectedSectionId/);
   assert.match(source, /sectionPanel/);
   assert.match(source, /className="section-timeline"/);
-  assert.match(source, /aria-label="Chord workspace"/);
-  assert.match(source, /aria-label="Drum workspace"/);
+  assert.match(source, /EditorModeTabs label="Chord workspace"/);
+  assert.match(source, /EditorModeTabs label="Drum workspace"/);
   assert.match(source, /is-\$\{workspaceMode\}/);
   assert.match(theme, /\.app-shell\{width:100%;max-width:none\}/);
   assert.match(theme, /\.studio-workspace\{max-width:none;margin-right:0\}/);
