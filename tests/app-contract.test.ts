@@ -194,6 +194,7 @@ test("the app requires a ChatGPT account and scopes every local cache to it", as
   assert.match(page, /requireChatGPTUser\("\/"\)/);
   assert.match(page, /account=\{\{ userId: user\.userId/);
   assert.match(auth, /oai-authenticated-user-id/);
+  assert.match(auth, /email:\$\{email\}/);
   assert.match(storage, /inspitivity-projects:\$\{accountKey\}/);
   assert.match(storage, /inspitivity-legacy-owner-v1/);
   assert.match(storage, /Synced across your devices/);

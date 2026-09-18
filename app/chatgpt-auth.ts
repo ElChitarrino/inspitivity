@@ -14,8 +14,11 @@ const RESERVED_PATHS = new Set([SIGN_IN_PATH, SIGN_OUT_PATH, "/callback"]);
 
 export async function getChatGPTUser(): Promise<ChatGPTUser | null> {
   const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
+  const email = requestHeaders.get("oai-authenticated-user-email")?.trim().toLowerCase() ?? "";
+  // Embedded Site views can provide the verified account email before the
+  // site-scoped user ID. Keep that authenticated session usable instead of
+  // redirecting the iframe into a sign-in route it cannot render.
+  const userId = requestHeaders.get("oai-authenticated-user-id")?.trim() || (email ? `email:${email}` : "");
   if (!userId || !email) {
     const previewHost = requestHeaders.get("host")?.split(":")[0];
     if (process.env.NODE_ENV === "development" || previewHost === "terminal.local") {

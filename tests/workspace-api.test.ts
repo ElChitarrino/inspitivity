@@ -28,6 +28,16 @@ test("workspace API requires identity and same-origin writes",async()=>{
   assert.equal((await workspaceApi(request("PUT","alice",{revision:0,projects:[]},"https://evil.test"),env)).status,403);
   assert.equal((await workspaceApi(request("PUT","alice",{revision:0,projects:[{}]}),env)).status,400);
 });
+test("workspace API accepts the verified email in an embedded Site view",async()=>{
+  const {env}=fixture();
+  const request=new Request("https://music.test/api/workspace",{headers:{
+    "oai-authenticated-user-email":"Musician@Example.com",
+    "Origin":"https://music.test",
+  }});
+  const response=await workspaceApi(request,env);
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{revision:0,projects:[]});
+});
 test("workspace API isolates users and rejects stale revisions",async()=>{
   const {env,request}=fixture();
   assert.deepEqual(await (await workspaceApi(request(),env)).json(),{revision:0,projects:[]});
