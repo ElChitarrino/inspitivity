@@ -53,6 +53,15 @@ button:disabled { cursor:not-allowed; opacity:.45; }
 .tool-grid>button { background:var(--surface); border:1px solid var(--line); border-radius:9px; padding:18px; align-items:flex-start; }
 .tool-grid small { font-size:13px; line-height:1.5; }
 .tool-grid b { font-size:15px; }
+.start-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:22px; }
+.start-actions>button { min-height:138px; display:grid; grid-template-columns:40px minmax(0,1fr); grid-template-rows:auto 1fr; align-items:start; gap:5px 12px; padding:18px; border:1px solid var(--line); border-radius:12px; background:var(--surface); color:var(--ink); text-align:left; }
+.start-actions>button:hover,.start-actions>button.active { border-color:var(--control-line); background:var(--surface2); }
+.start-actions>button>span { grid-row:1/3; width:40px; height:40px; display:grid; place-items:center; border-radius:9px; background:var(--surface-hover); color:var(--mint); font-size:20px; }
+.start-actions b { font-size:16px; }
+.start-actions small { color:var(--muted); font-size:13px; line-height:1.45; }
+.quick-sketch-panel { margin-top:16px; padding:18px; border:1px solid var(--line); border-radius:12px; background:var(--surface); }
+.quick-sketch-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:14px; }
+.quick-sketch-heading span { color:var(--muted); font-size:13px; }
 .tool-tabs { width:100%; background:none; border:0; border-bottom:1px solid var(--line); border-radius:0; padding:0; margin:0 0 22px; justify-content:flex-start; gap:4px; }
 .app-shell .tool-tabs button { min-height:46px; padding:10px 20px; background:none; border-radius:0; border-bottom:2px solid transparent; color:var(--muted); }
 .app-shell .tool-tabs button.active { background:none; border-color:var(--mint); color:var(--ink); }
@@ -157,6 +166,9 @@ input[type=range] { accent-color:var(--mint); min-height:32px; }
   .project-grid { gap:10px; } .project-card,.new-project-card { min-height:170px; padding:16px; }
   .project-card h4 { font-size:18px; } .project-card span,.project-card p { font-size:12px; }
   .tool-grid { grid-template-columns:1fr 1fr; gap:10px; } .tool-grid>button { padding:14px; flex-wrap:wrap; } .tool-grid small { font-size:12px; }
+  .start-actions { grid-template-columns:1fr; }
+  .start-actions>button { min-height:88px; }
+  .quick-sketch-heading { align-items:flex-start; flex-direction:column; }
   .tool-tabs { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:thin; } .app-shell .tool-tabs button { flex:none; padding:10px 14px; }
   .project-context { flex-wrap:wrap; gap:12px; padding:14px; } .project-context-title { flex:1 1 100%; }
   .project-context .key-highlight { flex-wrap:wrap; } .project-context select { max-width:160px; }

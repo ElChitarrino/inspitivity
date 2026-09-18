@@ -8,6 +8,7 @@ const source = await readFile(
   "utf8",
 );
 const theme = await readFile(resolve(process.cwd(), "app/theme.css"), "utf8");
+const workspace = await readFile(resolve(process.cwd(), "app/workspace.css"), "utf8");
 
 test("fresh standalone instruments cannot inherit or overwrite the last project section", () => {
   const create = source.slice(source.indexOf("const createStandalone ="), source.indexOf("const createProject ="));
@@ -171,10 +172,11 @@ test("navigation groups related work and becomes an expandable mobile drawer", (
   assert.match(source, /aria-label="Switch part editor"/);
 });
 
-test("project action dock uses clear icon-only recording and deletion actions", () => {
-  assert.match(source, /className="capture-action icon-action" aria-label="Record idea"/);
-  assert.match(source, /className="danger-action icon-action" aria-label="Delete project"/);
-  assert.match(theme, /\.project-actions \.icon-action\{display:grid;width:44px/);
+test("destructive and system-level project actions are demoted into one options menu", () => {
+  assert.match(source, /className="project-options"/);
+  assert.match(source, /Project options/);
+  assert.match(source, /<TrashIcon \/> Delete project/);
+  assert.match(workspace, /\.project-options/);
 });
 
 test("projects and recordings retain an offline copy alongside private cloud sync", async () => {
@@ -246,7 +248,10 @@ test("mobile playback explicitly unlocks and masters the Web Audio graph", () =>
 });
 
 test("the home screen can create a coherent playable sketch in one flow", () => {
-  assert.match(source, /What should the idea feel like\?/);
+  assert.match(source, /Start something/);
+  assert.match(source, /Quick sketch/);
+  assert.match(source, /Empty project/);
+  assert.match(source, /Record idea/);
   assert.match(source, /Build playable sketch/);
   assert.match(source, /function buildPlayableSketch/);
   assert.match(source, /Emotive space/);
@@ -276,12 +281,13 @@ test("arrangement sections expose vertical ordering and a single current length"
   assert.match(source, /Move \$\{section.name\} up/);
   assert.match(source, /Move \$\{section.name\} down/);
   assert.match(source, /value=\{section.bars\}/);
-  assert.match(source, /<span>Length<\/span>/);
+  assert.match(source, /<span>Bars<\/span>/);
 });
 
 test("arrangement sections own playback and persistent per-track mixing", async () => {
   const theme = await readFile(resolve(process.cwd(), "app/theme.css"), "utf8");
-  assert.match(source, /Mix tracks/);
+  assert.match(source, /className="section-mixer"/);
+  assert.match(source, /mixerChannels/);
   assert.match(source, /DEFAULT_SECTION_MIX/);
   assert.match(source, /mix: \{ \.\.\.section\.mix/);
   assert.match(source, /event\.sectionId/);
@@ -380,7 +386,8 @@ test("the app gives music tools distinct accessible visual identities", () => {
 test("all editors share one accessible transport and its loop setting", () => {
   assert.match(source, /aria-label="Playback scope"/);
   assert.match(source, /checked=\{loop\}/);
-  assert.match(source, /value="part">This part/);
+  assert.match(source, /<option value="section">Section<\/option><option value="song">Song<\/option>/);
+  assert.doesNotMatch(source, /value="part">This part/);
   const editors=source.slice(source.indexOf("function ChordTool"),source.indexOf("function Metronome"));
   assert.doesNotMatch(editors, /<PlayButton/);
 });

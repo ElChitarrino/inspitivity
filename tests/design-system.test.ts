@@ -35,6 +35,6 @@ test("persistent section transport reserves space and covers every project tool"
   assert.match(css,/padding-bottom:calc\(var\(--player-clearance\)/);
   assert.match(css,/env\(safe-area-inset-bottom\)/);
   assert.match(source,/selectedSectionId=\{draftSectionId\}/);
-  assert.match(source,/Play current section/);
+  assert.match(source,/label=\{effectiveScope==="song"\?"song":"current section"\}/);
   assert.match(source,/aria-label="Song transport"/);
 });

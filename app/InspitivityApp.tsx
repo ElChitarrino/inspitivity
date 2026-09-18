@@ -903,7 +903,7 @@ function BottomNav({
   record: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const groups: { label: string; destinations: [Screen, string, string][] }[] = [
     { label: "Workspace", destinations: [["home", "⌂", "Studio"], ["projects", "▱", "Projects"]] },
     { label: "Preferences", destinations: [
@@ -1858,7 +1858,7 @@ export default function InspitivityApp({ account, signOutPath }: {
           projects={projects}
           openProject={openProject}
           go={navigate}
-          create={() => setModal("create")}
+          create={() => setModal("project")}
           record={() => setModal("record")}
           launchSketch={launchSketch}
         />
@@ -2098,6 +2098,7 @@ function Home({
   record: () => void;
   launchSketch: (preset: SketchPreset) => void;
 }) {
+  const [startMode, setStartMode] = useState<"quick" | null>(null);
   const [presetId, setPresetId] = useState<SketchPreset["id"]>("neo-soul");
   const preset =
     SKETCH_PRESETS.find((candidate) => candidate.id === presetId) ??
@@ -2112,16 +2113,25 @@ function Home({
       <section className="spark-studio">
         <div className="spark-heading">
           <div>
-            <p className="eyebrow">Start with musical context</p>
-            <h2>What should the idea feel like?</h2>
+            <p className="eyebrow">Start something</p>
+            <h2>Turn the next spark into music.</h2>
           </div>
-          <button className="record-now" onClick={record}>
-            <b>●</b>
-            <span>Record now</span>
+        </div>
+        <div className="start-actions" aria-label="Ways to start">
+          <button className={startMode === "quick" ? "active" : ""} aria-expanded={startMode === "quick"} onClick={() => setStartMode(current => current === "quick" ? null : "quick")}>
+            <span aria-hidden="true">✦</span><b>Quick sketch</b><small>Generate something playable from a direction.</small>
+          </button>
+          <button onClick={create}>
+            <span aria-hidden="true">＋</span><b>Empty project</b><small>Shape the song manually from a blank section.</small>
+          </button>
+          <button onClick={record}>
+            <span aria-hidden="true">●</span><b>Record idea</b><small>Capture audio before the moment disappears.</small>
           </button>
         </div>
-        <div className="preset-grid" role="radiogroup" aria-label="Sketch direction">
-          {SKETCH_PRESETS.map((candidate) => (
+        {startMode === "quick" && <div className="quick-sketch-panel">
+          <div className="quick-sketch-heading"><b>Choose a musical direction</b><span>Then refine every generated part.</span></div>
+          <div className="preset-grid" role="radiogroup" aria-label="Sketch direction">
+            {SKETCH_PRESETS.map((candidate) => (
             <button
               key={candidate.id}
               className={candidate.id === preset.id ? "active" : ""}
@@ -2133,24 +2143,19 @@ function Home({
               <span>{candidate.label}</span>
               <small>{candidate.copy}</small>
             </button>
-          ))}
-        </div>
-        <div className="sketch-launcher">
-          <div className="sketch-spec">
-            <span>{formatProjectKey(preset.root, preset.mode)}</span>
-            <span>{preset.bpm} BPM</span>
-            <span>{preset.meter}</span>
+            ))}
           </div>
-          <button
-            className="primary-button"
-            onClick={() => launchSketch(preset)}
-          >
-            Build playable sketch <span>＋</span>
-          </button>
-        </div>
-        <p className="sketch-note">
-          Creates a varied song form with connected chords, bass, motif and drums.
-        </p>
+          <div className="sketch-launcher">
+            <div className="sketch-spec">
+              <span>{formatProjectKey(preset.root, preset.mode)}</span>
+              <span>{preset.bpm} BPM</span>
+              <span>{preset.meter}</span>
+            </div>
+            <button className="primary-button" onClick={() => launchSketch(preset)}>
+              Build playable sketch <span>＋</span>
+            </button>
+          </div>
+        </div>}
       </section>
       <SectionTitle
         eyebrow="Pick up where you left off"
@@ -2756,8 +2761,8 @@ function ProjectView({
               <div className="section-title-editor"><span className="section-position">SECTION {String(index+1).padStart(2,"0")}</span>{renamingSectionId===section.id?<form onSubmit={event=>{event.preventDefault();commitRename(section.id);}}><input autoFocus aria-label={`Rename ${section.name}`} value={sectionRename} onChange={event=>setSectionRename(event.target.value)} onKeyDown={event=>{if(event.key==="Escape")setRenamingSectionId(null);}}/><button type="submit">Save</button></form>:<div><h3>{section.name}</h3><button className="rename-section" aria-label={`Rename ${section.name}`} onClick={()=>beginRename(section)}>✎</button></div>}</div>
               <span className="section-length-summary">{section.bars} bars · {section.energy??sectionFeel(project,section).energy}</span>
             </header>
-            <details className="section-settings"><summary>Section settings</summary><div className="asset-section-meta">
-              <label className="section-length"><span>Length</span>
+            <div className="section-meta-chips" aria-label={`${section.name} settings`}>
+              <label className="section-length"><span>Bars</span>
                 <select aria-label={`${section.name} length`} value={section.bars} onChange={e=>{stopArrangement();setSectionBars(section.id,Number(e.target.value));}}>
                   {[...new Set([section.bars,4,8,12,16,24,32])].sort((a,b)=>a-b).map(bars=><option key={bars} value={bars}>{bars} bars</option>)}
                 </select>
@@ -2767,7 +2772,7 @@ function ProjectView({
               <details className="section-meter-settings"><summary><span>Meter</span><b>{[...new Set(sectionMeterMap(section,project.meter))].join(" / ")}</b></summary>
                 <div className="meter-map">{sectionMeterMap(section,project.meter).map((meter,barIndex)=><button key={barIndex} onClick={()=>cycleSectionMeter(section.id,barIndex)} aria-label={`Bar ${barIndex+1}: ${meter}. Change meter`}>{barIndex+1}: {meter}</button>)}</div>
               </details>
-            </div></details>
+            </div>
             <div className="section-detail-tabs" role="tablist" aria-label={`${section.name} details`}>
               {(["parts","mix","notes"] as const).map(panel=><button key={panel} role="tab" aria-selected={sectionPanel===panel} onClick={()=>setSectionPanel(panel)}>{panel}</button>)}
             </div>
@@ -2777,7 +2782,7 @@ function ProjectView({
                 const playable=!!idea;
                 return <div key={type} className={`asset-tile ${idea ? "is-created" : "is-empty"}`}>
                   <button className="asset-open" aria-label={`${idea ? "Edit" : "Create"} ${label} in ${section.name}`} onClick={()=>idea ? openIdea(section.id,idea) : type!=="audio" && openSectionTool(section.id,type)}>
-                    <span aria-hidden="true">{icon}</span><span>{label}<small>{idea ? "Edit part" : "+ Create part"}</small></span>
+                    <span aria-hidden="true">{icon}</span><span>{label}<small title={idea?.detail}>{idea ? (idea.detail || idea.data?.slice(0,4).join(" · ") || "Open editor") : `+ Add ${label.toLowerCase()}`}</small></span>
                   </button>
                   {idea&&<details className="part-actions"><summary aria-label={`${label} actions`}>•••</summary><div><button disabled={!playable} onClick={()=>void playIdea(idea)}>{playingIdeaId===idea.id?"Stop audition":"Audition saved part"}</button><button className="danger-action" aria-label={`Remove ${label} from ${section.name}`} onClick={()=>removeIdea(section.id,idea.id)}><TrashIcon /> Remove part</button></div></details>}
                   {assets.length>1 && <select className="asset-takes" aria-label={`${label} saved version in ${section.name}`} value={idea.id} onChange={e=>{
@@ -2851,11 +2856,14 @@ function ProjectView({
         <summary aria-label="Arrangement check"><span>Song check</span><b>{arrangementCheck.ready?"Ready":"Next moves"}</b></summary>
         {arrangementCheck.ready ? <p>Repetition, contrast and the core musical layers are covered.</p> : <div className="arrangement-insights">{arrangementCheck.insights.map(insight=><article key={insight.id}><div><b>{insight.title}</b><p>{insight.detail}</p></div><button onClick={()=>applyArrangementInsight(insight)}>{insight.action==="create_return"?"Create return":insight.action==="shape_energy"?"Shape energy":insight.action==="add_foundation"?`Add ${insight.tool}`:"Add section"}</button></article>)}</div>}
       </details>
-      <div className="project-actions">
-        <button className="capture-action icon-action" aria-label="Record idea" title="Record idea" onClick={record}>●</button>
-        <button className="share-action icon-action" aria-label="Share project" title="Share project" onClick={shareProject}><ShareIcon /></button>
-        <button className="danger-action icon-action" aria-label="Delete project" title="Delete project" onClick={deleteProject}><TrashIcon /></button>
-      </div>
+      <details className="project-options">
+        <summary>Project options <span aria-hidden="true">•••</span></summary>
+        <div>
+          <button onClick={record}><span aria-hidden="true">●</span> Record idea</button>
+          <button onClick={shareProject}><ShareIcon /> Share project</button>
+          <button className="danger-action" onClick={deleteProject}><TrashIcon /> Delete project</button>
+        </div>
+      </details>
       {adding && (
         <div className="modal-layer">
           <div className="modal small">
@@ -2963,14 +2971,12 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
   const pausedRef=useRef(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
-  const [scope,setScope]=useState<"section"|"song"|"part">("section");
+  const [scope,setScope]=useState<"section"|"song">("section");
   const [loop,setLoop]=useState(true);
   const [countIn,setCountIn]=useState(false);
   const [click,setClick]=useState(false);
   const [position,setPosition]=useState("Ready");
-  const hasPart=["drums","bass","chords","melody","riff"].includes(activeTool);
-  const effectiveScope=scope==="part"&&!hasPart?"section":scope;
-  const playbackPart=effectiveScope==="part"?activeTool:null;
+  const effectiveScope=scope;
   const structureKey=project.sections.map(s=>`${s.id}:${s.bars}:${s.repeats??1}:${s.meterMap?.join(",")}`).join("/");
   const selectedSection = project.sections.find(s => s.id === activeSectionId) ?? project.sections[0];
   const mix = sectionMix(selectedSection);
@@ -2990,7 +2996,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
   useEffect(() => {
     window.addEventListener("inspitivity-solo-preview",stop);
     return () => { window.removeEventListener("inspitivity-solo-preview",stop); stop(); };
-  }, [stop, project.id, selectedSection?.id,effectiveScope,playbackPart,project.bpm,project.meter,structureKey]);
+  }, [stop, project.id, selectedSection?.id,effectiveScope,project.bpm,project.meter,structureKey]);
   const start = async () => {
     if(pausedRef.current){
       setBusy(true);
@@ -3089,25 +3095,27 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
       } : section),
     }));
   };
+  const elapsedSeconds=Math.round(progress*plan.seconds);
+  const formatTime=(seconds:number)=>`${Math.floor(seconds/60)}:${String(Math.max(0,Math.floor(seconds%60))).padStart(2,"0")}`;
+  const mixerChannels=LAYER_LABELS.map(([layer,label])=><div className="mixer-channel" key={layer}><b>{label}</b>
+    <button aria-label={`Mute ${label}`} aria-pressed={mix[layer].muted} onClick={()=>updateMix(layer,{muted:!mix[layer].muted})}>Mute</button>
+    <button aria-label={`Solo ${label}`} aria-pressed={mix[layer].solo} onClick={()=>updateMix(layer,{solo:!mix[layer].solo})}>Solo</button>
+    <label className="track-volume"><span>{Math.round(mix[layer].volume*100)}%</span><input type="range" aria-label={`${label} volume`} min="0" max="1" step="0.05" value={mix[layer].volume} onChange={e=>updateMix(layer,{volume:Number(e.target.value)})} /></label>
+  </div>);
   return <section className="section-player" aria-label="Song transport">
-    <div className="section-player-heading"><div className="section-player-caption"><p className="eyebrow">{effectiveScope==="song"?"Play song":effectiveScope==="part"?"Audition part":"Play current section"}</p></div>
-      <label className="transport-scope"><span className="sr-only">Playback scope</span><select aria-label="Playback scope" value={effectiveScope} onChange={event=>{stop();setScope(event.target.value as typeof scope);setLoop(event.target.value!=="song");}}><option value="section">Section</option><option value="song">Song</option>{hasPart&&<option value="part">This part</option>}</select></label>
+    <div className="section-player-heading"><div className="section-player-caption"><p className="eyebrow">{effectiveScope==="song"?"Song":"Section"}</p></div>
+      <label className="transport-scope"><span className="sr-only">Playback scope</span><select aria-label="Playback scope" value={effectiveScope} onChange={event=>{stop();setScope(event.target.value as typeof scope);setLoop(event.target.value!=="song");}}><option value="section">Section</option><option value="song">Song</option></select></label>
       <label><span className="sr-only">Section</span><select aria-label="Current section" disabled={!selectedSection} value={selectedSection?.id ?? ""} onChange={e => { stop(); chooseSection(e.target.value); }}>
         {!selectedSection && <option value="">No sections yet</option>}
         {project.sections.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
       </select></label>
-      <PlayButton playing={playing} pausable label={effectiveScope==="song"?"song":effectiveScope==="part"?activeTool:"current section"} disabled={!selectedSection||busy} hint={paused?"Resume playback":undefined} onClick={() => playing ? void pause() : void start()} />
+      <PlayButton playing={playing} pausable label={effectiveScope==="song"?"song":"current section"} disabled={!selectedSection||busy} hint={paused?"Resume playback":undefined} onClick={() => playing ? void pause() : void start()} />
       <button className="section-reset" aria-label="Stop and rewind current section" disabled={busy||(!playing&&!paused)} onClick={stop}>↤</button>
+      <span className="transport-time" aria-label={`Playback time ${formatTime(elapsedSeconds)} of ${formatTime(plan.seconds)}`}>{formatTime(elapsedSeconds)} / {formatTime(plan.seconds)}</span>
     </div>
     <progress aria-label="Playback position" max={1} value={progress} />
-    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="transport-preferences"><summary aria-label="Playback options">•••</summary><div><b>{busy?"Preparing audio…":position}</b><label><input type="checkbox" checked={loop} onChange={e=>setLoop(e.target.checked)}/> ↻ Loop</label><label><input type="checkbox" checked={countIn} onChange={e=>setCountIn(e.target.checked)}/> Count-in</label><label><input type="checkbox" checked={click} onChange={e=>setClick(e.target.checked)}/> Click</label><button onClick={()=>{stop();go("metronome");}}>Open metronome</button><button onClick={()=>{stop();updateProject(p=>({...p,sections:p.sections.map(s=>({...s,mix:automaticSectionMix(s,p)}))}));}}>Auto balance all tracks</button></div></details>
-    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="section-mixer"><summary>Mix tracks</summary><div className="mixer-grid">
-      {LAYER_LABELS.map(([layer,label])=><div className="mixer-channel" key={layer}><b>{label}</b>
-        <button aria-label={`Mute ${label}`} aria-pressed={mix[layer].muted} onClick={()=>updateMix(layer,{muted:!mix[layer].muted})}>Mute</button>
-        <button aria-label={`Solo ${label}`} aria-pressed={mix[layer].solo} onClick={()=>updateMix(layer,{solo:!mix[layer].solo})}>Solo</button>
-        <label className="track-volume"><span>{Math.round(mix[layer].volume*100)}%</span><input type="range" aria-label={`${label} volume`} min="0" max="1" step="0.05" value={mix[layer].volume} onChange={e=>updateMix(layer,{volume:Number(e.target.value)})} /></label>
-      </div>)}
-    </div></details>
+    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="transport-preferences"><summary aria-label="Playback options">•••</summary><div><b>{busy?"Preparing audio…":position}</b><label className="mobile-transport-scope"><span>Scope</span><select aria-label="Mobile playback scope" value={effectiveScope} onChange={event=>{stop();setScope(event.target.value as typeof scope);setLoop(event.target.value!=="song");}}><option value="section">Section</option><option value="song">Song</option></select></label><label><input type="checkbox" checked={loop} onChange={e=>setLoop(e.target.checked)}/> ↻ Loop</label><label><input type="checkbox" checked={countIn} onChange={e=>setCountIn(e.target.checked)}/> Count-in</label><label><input type="checkbox" checked={click} onChange={e=>setClick(e.target.checked)}/> Click</label><details className="mobile-transport-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details><button onClick={()=>{stop();go("metronome");}}>Open metronome</button><button onClick={()=>{stop();updateProject(p=>({...p,sections:p.sections.map(s=>({...s,mix:automaticSectionMix(s,p)}))}));}}>Auto balance all tracks</button></div></details>
+    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="section-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details>
     {(busy||message)&&<p role="status">{busy?"Preparing audio…":message}</p>}
   </section>;
 }
