@@ -127,7 +127,10 @@ type SynthVoice =
   | "pluck"
   | "analog pulse"
   | "deep bass"
+  | "808 bass"
+  | "sub bass"
   | "distorted guitar";
+type BassVoice = "deep bass" | "808 bass" | "sub bass";
 const freshSeed = () => Math.floor(Math.random() * 1000000000);
 const LAYER_LABELS = [
   ["drums", "Drums"],
@@ -218,6 +221,7 @@ const SYNTH_VOICES: SynthVoice[] = [
   "deep bass",
   "distorted guitar",
 ];
+const BASS_VOICES: BassVoice[] = ["deep bass", "808 bass", "sub bass"];
 const PATTERN_STARTS = [
   ["A 16th late", 0.25],
   ["An 8th late", 0.5],
@@ -231,6 +235,8 @@ const MIDI_PROGRAMS: Record<SynthVoice, number> = {
   pluck: 84,
   "analog pulse": 80,
   "deep bass": 33,
+  "808 bass": 38,
+  "sub bass": 39,
   "distorted guitar": 30,
 };
 const DRUM_MIDI_NOTES = DRUM_PITCHES;
@@ -1075,6 +1081,45 @@ function useAudioEngine() {
     ) => {
       const ctx = get();
       const when = ctx.currentTime + start;
+      if (voice === "808 bass") {
+        const frequency = 440 * Math.pow(2, (midi - 69) / 12);
+        const oscillator = ctx.createOscillator();
+        const overtone = ctx.createOscillator();
+        const overtoneGain = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+        const volume = ctx.createGain();
+        const release = Math.max(.38, Math.min(1.4, duration * .7));
+        oscillator.type = "sine";
+        overtone.type = "triangle";
+        oscillator.frequency.setValueAtTime(frequency * 1.85, when);
+        oscillator.frequency.exponentialRampToValueAtTime(frequency, when + .055);
+        overtone.frequency.setValueAtTime(frequency * 3.7, when);
+        overtone.frequency.exponentialRampToValueAtTime(frequency * 2, when + .065);
+        overtoneGain.gain.setValueAtTime(.22, when);
+        overtoneGain.gain.exponentialRampToValueAtTime(.0001, when + .16);
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(1250, when);
+        filter.frequency.exponentialRampToValueAtTime(190, when + .24);
+        volume.gain.setValueAtTime(.0001, when);
+        volume.gain.exponentialRampToValueAtTime(gain * 2.15, when + .006);
+        volume.gain.exponentialRampToValueAtTime(gain * 1.2, when + Math.max(.12, duration * .55));
+        volume.gain.exponentialRampToValueAtTime(.0001, when + duration + release);
+        oscillator.connect(filter);
+        overtone.connect(overtoneGain).connect(filter);
+        filter.connect(volume).connect(getGraph().dryInput);
+        sources.add(oscillator); sources.add(overtone);
+        let remaining = 2;
+        const ended = (source: OscillatorNode) => {
+          sources.delete(source); source.disconnect();
+          if (--remaining === 0) { overtoneGain.disconnect(); filter.disconnect(); volume.disconnect(); }
+        };
+        oscillator.onended = () => ended(oscillator);
+        overtone.onended = () => ended(overtone);
+        oscillator.start(when); overtone.start(when);
+        oscillator.stop(when + duration + release + .02);
+        overtone.stop(when + duration + release + .02);
+        return;
+      }
       if (voice === "deep bass") {
         if(!bassWave){const harmonics=bassHarmonics();bassWave=ctx.createPeriodicWave(new Float32Array(harmonics.length),harmonics,{disableNormalization:true});}
         const frequency = 440 * Math.pow(2, (midi - 69) / 12);
@@ -1167,6 +1212,8 @@ function useAudioEngine() {
         pluck: { type: "triangle" as OscillatorType, attack: 0.004, cutoff: 2600, release: 0.12, detune: 0 },
         "analog pulse": { type: "square" as OscillatorType, attack: 0.008, cutoff: 1500, release: 0.16, detune: 5 },
         "deep bass": { type: "sawtooth" as OscillatorType, attack: 0.012, cutoff: 520, release: 0.2, detune: 0 },
+        "808 bass": { type: "sine" as OscillatorType, attack: 0.004, cutoff: 420, release: 0.7, detune: 0 },
+        "sub bass": { type: "sine" as OscillatorType, attack: 0.025, cutoff: 360, release: 0.34, detune: 0 },
         click: { type: "sine" as OscillatorType, attack: 0.001, cutoff: 7000, release: 0.025, detune: 0 },
       } as const;
       const profile = profiles[voice] ?? profiles.pluck;
@@ -2629,7 +2676,7 @@ function ProjectView({
     if (idea.type === "bass") {
       const bass = decodeBassIdea(idea);
       bass.forEach((event) =>
-        engine.tone(event.pitch, event.start * beat, event.duration * beat, event.accent ? .065 : .05, "deep bass"),
+        engine.tone(event.pitch, event.start * beat, event.duration * beat, event.accent ? .065 : .05, (idea.voice as BassVoice) || "deep bass"),
       );
       finishAt(Math.max(.5, ...bass.map((event) => event.start + event.duration)) * beat * 1000);
       return;
@@ -4204,7 +4251,9 @@ function BassTool({
   const [workspaceMode,setWorkspaceMode]=useState<"generate"|"edit">(idea?"edit":"generate");
   const [pattern, setPattern] = useDraftState<BassDirection>("bassPattern", "groove");
   const [movement, setMovement] = useDraftState<BassMovement>("bassMovement", "supportive");
+  const [voice, setVoice] = useDraftState<BassVoice>("bassVoice", (idea?.voice as BassVoice) || "deep bass");
   const [lockToKick, setLockToKick] = useDraftState("bassLockToKick", true);
+  const [selectedBassIndex, setSelectedBassIndex] = useState<number | null>(null);
   const [seed, setSeed] = useDraftState("bassSeed", () => freshSeed() + Math.max(0, sectionIndex));
   const [savedBass, setSavedBass] = useDraftState<BassEvent[] | null>("savedBass", () => idea ? decodeBassIdea(idea) : null);
   const generated = useMemo(
@@ -4212,15 +4261,19 @@ function BassTool({
     [project, section, pattern, movement, lockToKick, seed],
   );
   const bass = savedBass ?? generated;
+  const harmonyIdea = section?.ideas.find((item) => item.type === "chords");
+  const harmonyNames = harmonyIdea
+    ? (harmonyIdea.data?.length ? harmonyIdea.data : harmonyIdea.detail.split(" · ")).map((value) => decodeRhythmicChord(value).name)
+    : [];
   const beatSeconds = beatDurationSeconds(project.bpm);
   const length = Math.max(.5, ...bass.map((event) => event.start + event.duration));
   const engine = useAudioEngine();
   const play = useCallback(() => {
-    bass.forEach((event) => engine.tone(event.pitch, event.start * beatSeconds, event.duration * beatSeconds, event.accent ? .065 : .05, "deep bass"));
+    bass.forEach((event) => engine.tone(event.pitch, event.start * beatSeconds, event.duration * beatSeconds, event.accent ? .065 : .05, voice));
     if (metronomeEnabled) scheduleClickTrack(engine, Math.ceil(length), beatSeconds, project.meter);
-  }, [bass, beatSeconds, engine, length, metronomeEnabled, project.meter]);
+  }, [bass, beatSeconds, engine, length, metronomeEnabled, project.meter, voice]);
   const transport = useLoopTransport(play, length * beatSeconds * 1000, engine.stopAll, engine.unlock);
-  useDraftPreview({ type:"bass", data:bass.map(encodeBassEvent), voice:"deep bass" });
+  useDraftPreview({ type:"bass", data:bass.map(encodeBassEvent), voice });
   const regenerate = () => { transport.stop(); setSavedBass(null); setSeed((value) => value + 1); };
   const updateBassEvent = (index: number, changes: Partial<BassEvent>) => {
     transport.stop();
@@ -4231,15 +4284,25 @@ function BassTool({
     const start = Math.max(0, ...bass.map((event) => event.start + event.duration));
     const pitch = bass.at(-1)?.pitch ?? bassRootPitch(projectHarmony(project).root);
     setSavedBass([...bass, { pitch, start, duration:.5, accent:false }]);
+    setSelectedBassIndex(bass.length);
+    setWorkspaceMode("edit");
   };
   const removeBassEvent = (index: number) => {
     if (bass.length === 1) return;
     transport.stop();
     setSavedBass(bass.filter((_,eventIndex) => eventIndex !== index));
+    setSelectedBassIndex(null);
   };
   const auditionBassEvent = async (event: BassEvent) => {
     transport.stop();
-    if (await engine.unlock()) engine.tone(event.pitch, 0, Math.max(.32,Math.min(.8,event.duration*beatSeconds)), .06, "deep bass");
+    if (await engine.unlock()) engine.tone(event.pitch, 0, Math.max(.32,Math.min(.8,event.duration*beatSeconds)), .06, voice);
+  };
+  const mirrorChordProgression = () => {
+    transport.stop();
+    setMovement("rooted");
+    setSavedBass(null);
+    setSelectedBassIndex(null);
+    setSeed((value) => value + 1);
   };
   return <>
     <ToolHeader title="Bass Generator" subtitle="Low five-string electric bass shaped around harmony and drums" projectName={project.name} back={back} go={go} active="bass" />
@@ -4252,34 +4315,35 @@ function BassTool({
       {workspaceMode==="generate"&&<GeneratorSettings className="bass-panel">
         <ControlTitle n="1" title="Phrase character" />
         <Select label="Groove direction" value={pattern} options={["sustained","eighth notes","groove","syncopated","progressive"]} set={(value) => { transport.stop(); setSavedBass(null); setPattern(value as BassDirection); }} />
-        <Select label="Note movement" value={movement} options={["rooted","supportive","melodic"]} set={(value) => { transport.stop(); setSavedBass(null); setMovement(value as BassMovement); }} />
-        <ControlTitle n="2" title="Rhythm-section lock" />
+        <Select label="Harmony relationship" value={movement} options={["rooted","supportive","melodic"]} set={(value) => { transport.stop(); setSavedBass(null); setMovement(value as BassMovement); }} />
+        {harmonyNames.length>0&&<div className="bass-harmony-map"><span>Section chords</span><b>{harmonyNames.join(" → ")}</b><button className="secondary-button" onClick={mirrorChordProgression}>Mirror chord roots</button></div>}
+        <ControlTitle n="2" title="Bass sound" />
+        <Select label="Instrument" value={voice} options={BASS_VOICES} set={(value) => { transport.stop(); setVoice(value as BassVoice); }} />
+        <ControlTitle n="3" title="Rhythm-section lock" />
         <label className="bass-lock"><input type="checkbox" checked={lockToKick} onChange={(event) => { transport.stop(); setSavedBass(null); setLockToKick(event.target.checked); }} /><span>Follow kick attacks when drums exist</span></label>
-        <p className="control-note">Every generation creates a new phrase. Chords anchor the notes; kicks influence the pocket without replacing it.</p>
+        <p className="control-note">Rooted mirrors each chord change. Supportive adds chord tones and fifths. Melodic connects the chords with scale movement.</p>
         <button className="primary-button wide" onClick={regenerate}>Generate new bass line <span>↻</span></button>
       </GeneratorSettings>}
       <section className="result-panel bass-result">
-        <div className="result-heading"><div><p className="eyebrow">Five-string electric bass</p><h2>{pattern} · {movement} · {bass.length} notes</h2></div></div>
-        <div className="bass-roll" aria-label="Bass timing preview">
+        <div className="result-heading"><div><p className="eyebrow">{voice}</p><h2>{pattern} · {movement} · {bass.length} notes</h2></div></div>
+        <div className={`bass-roll ${selectedBassIndex!==null&&workspaceMode==="edit"?"has-open-editor":""}`} aria-label="Bass sequencer">
           <PlaybackCursor bpm={project.bpm} length={length} />
-          {bass.map((event,index)=><span key={`${event.start}-${index}`} className={event.accent ? "accent" : ""} style={{left:`${(event.start/length)*100}%`,width:`${Math.max(2,(event.duration/length)*100)}%`,bottom:`${18+Math.max(0,Math.min(32,event.pitch-23))*4.3}px`}} title={`${midiNoteName(event.pitch)} · beat ${event.start+1}`}>{midiNoteName(event.pitch)}</span>)}
+          {bass.map((event,index)=><button key={`${event.start}-${index}`} className={`bass-note-block ${event.accent ? "accent" : ""} ${selectedBassIndex===index?"selected":""}`} aria-pressed={selectedBassIndex===index} aria-label={`Edit bass note ${index+1}: ${midiNoteName(event.pitch)}, beat ${event.start+1}`} onClick={()=>{setSelectedBassIndex(index);setWorkspaceMode("edit");}} style={{left:`${(event.start/length)*100}%`,width:`${Math.max(2,(event.duration/length)*100)}%`,bottom:`${18+Math.max(0,Math.min(32,event.pitch-23))*4.3}px`}} title={`${midiNoteName(event.pitch)} · beat ${event.start+1}`}>{midiNoteName(event.pitch)}</button>)}
+          {workspaceMode==="edit"&&selectedBassIndex!==null&&bass[selectedBassIndex]&&<div className="bass-note-popover" role="dialog" aria-label={`Edit bass note ${selectedBassIndex+1}`} style={{left:`clamp(8px, ${(bass[selectedBassIndex].start/length)*100}%, calc(100% - 286px))`}}>
+            <header><b>Note {selectedBassIndex+1}</b><button aria-label="Close note editor" onClick={()=>setSelectedBassIndex(null)}>×</button></header>
+            <div>
+              <label><span>Pitch</span><select value={bass[selectedBassIndex].pitch} onChange={change=>updateBassEvent(selectedBassIndex,{pitch:Number(change.target.value)})}>{BASS_PITCHES.map(pitch=><option key={pitch} value={pitch}>{midiNoteName(pitch)}</option>)}</select></label>
+              <label><span>Beat</span><input type="number" min="0" max={Math.max(1,length)} step="0.25" value={Number(bass[selectedBassIndex].start.toFixed(3))} onChange={change=>updateBassEvent(selectedBassIndex,{start:Math.max(0,Number(change.target.value))})}/></label>
+              <label><span>Length</span><input type="number" min="0.125" max="8" step="0.125" value={Number(bass[selectedBassIndex].duration.toFixed(3))} onChange={change=>updateBassEvent(selectedBassIndex,{duration:Math.max(.125,Number(change.target.value))})}/></label>
+            </div>
+            <footer><label className="bass-accent"><input type="checkbox" checked={bass[selectedBassIndex].accent} onChange={change=>updateBassEvent(selectedBassIndex,{accent:change.target.checked})}/><span>Accent</span></label><button className="bass-audition" aria-label="Preview note" onClick={()=>void auditionBassEvent(bass[selectedBassIndex])}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l14-8z"/></svg></button><button className="bass-remove" aria-label="Delete note" disabled={bass.length===1} onClick={()=>removeBassEvent(selectedBassIndex)}>×</button></footer>
+          </div>}
         </div>
         {workspaceMode==="edit"&&<div className="bass-note-editor" aria-label="Edit bass notes">
-          <header><div><b>Edit notes</b><span>Low B0–G3 range</span></div><button onClick={addBassEvent}>＋ Add note</button></header>
-          <div className="bass-note-list">
-            {bass.map((event,index)=><article key={`${event.start}-${index}`}>
-              <span className="bass-note-number">{index+1}</span>
-              <label><span>Pitch</span><select aria-label={`Bass note ${index+1} pitch`} value={event.pitch} onChange={change=>updateBassEvent(index,{pitch:Number(change.target.value)})}>{BASS_PITCHES.map(pitch=><option key={pitch} value={pitch}>{midiNoteName(pitch)}</option>)}</select></label>
-              <label><span>Beat</span><input aria-label={`Bass note ${index+1} start`} type="number" min="0" max={Math.max(1,length)} step="0.25" value={Number(event.start.toFixed(3))} onChange={change=>updateBassEvent(index,{start:Math.max(0,Number(change.target.value))})}/></label>
-              <label><span>Length</span><input aria-label={`Bass note ${index+1} duration`} type="number" min="0.125" max="8" step="0.125" value={Number(event.duration.toFixed(3))} onChange={change=>updateBassEvent(index,{duration:Math.max(.125,Number(change.target.value))})}/></label>
-              <label className="bass-accent"><input type="checkbox" checked={event.accent} onChange={change=>updateBassEvent(index,{accent:change.target.checked})}/><span>Accent</span></label>
-              <button className="bass-audition" aria-label={`Audition bass note ${index+1}`} onClick={()=>void auditionBassEvent(event)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l14-8z"/></svg></button>
-              <button className="bass-remove" aria-label={`Remove bass note ${index+1}`} disabled={bass.length===1} onClick={()=>removeBassEvent(index)}>×</button>
-            </article>)}
-          </div>
+          <header><div><b>Edit in the sequencer</b><span>Tap a note block to change pitch, timing, length or accent.</span></div><button onClick={addBassEvent}>＋ Add note</button></header>
         </div>}
-        <SaveActions section={section} editing={!!idea} submit={(chooseDestination) => save("bass", `${pattern} bass`, `${bass.length} notes · ${movement} · ${lockToKick ? "kick aware" : "independent pulse"}`, bass.map(encodeBassEvent), chooseDestination, "deep bass")} />
-        <button className="export-button wide" onClick={() => downloadMidi(`${project.name}-bass`, createMidiFile({name:`${project.name} bass`,bpm:project.bpm,meter:project.meter,notes:bass,program:MIDI_PROGRAMS["deep bass"]}))}>⇩ Export bass as MIDI</button>
+        <SaveActions section={section} editing={!!idea} submit={(chooseDestination) => save("bass", `${pattern} bass`, `${bass.length} notes · ${movement} · ${lockToKick ? "kick aware" : "independent pulse"}`, bass.map(encodeBassEvent), chooseDestination, voice)} />
+        <button className="export-button wide" onClick={() => downloadMidi(`${project.name}-bass`, createMidiFile({name:`${project.name} bass`,bpm:project.bpm,meter:project.meter,notes:bass,program:MIDI_PROGRAMS[voice]}))}>⇩ Export bass as MIDI</button>
       </section>
     </div>
   </>;

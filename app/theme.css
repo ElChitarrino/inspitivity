@@ -288,8 +288,8 @@ html[data-theme] .chord-overview button:hover{background:var(--surface-hover);bo
 html[data-theme] :is(.chord-overview button,.chord-editor article){border-top-color:var(--mint)}
 html[data-theme] :is(.edit-pattern-callout,.add-section-note,.add-voicing-note,.auto-balance,.bass-note-editor>header>button){background:var(--surface2);color:var(--ink);border-color:var(--control-line)}
 html[data-theme] :is(.piano-note,.drum-row button.active){background:var(--mint);color:var(--on-accent);border-color:var(--mint)}
-html[data-theme] .bass-roll span{background:var(--accent-soft);color:var(--ink);border:1px solid var(--mint)}
-html[data-theme] .bass-roll span.accent{background:var(--mint);color:var(--on-accent);box-shadow:none}
+html[data-theme] .bass-note-block{background:var(--accent-soft);color:var(--ink);border:1px solid var(--mint)}
+html[data-theme] .bass-note-block.accent{background:var(--mint);color:var(--on-accent);box-shadow:none}
 html[data-theme] :is(select,input:not([type=range]):not([type=checkbox]),textarea){color:var(--ink);border-color:var(--control-line)}
 html[data-theme] select option{color:var(--ink);background:var(--surface)}
 html[data-theme] :is(.app-shell button.play-control,.bass-audition){background:var(--play-bg);color:var(--play-ink);border-color:var(--play-line)}

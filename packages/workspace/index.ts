@@ -31,7 +31,7 @@ export function validProjects(value: unknown): value is Project[] {
       validMix(s.mix) &&
       Array.isArray(s.ideas) && s.ideas.length <= 500 && s.ideas.every(i => record(i) && str(i.id, 150) && str(i.name, 500) && str(i.detail) &&
         ["audio", "chords", "melody", "drums", "bass", "riff", "transition", "text"].includes(String(i.type)) &&
-        (i.voice === undefined || ["current", "acoustic studio", "dry studio", "rock", "prog metal", "roomy rock", "dark acoustic", "distorted guitar", "air flute", "warm pad", "glass", "pluck", "analog pulse", "deep bass"].includes(String(i.voice))) &&
+        (i.voice === undefined || ["current", "acoustic studio", "dry studio", "rock", "prog metal", "roomy rock", "dark acoustic", "distorted guitar", "air flute", "warm pad", "glass", "pluck", "analog pulse", "deep bass", "808 bass", "sub bass"].includes(String(i.voice))) &&
         (i.recordingId === undefined || str(i.recordingId, 150)) &&
         (i.data === undefined || (Array.isArray(i.data) && i.data.length <= 10000 && i.data.every(d => str(d, 1000)))))));
 }

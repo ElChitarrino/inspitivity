@@ -236,9 +236,32 @@ input[type=range] { accent-color:var(--mint); min-height:32px; }
 .transport-position { color:var(--ink); font-variant-numeric:tabular-nums; }
 .bass-lock { display:flex; gap:10px; align-items:center; min-height:46px; padding:10px 12px; border:1px solid var(--line); border-radius:7px; background:var(--surface); }
 .bass-lock input { width:20px; height:20px; accent-color:var(--mint); }
-.bass-roll { position:relative; height:180px; margin:24px 0 14px; overflow:hidden; border:1px solid var(--line); border-radius:9px; background:repeating-linear-gradient(to right,var(--surface) 0,var(--surface) calc(12.5% - 1px),var(--surface2) 12.5%); }
-.bass-roll span { position:absolute; bottom:calc(18px + (var(--row,0) * 18px)); top:auto; min-width:24px; height:28px; display:flex; align-items:center; padding:0 7px; border-radius:5px; background:var(--surface-hover); color:var(--ink); font-size:11px; overflow:hidden; }
-.bass-roll span.accent { background:var(--mint); box-shadow:0 0 12px var(--shadow); }
+.bass-harmony-map { display:grid; gap:8px; padding:12px; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+.bass-harmony-map span { color:var(--muted); font-size:12px; }
+.bass-harmony-map b { overflow-wrap:anywhere; font:13px var(--font-geist-mono),monospace; line-height:1.55; }
+.bass-harmony-map button { width:100%; margin:0; }
+.bass-roll { position:relative; height:180px; margin:24px 0 14px; overflow:visible; border:1px solid var(--line); border-radius:9px; background:repeating-linear-gradient(to right,var(--surface) 0,var(--surface) calc(12.5% - 1px),var(--surface2) 12.5%); transition:margin-bottom .16s ease; }
+.bass-roll.has-open-editor { margin-bottom:224px; }
+.bass-note-block { position:absolute; top:auto; min-width:24px; height:28px; display:flex; align-items:center; padding:0 7px; border:1px solid var(--mint); border-radius:5px; background:var(--accent-soft); color:var(--ink); font-size:11px; overflow:hidden; text-align:left; }
+.bass-note-block.accent { background:var(--mint); color:var(--on-accent); box-shadow:none; }
+.bass-note-block.selected { outline:2px solid var(--ink); outline-offset:2px; z-index:3; }
+.bass-note-popover { position:absolute; z-index:12; top:calc(100% + 10px); width:278px; padding:12px; border:1px solid var(--control-line); border-radius:12px; background:var(--surface); box-shadow:0 16px 42px var(--shadow); }
+.bass-note-popover::before { content:""; position:absolute; top:-6px; left:18px; width:10px; height:10px; transform:rotate(45deg); border-left:1px solid var(--control-line); border-top:1px solid var(--control-line); background:var(--surface); }
+.bass-note-popover header,.bass-note-popover footer { display:flex; align-items:center; gap:8px; }
+.bass-note-popover header { justify-content:space-between; margin-bottom:10px; }
+.bass-note-popover header>button { width:36px; height:36px; border:0; border-radius:7px; background:var(--surface2); color:var(--muted); font-size:20px; }
+.bass-note-popover>div { display:grid; grid-template-columns:1.2fr .8fr .8fr; gap:7px; }
+.bass-note-popover label { display:grid; gap:5px; min-width:0; }
+.bass-note-popover label>span { color:var(--muted); font-size:12px; }
+.bass-note-popover select,.bass-note-popover input[type=number] { width:100%; min-width:0; min-height:42px; padding:7px; border:1px solid var(--control-line); border-radius:7px; background:var(--surface2); color:var(--ink); }
+.bass-note-popover footer { margin-top:10px; }
+.bass-note-popover footer .bass-accent { display:flex; flex:1; align-items:center; grid-auto-flow:column; justify-content:start; }
+@media(max-width:600px) {
+  .bass-roll.has-open-editor { margin-bottom:270px; }
+  .bass-note-popover { left:8px!important; right:8px; width:auto; }
+  .bass-note-popover>div { grid-template-columns:1fr 1fr; }
+  .bass-note-popover>div label:first-child { grid-column:1/-1; }
+}
 .section-notes summary { color:var(--muted); font-size:12px; cursor:pointer; }
 .existing-note { display:flex; align-items:flex-start; gap:8px; margin-top:8px; }
 .existing-note button { background:none; border:0; color:var(--muted); text-align:left; font-size:13px; line-height:1.5; }
