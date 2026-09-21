@@ -35,6 +35,7 @@ export type BassGenerationOptions = {
   kickStarts?: number[];
   kickCycle?: number;
   otherActivity?: number;
+  density?: number;
   seed: number;
 };
 
@@ -239,7 +240,7 @@ export function generateBassPhrase(options: BassGenerationOptions): BassEvent[] 
       groove: 0.74,
       syncopated: 0.72,
       progressive: 0.8,
-    }[options.direction] - activityReduction;
+    }[options.direction] - activityReduction + ((options.density ?? .6) - .6) * .75;
 
     for (const offset of base) {
       const start = round(bar.start + offset);

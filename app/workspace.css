@@ -202,6 +202,48 @@ html[data-theme] .app-shell[data-density=compact] .section-player :is(button,sel
   .chord-editor { grid-template-columns:minmax(0,1fr); }
   .app-shell .control-panel,.app-shell .result-panel,.arrangement-timeline .asset-section { min-width:0; }
 }
+
+/* Feedback pass: aligned song settings, explicit editor actions and phone-safe controls. */
+.project-context { display:flex; align-items:stretch; gap:10px; padding:12px; }
+.project-context>:is(label,div,button) { min-height:48px; margin:0; }
+.project-context :is(.key-highlight,.global-tempo,.global-meter) { display:flex; align-items:center; gap:7px; padding:7px 10px; border:1px solid var(--control-line); border-radius:8px; background:var(--surface2); }
+.project-context :is(.key-highlight,.global-tempo,.global-meter)>span { align-self:flex-start; padding-top:2px; white-space:nowrap; }
+.global-meter input { width:46px; min-width:0; text-align:center; }
+.global-meter select { width:52px; min-width:0; }
+.global-meter b { color:var(--muted); }
+.sketch-spec span { display:grid; gap:2px; border-radius:8px; }
+.sketch-spec small { color:var(--muted); font-size:10px; font-weight:650; text-transform:uppercase; letter-spacing:.06em; }
+.studio-destinations b svg,.start-actions svg,.project-options svg { display:block; margin:auto; }
+.editor-sound-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:10px; margin:0 0 16px; }
+.editor-sound-row .select-control { margin:0; }
+.danger-outline { min-height:44px; padding:9px 12px; border:1px solid color-mix(in srgb,var(--destructive,#ef6262) 65%,var(--line)); border-radius:8px; background:transparent; color:var(--destructive,#ef6262); }
+.empty-sequence { display:grid; gap:5px; place-items:center; min-height:110px; margin:10px 0; padding:18px; border:1px dashed var(--line); border-radius:10px; color:var(--muted); text-align:center; }
+.empty-sequence b { color:var(--ink); }
+.generation-feedback { display:block; min-height:20px; padding-top:6px; color:var(--play-line,var(--mint)); font-size:13px; font-weight:700; text-align:center; }
+.inline-explanation { margin:8px 0 12px; padding:9px 11px; border-left:3px solid var(--mint); background:var(--surface2); }
+.drum-row button[data-drum-step] { touch-action:none; user-select:none; -webkit-user-select:none; }
+.meter-fields { margin-top:9px; }
+.meter-fields select { width:100%; min-height:34px; border:0; background:transparent; color:var(--ink); }
+
+@media(max-width:700px) {
+  .project-context { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; padding:10px; }
+  .project-context>:is(label,div,button) { width:100%; min-width:0; min-height:52px; }
+  .project-context :is(.key-highlight,.global-tempo,.global-meter) { justify-content:center; flex-wrap:wrap; align-content:center; padding:7px 8px; }
+  .project-context :is(.key-highlight,.global-tempo,.global-meter)>span { flex-basis:100%; padding:0; text-align:left; }
+  .project-context .context-metronome { grid-column:1/-1; }
+  .project-context select,.project-context input { max-width:100%; min-width:0; }
+  .editor-sound-row { grid-template-columns:minmax(0,1fr); }
+  .editor-sound-row .danger-outline { width:100%; }
+  .section-meta-chips>label,.section-meta-chips>.section-meter-settings { flex-basis:calc(50% - 4px); }
+}
+
+@media(max-width:390px) {
+  html[data-theme] .section-player { left:6px; right:6px; grid-template-columns:minmax(0,1fr) 42px 42px; column-gap:6px; padding-inline:8px; }
+  html[data-theme] .section-player .section-player-heading>.play-control,.section-player .transport-preferences,.section-player .transport-preferences>summary { width:42px!important; min-width:42px!important; }
+  .section-player .section-player-heading select { padding-left:8px; padding-right:24px; }
+  .project-context { grid-template-columns:minmax(0,1fr); }
+  .project-context .context-metronome { grid-column:auto; }
+}
 .project-screen .studio-workspace { display:flex; flex-direction:column; }
 .project-screen .topbar { order:-2; }
 .project-screen .sync-status { margin-bottom:8px; }
