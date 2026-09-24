@@ -99,6 +99,17 @@ test("arrangement analysis clears when form, contrast, and core layers are prese
   song.sections=["Verse","Chorus","Verse return"].map((name,index)=>({...song.sections[0],id:`s${index}`,name,energy:index===0?"mellow" as const:index===2?"powerful" as const:"balanced" as const,ideas:ideas.map(idea=>({...idea,id:`${idea.id}${index}`}))}));
   assert.deepEqual(analyzeArrangement(song),{ready:true,insights:[]});
 });
+test("a returned motif counts when the voicing, groove, and bass change",()=>{
+  const song=project();
+  const make=(index:number)=>[
+    {id:`c${index}`,type:"chords" as const,name:"Harmony",detail:"",data:[`Am|4|${index===0?"48,52,55":"60,64,67"}`]},
+    {id:`m${index}`,type:"melody" as const,name:"Motif",detail:"",data:["A4|0|1|69","C5|1|1|72"]},
+    {id:`d${index}`,type:"drums" as const,name:"Drums",detail:"",data:[`kick|${index}|.7`]},
+    {id:`b${index}`,type:"bass" as const,name:"Bass",detail:"",data:[`${36+index}|0|1|1`]},
+  ];
+  song.sections=["Theme","Contrast","Bloom"].map((name,index)=>({...song.sections[0],id:`s${index}`,name,energy:index===0?"mellow" as const:"powerful" as const,ideas:index===1?[]:make(index)}));
+  assert.equal(analyzeArrangement(song).insights.some(insight=>insight.id==="return"),false);
+});
 test("song plan repeats saved layers, preserves displaced starts, and leaves missing parts silent",()=>{
   const p=project();p.sections[0].ideas.push({id:"m",type:"melody",name:"Flute",detail:"",data:["E4|0.5|0.5|64"]});
   const plan=buildSongPlan(p);
@@ -149,6 +160,13 @@ test("saved instrument selections survive serialization and reach every song sec
   assert.deepEqual([...new Set(events.filter(e => e.layer === "drums").map(e => e.voice))], ["prog metal", "rock"]);
   restored.sections[0].ideas[0].voice = "invalid";
   assert.equal(validProjects([restored]), false);
+});
+
+test("acoustic guitar chord sound survives project validation and playback planning",()=>{
+  const song=project();
+  song.sections[0].ideas[0].voice="acoustic guitar";
+  assert.ok(validProjects([JSON.parse(JSON.stringify(song))]));
+  assert.ok(buildSongPlan(song).events.filter(event=>event.layer==="chords").every(event=>event.voice==="acoustic guitar"));
 });
 
 test("saved chord voicings reach playback and MIDI pitches unchanged",()=>{

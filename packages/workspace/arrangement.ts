@@ -15,9 +15,12 @@ const musicalLayers = (section: SongSection) =>
 
 const sectionStem = (name: string) =>
   name.toLowerCase().replace(/\b(return(?: of)?|variation|copy|reprise|[a-d]|\d+)\b/g, "").replace(/[^a-z]+/g, " ").trim();
-const sectionSignature = (section: SongSection) => JSON.stringify(
-  section.ideas.filter((idea)=>["chords","drums","bass","melody","riff"].includes(idea.type)).map((idea)=>[idea.type,idea.data??idea.detail]),
-);
+const sectionSignature = (section: SongSection) => {
+  const chords=section.ideas.find(idea=>idea.type==="chords")?.data?.map(value=>value.split("|")[0]) ?? [];
+  const lead=section.ideas.find(idea=>idea.type==="melody"||idea.type==="riff");
+  const pitches=lead?.data?.slice(0,8).map(value=>value.split("|")[lead.type==="melody"?3:0]) ?? [];
+  return chords.length ? JSON.stringify([chords,lead?.type,pitches]) : "[]";
+};
 
 export function analyzeArrangement(project: Project): { ready: boolean; insights: ArrangementInsight[] } {
   const sections=project.sections;

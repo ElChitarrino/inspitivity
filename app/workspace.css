@@ -9,6 +9,8 @@
 .generator-group { border-top:1px solid var(--line); }
 .generator-group>div { padding:4px 0 16px; }
 .instrument-mode-tabs button { min-height:48px; font-size:1rem; }
+.sound-editor{display:grid;gap:12px;width:min(100%,520px);padding:18px;margin:0 0 14px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}.sound-editor h2{margin:0;font-size:1.15rem}.sound-editor p{margin:0;color:var(--muted);font-size:.875rem}.sound-editor select{min-height:48px}
+.instrument-workspace.is-sound{grid-template-columns:minmax(0,1fr)}
 html[data-theme] .instrument-mode-tabs button[aria-pressed=true] { background:var(--accent-soft); color:var(--ink); box-shadow:inset 0 0 0 1px var(--mint); }
 .instrument-workspace :is(button,select,summary,input):focus-visible,.instrument-mode-tabs button:focus-visible { outline:3px solid var(--mint); outline-offset:3px; }
 .instrument-workspace :is(button,select,summary) { min-height:44px; }
@@ -43,6 +45,7 @@ html[data-theme] .app-shell[data-density=compact] .section-player :is(button,sel
   .instrument-workspace select,.instrument-workspace input:not([type=checkbox]):not([type=range]) { font-size:1rem; }
   .instrument-workspace .segment { flex-wrap:wrap; }
 }
+@media(max-width:700px){.instrument-mode-tabs{width:100%}.instrument-mode-tabs button{min-width:0;flex:1;padding-inline:4px;font-size:.875rem}.sound-editor{width:100%}}
 @media(prefers-reduced-motion:reduce) {
   .instrument-workspace *, .instrument-workspace *::before,.instrument-workspace *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
 }

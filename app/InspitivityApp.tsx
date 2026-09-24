@@ -40,6 +40,7 @@ import { reorderSection, timelineDuration } from "../packages/workspace/arrangem
 import { playbackProject } from "../packages/workspace/playback";
 import { bassHarmonics } from "../packages/sequencing/bass-timbre";
 import { activityGain } from "../packages/workspace/mix-activity";
+import { alignPhrase } from "../packages/workspace/sketch";
 import {DRUM_KITS,DRUM_KIT_LABELS,loadDrumSamples,drumSample,drumKitProfile,type AcousticDrumKit,type DrumKit} from '../packages/sequencing/drum-samples';
 import { CHORD_RHYTHMS, CHORD_RHYTHM_LABELS, chordNoteEvents, decodeRhythmicChord, encodeChordAttacks, generateChordRhythm, type ChordRhythm, type ChordAttack } from "../packages/music-theory/chord-rhythm";
 import {
@@ -129,6 +130,7 @@ type SynthVoice =
   | "deep bass"
   | "808 bass"
   | "sub bass"
+  | "acoustic guitar"
   | "distorted guitar";
 type BassVoice = "deep bass" | "808 bass" | "sub bass";
 const freshSeed = () => Math.floor(Math.random() * 1000000000);
@@ -228,6 +230,7 @@ const SYNTH_VOICES: SynthVoice[] = [
   "pluck",
   "analog pulse",
   "deep bass",
+  "acoustic guitar",
   "distorted guitar",
 ];
 const BASS_VOICES: BassVoice[] = ["deep bass", "808 bass", "sub bass"];
@@ -246,6 +249,7 @@ const MIDI_PROGRAMS: Record<SynthVoice, number> = {
   "deep bass": 33,
   "808 bass": 38,
   "sub bass": 39,
+  "acoustic guitar": 25,
   "distorted guitar": 30,
 };
 const DRUM_MIDI_NOTES = DRUM_PITCHES;
@@ -635,24 +639,25 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions): Proj
     if(index===0)return "theme";
     if(/return|outro|coda|tag|resolve|final|riff a|theme a|verse return/i.test(name))return "return";
     if(/contrast|break|clean|interlude|half-time|release|drop/i.test(name))return "contrast";
+    if(index===form.length-1)return "return";
     return "develop";
   };
-  const themeCount=preset.id==="emotive"?3:4;
+  const themeCount=4;
   const themeChords=makeChordDrafts(
     root,mode,themeCount,preset.id==="neo-soul"||preset.id==="prog"?"advanced":"medium",
     seed,beatsPerBar,0,preset.id==="heavy"?"pedal point":"diatonic",preset.opening,
     preset.id==="emotive"?"open":"mixed",preset.tension,
   );
   const themePitchClasses=themeChords.map(chord=>notePitchClass(chord.name)).filter((pitch):pitch is number=>pitch!==null);
-  const coreMotif=fitMelodyToChords(generateMelody({
+  const coreMotif=fitMelodyToChords(alignPhrase(generateMelody({
     root,mode,notes:preset.id==="emotive"?12:16,density:preset.id==="emotive"?.42:.58,
     mood:preset.mood,seed:seed+7,shape:preset.id==="heavy"?"hook":preset.id==="emotive"?"floating":"answer",
-  }),themeChords);
-  const coreRiff=options.includePattern?fitMelodyToChords(generateProgRiff({
+  }),themeCount*beatsPerBar),themeChords);
+  const coreRiff=options.includePattern?fitMelodyToChords(alignPhrase(generateProgRiff({
     root,mode,beats:beatsPerBar*2,cycle:preset.id==="heavy"?7:5,
     grouping:preset.id==="heavy"?"3+2+2":"3+3+2",density:preset.id==="heavy"?.72:.48,
     seed:seed+23,startOffset:preset.id==="heavy"?.25:.5,motion:preset.id==="heavy"?"anchor":"orbit",
-  }).map(note=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),themeChords):[];
+  }).map(note=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),beatsPerBar*2),themeChords):[];
   const chordVoice=pick(preset.id==="heavy"?["distorted guitar","warm pad"]:["warm pad","glass","pluck"] as SynthVoice[]);
   const melodyVoice=pick(["air flute","glass","pluck"] as SynthVoice[]);
   const patternVoice=pick(["analog pulse","pluck",...(preset.id==="heavy"?["distorted guitar" as SynthVoice]:[])] as SynthVoice[]);
@@ -675,12 +680,11 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions): Proj
       :relation==="contrast"?"sparse":relation==="return"?(preset.id==="heavy"?"driving":"adaptive"):preset.id==="emotive"?"sparse":"syncopated";
     const chords=rhythmizeChords(sourceChords,relation==="return"?seed:sectionSeed,rhythmStyle,meter);
     const motifSource=relation==="contrast"
-      ?generateMelody({root,mode,notes:Math.max(8,Math.round(12*density)),density:Math.min(.65,density),mood:preset.mood,seed:seed+107,shape:"answer"})
+      ?alignPhrase(generateMelody({root,mode,notes:Math.max(8,Math.round(12*density)),density:Math.min(.65,density),mood:preset.mood,seed:seed+107,shape:"answer"}),themeCount*beatsPerBar)
       :coreMotif;
-    let melody=fitMelodyToChords(motifSource,chords).map(note=>({...note,velocity:Math.max(.48,Math.min(.82,.5+density*.35))}));
-    if(relation==="theme"&&formSection.energy<.4)melody=melody.filter((_,index)=>index%2===0);
-    const riff=options.includePattern&&formSection.energy>=.45?fitMelodyToChords(coreRiff,chords):[];
-    if(riff.length)melody=melody.filter((_,index)=>index%2===0);
+    const melody=fitMelodyToChords(motifSource,chords).map(note=>({...note,velocity:Math.max(.48,Math.min(.82,.5+density*.35))}));
+    const riffLeads=options.includePattern&&sectionIndex>0&&formSection.energy>=.45&&(relation!=="return"||preset.id==="heavy");
+    const riff=riffLeads?fitMelodyToChords(coreRiff,chords):[];
     const sectionEnergy:GrooveEnergy=formSection.energy<.43?"mellow":formSection.energy>.72?"powerful":"balanced";
     const groove:DrumStyle=relation==="contrast"?(preset.id==="heavy"?"linear":"steady"):relation==="theme"?"steady":preset.groove;
     const drumSeed=relation==="return"?seed+13:relation==="contrast"?seed+113:seed+13+(relation==="develop"?17:0);
@@ -688,9 +692,9 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions): Proj
     drums = reinforceDrumAccents(drums,(riff.length ? riff : melody).filter((_,index)=>index%4===0).map(note=>note.start),beatsPerBar*bars*4);
     const ideas: Idea[] = [
       { id:uid(),type:"chords",name:`${formSection.name} harmony`,voice:chordVoice,detail:chords.map(chord=>chord.name).join(" · "),data:chords.map(encodeChord) },
-      { id:uid(),type:"drums",name:`${formSection.name} pocket`,voice:drumVoice,detail:`${drums.length} hits · ${meter}`,data:drums.map(hit=>`${hit.instrument}|${hit.step}|${hit.velocity}|${beatsPerBar*4}`) },
+      { id:uid(),type:"drums",name:`${formSection.name} pocket`,voice:drumVoice,detail:`${drums.length} hits · ${meter}`,data:drums.map(hit=>`${hit.instrument}|${hit.step}|${hit.velocity}|${beatsPerBar*bars}`) },
     ];
-    if(options.includeMelody)ideas.splice(1,0,{ id:uid(),type:"melody",name:`${formSection.name} motif`,voice:melodyVoice,detail:melody.map(note=>note.note).join(" · "),data:melody.map(note=>`${note.note}|${note.start}|${note.duration}|${note.pitch}`) });
+    if(options.includeMelody&&!riffLeads)ideas.splice(1,0,{ id:uid(),type:"melody",name:`${formSection.name} motif`,voice:melodyVoice,detail:melody.map(note=>note.note).join(" · "),data:melody.map(note=>`${note.note}|${note.start}|${note.duration}|${note.pitch}`) });
     if(riff.length) ideas.push({ id:uid(),type:"riff",name:`${formSection.name} pulse`,voice:patternVoice,detail:`${riff.length} notes · ${meter}`,data:riff.map(note=>`${note.pitch}|${note.start}|${note.duration}|${note.accent?1:0}|${note.muted?1:0}`) });
     const section: SongSection = { id:uid(),name:formSection.name,bars,color:formSection.color,ideas,meterMap:Array.from({length:bars},()=>meter),energy:sectionEnergy };
     const sketchContext: Project = { id:"preview",name:preset.label,bpm,meter,key:formatProjectKey(root,mode),updated:0,sections:[section] };
@@ -1132,6 +1136,37 @@ function useAudioEngine() {
     ) => {
       const ctx = get();
       const when = ctx.currentTime + start;
+      if (voice === "acoustic guitar") {
+        const frequency = 440 * Math.pow(2, (midi - 69) / 12);
+        const period = Math.max(8,Math.round(ctx.sampleRate/frequency));
+        const seconds = Math.min(3.2,Math.max(.55,duration+.72));
+        const buffer = ctx.createBuffer(1,Math.ceil(seconds*ctx.sampleRate),ctx.sampleRate);
+        const samples = buffer.getChannelData(0);
+        const string = new Float32Array(period);
+        let random = (midi*2654435761) >>> 0;
+        const noise = () => { random ^= random << 13; random ^= random >>> 17; random ^= random << 5; return (random >>> 0)/2147483648-1; };
+        for(let i=0;i<period;i++)string[i]=(noise()+noise()*.35)*.6;
+        let previous=0;
+        const damping=frequency<220?.994:.989;
+        for(let i=0;i<samples.length;i++){
+          const slot=i%period;
+          const next=(string[slot]+string[(slot+1)%period])*.5*damping;
+          string[slot]=next;
+          previous=previous*.32+next*.68;
+          const envelope=Math.min(1,i/(ctx.sampleRate*.003))*Math.min(1,(samples.length-i)/(ctx.sampleRate*.045));
+          samples[i]=previous*envelope;
+        }
+        const source=ctx.createBufferSource(), body=ctx.createBiquadFilter(), toneFilter=ctx.createBiquadFilter(), volume=ctx.createGain();
+        source.buffer=buffer;
+        body.type="peaking";body.frequency.value=215;body.Q.value=.85;body.gain.value=3.5;
+        toneFilter.type="lowpass";toneFilter.frequency.value=Math.min(6500,2600+frequency*4);
+        volume.gain.value=gain*.8;
+        source.connect(body).connect(toneFilter).connect(volume).connect(getGraph().dryInput);
+        sources.add(source);
+        source.onended=()=>{sources.delete(source);source.disconnect();body.disconnect();toneFilter.disconnect();volume.disconnect();};
+        source.start(when);
+        return;
+      }
       if (voice === "808 bass") {
         const frequency = 440 * Math.pow(2, (midi - 69) / 12);
         const oscillator = ctx.createOscillator();
@@ -1698,7 +1733,7 @@ function useLoopTransport(
     const activeMode=modeRef.current;
     const token=++startGeneration.current;
     const unlocked=await unlockAudio();
-    if(!unlocked||token!==startGeneration.current||modeRef.current==="stopped")return;
+    if(!unlocked||token!==startGeneration.current||modeRef.current!==activeMode)return;
     clear();
     modeRef.current=activeMode;
     const loop=activeMode==="loop";
@@ -2934,6 +2969,13 @@ function ProjectView({
         <button className="add-section-tile" onClick={()=>setAdding(true)}><span>＋</span><b>Add section</b></button>
       </div>
       <p className="sr-only" role="status">{orderMessage}</p>
+      <div className="song-lanes" role="grid" aria-label="Song tracks across sections">
+        <div className="song-lane song-lane-heading" role="row"><b role="columnheader">Tracks</b>{project.sections.map(section=><span key={section.id} role="columnheader">{section.name}</span>)}</div>
+        {SECTION_ASSETS.filter(([type])=>["drums","bass","chords","melody","riff"].includes(type)).map(([type,label])=><div className="song-lane" role="row" key={type}>
+          <b role="rowheader">{label}</b>
+          {project.sections.map(section=>{const idea=section.ideas.find(item=>item.type===type);return <button key={section.id} role="gridcell" className={idea?"has-part":""} aria-label={`${idea?"Edit":"Create"} ${label} in ${section.name}`} onClick={()=>{setSelectedSectionId(section.id);setSectionPanel("parts");idea?openIdea(section.id,idea):openSectionTool(section.id,type);}}>{idea?<span aria-hidden="true">▰</span>:<span aria-hidden="true">＋</span>}</button>;})}
+        </div>)}
+      </div>
       <div className="arrangement-list arrangement-timeline" aria-label="Song sections, top to bottom">
         {project.sections.filter(section=>section.id===selectedSectionId).map((section) => {
           const index=project.sections.findIndex(item=>item.id===section.id);
@@ -3481,8 +3523,12 @@ function ProjectContext({
   );
 }
 
-function EditorModeTabs({label,value,set}:{label:string;value:"generate"|"edit";set:(value:"generate"|"edit")=>void}){
-  return <div className="instrument-mode-tabs" role="group" aria-label={label}>{(["generate","edit"] as const).map(mode=><button key={mode} aria-pressed={value===mode} onClick={()=>set(mode)}>{mode==="generate"?"Explore ideas":"Edit notes"}</button>)}</div>;
+type EditorMode = "generate" | "edit" | "sound";
+function EditorModeTabs({label,value,set}:{label:string;value:EditorMode;set:(value:EditorMode)=>void}){
+  return <div className="instrument-mode-tabs" role="group" aria-label={label}>{(["generate","edit","sound"] as const).map(mode=><button key={mode} aria-pressed={value===mode} onClick={()=>set(mode)}>{mode==="generate"?"Generate":mode==="edit"?"Edit Notes":"Edit Sound"}</button>)}</div>;
+}
+function SoundEditor({label,voice,options,change}:{label:string;voice:string;options:readonly string[];change:(value:string)=>void}) {
+  return <section className="sound-editor" aria-label={`Edit ${label} sound`}><h2>Edit Sound</h2><Select label={label==="Drum"?"Drum kit":`${label} instrument`} value={voice} options={options} set={change}/><p>Choose a sound while listening. The saved part keeps this instrument.</p></section>;
 }
 function SoloPreview({transport,click,toggleClick}:{transport:ReturnType<typeof useLoopTransport>;click:boolean;toggleClick:()=>void}) {
   const [loop,setLoop]=useState(true);
@@ -3554,7 +3600,7 @@ function ChordTool({
   toggleMetronome: () => void;
 }) {
   const { root, mode } = projectHarmony(project);
-  const [workspaceMode,setWorkspaceMode]=useState<"generate"|"edit">(idea?"edit":"generate");
+  const [workspaceMode,setWorkspaceMode]=useState<EditorMode>(idea?"edit":"generate");
   const initialCount = idea?.data?.length || 4;
   const [initialSeed] = useState(() => freshSeed() + Math.max(0, sectionIndex));
   const supportPitchClasses = useMemo(() => sectionPitchContext(section,"chords"),[section]);
@@ -3665,6 +3711,7 @@ function ChordTool({
         </p>
       )}
       <EditorModeTabs label="Chord workspace" value={workspaceMode} set={setWorkspaceMode} />
+      {workspaceMode==="sound"&&<SoundEditor label="Chord" voice={voice} options={SYNTH_VOICES} change={value=>setVoice(value as SynthVoice)}/>}
       <DraftToolbar />
       {!section && <SoloPreview transport={transport} click={metronomeEnabled} toggleClick={toggleMetronome} />}
       <div className={`tool-layout instrument-workspace is-${workspaceMode}`}>
@@ -3804,7 +3851,7 @@ function ChordTool({
             <div><Select label="Strum rhythm" value={chordRhythm} options={CHORD_RHYTHMS} set={value=>{transport.stop();setPreviousChords(chords);setChordRhythm(value as ChordRhythm);setSeed(seed+1);setChords(rhythmizeChords(chords,seed+1,value as ChordRhythm,project.meter,section));}} />
             <button className="secondary-button" onClick={()=>{transport.stop();setPreviousChords(chords);setSeed(seed+1);setChords(rhythmizeChords(chords,seed+1,chordRhythm,project.meter,section));}}>↻ New rhythm · keep chords</button></div>
           </details>
-          {workspaceMode==="edit"&&<div className="editor-sound-row"><Select label="Chord sound" value={voice} set={(value)=>setVoice(value as SynthVoice)} options={SYNTH_VOICES}/><button className="danger-outline" disabled={!chords.length} onClick={()=>{transport.stop();setPreviousChords(chords);setChords([]);setSelectedChordId(null);}}>Clear all chords</button></div>}
+          {workspaceMode==="edit"&&<button className="danger-outline" disabled={!chords.length} onClick={()=>{transport.stop();setPreviousChords(chords);setChords([]);setSelectedChordId(null);}}>Clear all chords</button>}
           {!chords.length&&<div className="empty-sequence"><b>No chords yet</b><span>Add a chord below or generate a new progression.</span></div>}
           <div className="chord-overview" aria-label="Generated chord progression">
             {chords.map((chord,index)=><button key={chord.id} aria-pressed={workspaceMode==="edit"&&selectedChord?.id===chord.id} data-playing={soundingChord===index} onClick={()=>{setSelectedChordId(chord.id);setWorkspaceMode("edit");}} aria-label={`Edit chord ${index+1}: ${chord.name}`}>
@@ -3951,7 +3998,7 @@ function MelodyTool({
   metronomeEnabled: boolean;
   toggleMetronome: () => void;
 }) {
-  const [workspaceMode,setWorkspaceMode]=useState<"generate"|"edit">(idea?"edit":"generate");
+  const [workspaceMode,setWorkspaceMode]=useState<EditorMode>(idea?"edit":"generate");
   const { root, mode } = projectHarmony(project);
   const defaultNoteCount = section
     ? Math.max(
@@ -4184,6 +4231,7 @@ function MelodyTool({
       <DraftToolbar />
       {!section && <SoloPreview transport={transport} click={metronomeEnabled} toggleClick={toggleMetronome} />}
       <EditorModeTabs label="Melody workspace" value={workspaceMode} set={setWorkspaceMode} />
+      {workspaceMode==="sound"&&<SoundEditor label="Melody" voice={voice} options={SYNTH_VOICES} change={value=>setVoice(value as SynthVoice)}/>}
       <div className={`tool-layout instrument-workspace is-${workspaceMode}`}>
         {workspaceMode==="generate"&&<GeneratorSettings className="violet-panel">
           <div className="idea-starts" aria-label="Melody phrase shapes">
@@ -4268,13 +4316,6 @@ function MelodyTool({
             ))}
           </div>
           </details>
-          <ControlTitle n="5" title="Preview sound" />
-          <Select
-            label="Instrument"
-            value={voice}
-            set={(value) => setVoice(value as SynthVoice)}
-            options={SYNTH_VOICES}
-          />
           <p className="control-note">
             Keep the key and mood, then explore another phrase. Hooks repeat a
             rhythm; floating lines leave more space. Recover your last idea above.
@@ -4421,7 +4462,7 @@ function BassTool({
   metronomeEnabled: boolean;
   toggleMetronome: () => void;
 }) {
-  const [workspaceMode,setWorkspaceMode]=useState<"generate"|"edit">(idea?"edit":"generate");
+  const [workspaceMode,setWorkspaceMode]=useState<EditorMode>(idea?"edit":"generate");
   const [pattern, setPattern] = useDraftState<BassDirection>("bassPattern", "groove");
   const [movement, setMovement] = useDraftState<BassMovement>("bassMovement", "supportive");
   const [density,setBassDensity]=useDraftState("bassDensity",.6);
@@ -4486,6 +4527,7 @@ function BassTool({
     <DraftToolbar />
       {!section && <SoloPreview transport={transport} click={metronomeEnabled} toggleClick={toggleMetronome} />}
     <EditorModeTabs label="Bass workspace" value={workspaceMode} set={setWorkspaceMode} />
+    {workspaceMode==="sound"&&<SoundEditor label="Bass" voice={voice} options={BASS_VOICES} change={value=>setVoice(value as BassVoice)}/>}
       <div className={`tool-layout instrument-workspace is-${workspaceMode}`}>
       {workspaceMode==="generate"&&<GeneratorSettings className="bass-panel">
         <ControlTitle n="1" title="Phrase character" />
@@ -4494,8 +4536,6 @@ function BassTool({
         {harmonyNames.length>0&&<div className="bass-harmony-map"><span>Section chords</span><b>{harmonyNames.join(" → ")}</b><button className="secondary-button" onClick={mirrorChordProgression}>Mirror chord roots</button></div>}
         <ControlTitle n="2" title="Note density" />
         <label className="range-control"><span>{density<.45?"Sparse":density>.75?"Dense":"Balanced"} · {Math.round(density*100)}%</span><input aria-label="Bass note density" type="range" min=".25" max="1" step=".05" value={density} onChange={event=>{transport.stop();setSavedBass(null);setBassDensity(Number(event.target.value));}}/></label>
-        <ControlTitle n="3" title="Bass sound" />
-        <Select label="Instrument" value={voice} options={BASS_VOICES} set={(value) => setVoice(value as BassVoice)} />
         <ControlTitle n="4" title="Rhythm-section lock" />
         <label className="bass-lock"><input type="checkbox" checked={lockToKick} onChange={(event) => { transport.stop(); setSavedBass(null); setLockToKick(event.target.checked); }} /><span>Follow kick attacks when drums exist</span></label>
         <p className="control-note">Rooted mirrors each chord change. Supportive adds chord tones and fifths. Melodic connects the chords with scale movement.</p>
@@ -4549,7 +4589,7 @@ function RiffTool({
   metronomeEnabled: boolean;
   toggleMetronome: () => void;
 }) {
-  const [workspaceMode,setWorkspaceMode]=useState<"generate"|"edit">(idea?"edit":"generate");
+  const [workspaceMode,setWorkspaceMode]=useState<EditorMode>(idea?"edit":"generate");
   const { root, mode } = projectHarmony(project);
   const beats = section
     ? sectionBeatTotal(section, project.meter)
@@ -4612,6 +4652,7 @@ function RiffTool({
       <DraftToolbar />
       {!section && <SoloPreview transport={transport} click={metronomeEnabled} toggleClick={toggleMetronome} />}
       <EditorModeTabs label="Riff workspace" value={workspaceMode} set={setWorkspaceMode} />
+      {workspaceMode==="sound"&&<SoundEditor label="Pattern" voice={voice} options={SYNTH_VOICES} change={value=>setVoice(value as SynthVoice)}/>}
       <div className={`tool-layout instrument-workspace is-${workspaceMode}`}>
         {workspaceMode==="generate"&&<GeneratorSettings className="riff-panel">
           <details className="advanced-controls"><summary>Advanced pulse & grouping</summary>
@@ -4669,8 +4710,6 @@ function RiffTool({
               setDensity(Number(event.target.value));
             }}
           />
-          <ControlTitle n="6" title="Sound" />
-          <Select label="Instrument" value={voice} set={(value) => setVoice(value as SynthVoice)} options={SYNTH_VOICES} />
           <p className="control-note">
             The first note is deliberately displaced. A short pitch cell then
             repeats across the section with one restrained turnaround change.
@@ -4894,7 +4933,7 @@ function DrumTool({
   metronomeEnabled: boolean;
   toggleMetronome: () => void;
 }) {
-  const [workspaceMode,setWorkspaceMode]=useState<"generate"|"edit">(idea?"edit":"generate");
+  const [workspaceMode,setWorkspaceMode]=useState<EditorMode>(idea?"edit":"generate");
   const drumMeter = section
     ? sectionMeterMap(section, project.meter)[0]
     : project.meter;
@@ -5021,6 +5060,7 @@ function DrumTool({
         </p>
       )}
       <EditorModeTabs label="Drum workspace" value={workspaceMode} set={setWorkspaceMode} />
+      {workspaceMode==="sound"&&<SoundEditor label="Drum" voice={voice} options={DRUM_KITS} change={value=>{setSampleStatus("");setVoice(value as DrumKit);}}/>}
       <DraftToolbar />
       {!section && <SoloPreview transport={transport} click={metronomeEnabled} toggleClick={toggleMetronome} />}
       <div className={`tool-layout instrument-workspace is-${workspaceMode}`}>
@@ -5100,7 +5140,7 @@ function DrumTool({
             </div>
 
           </div>
-          {workspaceMode==="edit"&&<div className="editor-sound-row"><Select label="Drum sound" value={voice} set={value => {setSampleStatus("");setVoice(value as DrumKit);}} options={DRUM_KITS} /><button className="danger-outline" disabled={!loop.length} onClick={()=>{transport.stop();setSavedLoop([]);}}>Clear all drums</button></div>}
+          {workspaceMode==="edit"&&<button className="danger-outline" disabled={!loop.length} onClick={()=>{transport.stop();setSavedLoop([]);}}>Clear all drums</button>}
           {sampleStatus&&<p role="status">{sampleStatus}</p>}
           <div className="phrase-bars" aria-label="Phrase bars">{Array.from({length:bars},(_,i)=><button key={i} aria-pressed={activeBar===i} onClick={()=>{setFollowPlayback(false);setVisibleBar(i);}}>Bar {i+1}{i===bars-1 && bars>1 ? " · fill" : ""}</button>)}</div>
           <label className="follow-playback"><input type="checkbox" checked={followPlayback} onChange={e=>setFollowPlayback(e.target.checked)} /> Follow playback</label>
