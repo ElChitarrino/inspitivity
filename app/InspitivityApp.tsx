@@ -41,6 +41,7 @@ import { playbackProject } from "../packages/workspace/playback";
 import { bassHarmonics } from "../packages/sequencing/bass-timbre";
 import { activityGain } from "../packages/workspace/mix-activity";
 import { alignPhrase } from "../packages/workspace/sketch";
+import { chooseSketch } from "../packages/workspace/sketch-quality";
 import {DRUM_KITS,DRUM_KIT_LABELS,loadDrumSamples,drumSample,drumKitProfile,type AcousticDrumKit,type DrumKit} from '../packages/sequencing/drum-samples';
 import { CHORD_RHYTHMS, CHORD_RHYTHM_LABELS, chordNoteEvents, decodeRhythmicChord, encodeChordAttacks, generateChordRhythm, type ChordRhythm, type ChordAttack } from "../packages/music-theory/chord-rhythm";
 import {
@@ -600,8 +601,7 @@ function reinforceDrumAccents(hits: DrumHit[], starts: number[], phraseSteps: nu
   return next.sort((a,b) => a.step-b.step);
 }
 
-function buildPlayableSketch(preset: SketchPreset, options: SketchOptions): Project {
-  const seed = freshSeed();
+function buildPlayableSketch(preset: SketchPreset, options: SketchOptions, seed = freshSeed()): Project {
   const random = seededRandom(seed);
   const pick = <T,>(values: T[]) => values[Math.floor(random() * values.length)];
   const root=options.root,mode=options.mode,meter=options.meter,bpm=clampBpm(options.bpm);
@@ -1854,7 +1854,8 @@ export default function InspitivityApp({ account, signOutPath }: {
     setProjectToDelete(null);
   };
   const launchSketch = (preset: SketchPreset, options: SketchOptions) => {
-    const project = buildPlayableSketch(preset, options);
+    const seed = freshSeed();
+    const project = chooseSketch(Array.from({length:4}, (_, index) => buildPlayableSketch(preset, options, seed + index * 7919)));
     setProjects((items) => [project, ...items]);
     setSelectedId(project.id);
     setScreen("project");
