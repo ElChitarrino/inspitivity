@@ -1,7 +1,8 @@
 /* Songwriting workspace hierarchy. Structural rules shared by both themes. */
 .instrument-workspace .generator-inspector { padding:16px; align-self:start; }
-.generator-primary-actions { display:grid; gap:8px; }
+.generator-primary-actions { display:flex; justify-content:center; width:100%; gap:8px; padding:4px 0 10px; }
 .generator-primary-actions:empty { display:none; }
+.generator-primary-actions>.primary-button { width:min(100%,360px); margin:0 auto; }
 .generator-options { margin-top:12px; }
 .generator-options>summary,.generator-group>summary { min-height:48px; padding:12px 4px; cursor:pointer; font-size:1rem; color:var(--ink); }
 .generator-options>summary span { display:block; margin-top:4px; font-size:.875rem; color:var(--muted); }
@@ -207,9 +208,11 @@ html[data-theme] .app-shell[data-density=compact] .section-player :is(button,sel
 .project-context { display:flex; align-items:stretch; gap:10px; padding:12px; }
 .project-context>:is(label,div,button) { min-height:48px; margin:0; }
 .project-context :is(.key-highlight,.global-tempo,.global-meter) { display:flex; align-items:center; gap:7px; padding:7px 10px; border:1px solid var(--control-line); border-radius:8px; background:var(--surface2); }
-.project-context :is(.key-highlight,.global-tempo,.global-meter)>span { align-self:flex-start; padding-top:2px; white-space:nowrap; }
-.global-meter input { width:46px; min-width:0; text-align:center; }
-.global-meter select { width:52px; min-width:0; }
+.project-context :is(.key-highlight,.global-tempo,.global-meter)>span:first-child { align-self:flex-start; padding-top:2px; white-space:nowrap; }
+.global-meter>select { min-width:190px; }
+.meter-custom-fields { display:flex; align-items:center; gap:6px; }
+.meter-custom-fields input { width:54px; min-width:0; text-align:center; }
+.meter-custom-fields select { width:58px; min-width:0; }
 .global-meter b { color:var(--muted); }
 .sketch-spec span { display:grid; gap:2px; border-radius:8px; }
 .sketch-spec small { color:var(--muted); font-size:10px; font-weight:650; text-transform:uppercase; letter-spacing:.06em; }
@@ -219,17 +222,21 @@ html[data-theme] .app-shell[data-density=compact] .section-player :is(button,sel
 .danger-outline { min-height:44px; padding:9px 12px; border:1px solid color-mix(in srgb,var(--destructive,#ef6262) 65%,var(--line)); border-radius:8px; background:transparent; color:var(--destructive,#ef6262); }
 .empty-sequence { display:grid; gap:5px; place-items:center; min-height:110px; margin:10px 0; padding:18px; border:1px dashed var(--line); border-radius:10px; color:var(--muted); text-align:center; }
 .empty-sequence b { color:var(--ink); }
-.generation-feedback { display:block; min-height:20px; padding-top:6px; color:var(--play-line,var(--mint)); font-size:13px; font-weight:700; text-align:center; }
 .inline-explanation { margin:8px 0 12px; padding:9px 11px; border-left:3px solid var(--mint); background:var(--surface2); }
 .drum-row button[data-drum-step] { touch-action:none; user-select:none; -webkit-user-select:none; }
-.meter-fields { margin-top:9px; }
-.meter-fields select { width:100%; min-height:34px; border:0; background:transparent; color:var(--ink); }
+.modal-meter { display:grid; gap:7px; margin-top:9px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+.modal-meter>span:first-child { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.06em; }
+.modal-meter>select { width:100%; min-height:44px; padding:8px 10px; border:1px solid var(--control-line); border-radius:8px; background:var(--surface2); color:var(--ink); }
+.toast { top:calc(12px + env(safe-area-inset-top)); max-width:calc(100vw - 24px); justify-content:center; text-align:center; }
 
 @media(max-width:700px) {
   .project-context { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; padding:10px; }
   .project-context>:is(label,div,button) { width:100%; min-width:0; min-height:52px; }
   .project-context :is(.key-highlight,.global-tempo,.global-meter) { justify-content:center; flex-wrap:wrap; align-content:center; padding:7px 8px; }
-  .project-context :is(.key-highlight,.global-tempo,.global-meter)>span { flex-basis:100%; padding:0; text-align:left; }
+  .project-context :is(.key-highlight,.global-tempo,.global-meter)>span:first-child { flex-basis:100%; padding:0; text-align:left; }
+  .project-context .global-meter>select { width:100%; min-width:0; }
+  .generator-primary-actions { padding:8px 0 12px; }
+  .generator-primary-actions>.primary-button { width:min(100%,320px); min-height:52px; }
   .project-context .context-metronome { grid-column:1/-1; }
   .project-context select,.project-context input { max-width:100%; min-width:0; }
   .editor-sound-row { grid-template-columns:minmax(0,1fr); }
@@ -284,7 +291,9 @@ html[data-theme] .app-shell[data-density=compact] .section-player :is(button,sel
 .section-meta-chips .section-meter-settings>summary { list-style:none; cursor:pointer; }
 .section-meta-chips .section-meter-settings>summary::-webkit-details-marker { display:none; }
 .section-meta-chips .section-meter-settings>summary b { color:var(--ink); font:13px var(--font-geist-mono),monospace; }
-.section-meta-chips .meter-map { position:absolute; z-index:24; top:calc(100% + 6px); right:0; width:min(330px,80vw); display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; padding:10px; border:1px solid var(--control-line); border-radius:10px; background:var(--surface); box-shadow:0 12px 32px var(--shadow); }
+.section-meta-chips .meter-map { position:absolute; z-index:24; top:calc(100% + 6px); right:0; width:min(330px,80vw); display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:10px; border:1px solid var(--control-line); border-radius:10px; background:var(--surface); box-shadow:0 12px 32px var(--shadow); }
+.section-meta-chips .meter-map label { display:grid; gap:4px; min-width:0; color:var(--muted); font-size:11px; }
+.section-meta-chips .meter-map select { width:100%; min-height:38px; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--surface2); color:var(--ink); }
 .project-options { position:relative; width:max-content; margin:16px 0 0 auto; }
 .project-options>summary { min-height:44px; display:flex; align-items:center; gap:12px; padding:8px 12px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--muted); list-style:none; cursor:pointer; font-size:13px; }
 .project-options>summary::-webkit-details-marker { display:none; }

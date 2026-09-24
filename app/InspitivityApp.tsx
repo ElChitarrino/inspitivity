@@ -503,6 +503,8 @@ const decodeBassIdea = (idea: Idea): BassEvent[] =>
     return { pitch: Number(pitch) || 36, start: Number(start) || 0, duration: Number(duration) || .4, accent: accent === "1" };
   });
 const encodeBassEvent = (event: BassEvent) => `${event.pitch}|${event.start}|${event.duration}|${event.accent ? 1 : 0}`;
+const announceGenerated = (label: string) =>
+  window.dispatchEvent(new CustomEvent("inspitivity-generation-complete", { detail: `${label} generated` }));
 const bassRootPitch = (symbol: string) => {
   const pitchClass = notePitchClass(symbol) ?? 0;
   return pitchClass === 11 ? 23 : 24 + pitchClass;
@@ -1660,6 +1662,7 @@ export default function InspitivityApp({ account, signOutPath }: {
     null,
   );
   const [toast, setToast] = useState("");
+  const toastTimer = useRef<number | null>(null);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [projectToShare, setProjectToShare] = useState<Project | null>(null);
   const [editingIdea, setEditingIdea] = useState<Idea | null>(null);
@@ -1676,10 +1679,19 @@ export default function InspitivityApp({ account, signOutPath }: {
     setPreviews(current => JSON.stringify(current[key]) === JSON.stringify(preview) ? current : { ...current, [key]: preview });
   }, [selected?.id, draftSectionId, returnToArrangement]);
 
-  const notify = (message: string) => {
+  const notify = useCallback((message: string) => {
     setToast(message);
-    window.setTimeout(() => setToast(""), 2400);
-  };
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(""), 2400);
+  }, []);
+  useEffect(() => {
+    const receive = (event: Event) => notify((event as CustomEvent<string>).detail || "New part generated");
+    window.addEventListener("inspitivity-generation-complete", receive);
+    return () => {
+      window.removeEventListener("inspitivity-generation-complete", receive);
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    };
+  }, [notify]);
   const navigate = (next: Screen) => {
     if(screen==="project"&&["chords","melody","drums","bass","riff","transition","metronome"].includes(next))setReturnToArrangement(true);
     if (next !== screen) {
@@ -2123,7 +2135,7 @@ export default function InspitivityApp({ account, signOutPath }: {
         />
       )}
       {toast && (
-        <div className="toast">
+        <div className="toast" role="status" aria-live="polite">
           <span>✓</span>
           {toast}
         </div>
@@ -2519,13 +2531,13 @@ function ProjectView({
     if(name)update(p=>({...p,sections:p.sections.map(section=>section.id===sectionId?{...section,name}:section)}));
     setRenamingSectionId(null);
   };
-  const cycleSectionMeter = (sectionId: string, barIndex: number) =>
+  const setSectionMeter = (sectionId: string, barIndex: number, meter: string) =>
     update((p) => ({
       ...p,
       sections: p.sections.map((section) => {
         if (section.id !== sectionId) return section;
         const map = sectionMeterMap(section, p.meter);
-        map[barIndex] = nextProgMeter(map[barIndex]);
+        map[barIndex] = meter;
         return { ...section, meterMap: map };
       }),
     }));
@@ -2607,6 +2619,7 @@ function ProjectView({
     const id=uid();
     update((p)=>{const generated=buildGuidedSection(p,name,sectionEnergy,sectionDirection);return {...p,sections:[...p.sections,{...generated,id}]};});
     setSelectedSectionId(id);setSectionPanel("parts");
+    announceGenerated("Complete section");
     finishAddingSection();
   };
   const duplicateSection = (sectionId: string, variation: boolean) => update((p) => {
@@ -2839,7 +2852,7 @@ function ProjectView({
               <label className="section-repeat"><span>Repeat</span><select aria-label={`${section.name} repeats`} value={section.repeats??1} onChange={(event)=>setSectionRepeats(section.id,Number(event.target.value))}>{[1,2,3,4].map(value=><option key={value} value={value}>×{value}</option>)}</select></label>
               <label className="section-energy"><span>Feel</span><select aria-label={`${section.name} feel`} value={section.energy??sectionFeel(project,section).energy} onChange={(event)=>setSectionEnergy(section.id,event.target.value as SectionEnergy)}>{["mellow","balanced","powerful"].map(value=><option key={value}>{value}</option>)}</select></label>
               <details className="section-meter-settings"><summary><span>Meter</span><b>{[...new Set(sectionMeterMap(section,project.meter))].join(" / ")}</b></summary>
-                <div className="meter-map">{sectionMeterMap(section,project.meter).map((meter,barIndex)=><button key={barIndex} onClick={()=>cycleSectionMeter(section.id,barIndex)} aria-label={`Bar ${barIndex+1}: ${meter}. Change meter`}>{barIndex+1}: {meter}</button>)}</div>
+                <div className="meter-map">{sectionMeterMap(section,project.meter).map((meter,barIndex)=><label key={barIndex}><span>Bar {barIndex+1}</span><select aria-label={`Time signature for bar ${barIndex+1}`} value={meter} onChange={event=>setSectionMeter(section.id,barIndex,event.target.value)}>{[...new Set([meter,...COMMON_METERS])].map(option=><option key={option} value={option}>{option}</option>)}</select></label>)}</div>
               </details>
             </div>
             <div className="section-detail-tabs" role="tablist" aria-label={`${section.name} details`}>
@@ -3276,6 +3289,39 @@ function TempoInput({ bpm, commit, label }: {
   );
 }
 
+const COMMON_METERS = ["4/4", "3/4", "6/8", "5/4", "7/8", "9/8", "12/8"] as const;
+const METER_LABELS: Record<(typeof COMMON_METERS)[number], string> = {
+  "4/4":"4/4 · Common time",
+  "3/4":"3/4 · Waltz",
+  "6/8":"6/8 · Compound duple",
+  "5/4":"5/4 · Odd meter",
+  "7/8":"7/8 · Odd meter",
+  "9/8":"9/8 · Compound triple",
+  "12/8":"12/8 · Compound quadruple",
+};
+function MeterSelect({value,onChange,className=""}:{value:string;onChange:(meter:string)=>void;className?:string}) {
+  const [custom,setCustom]=useState(!COMMON_METERS.includes(value as (typeof COMMON_METERS)[number]));
+  const [top,bottom]=value.split("/").map(Number);
+  useEffect(()=>{
+    if(!custom&&!COMMON_METERS.includes(value as (typeof COMMON_METERS)[number]))setCustom(true);
+  },[value,custom]);
+  return <label className={`global-meter ${className}`}>
+    <span>Time signature</span>
+    <select aria-label="Time signature" value={custom?"custom":value} onChange={event=>{
+      if(event.target.value==="custom")setCustom(true);
+      else {setCustom(false);onChange(event.target.value);}
+    }}>
+      {COMMON_METERS.map(meter=><option key={meter} value={meter}>{METER_LABELS[meter]}</option>)}
+      <option value="custom">Custom…</option>
+    </select>
+    {custom&&<span className="meter-custom-fields">
+      <input aria-label="Custom beats per bar" type="number" min="1" max="16" value={top||4} onChange={event=>onChange(`${Math.max(1,Math.min(16,Number(event.target.value)||4))}/${bottom===8?8:4}`)}/>
+      <b aria-hidden="true">/</b>
+      <select aria-label="Custom beat subdivision" value={bottom===8?8:4} onChange={event=>onChange(`${top||4}/${event.target.value}`)}><option value="4">4</option><option value="8">8</option></select>
+    </span>}
+  </label>;
+}
+
 function ProjectContext({
   project,
   update,
@@ -3290,7 +3336,6 @@ function ProjectContext({
   toggleMetronome?: () => void;
 }) {
   const { root, mode } = projectHarmony(project);
-  const [meterTop, meterBottom] = project.meter.split("/").map(Number);
   const changeHarmony = (nextRoot: Root, nextMode: Mode) => {
     update((p) => ({ ...p, key: formatProjectKey(nextRoot, nextMode) }));
     onHarmonyChange?.(nextRoot, nextMode);
@@ -3330,12 +3375,7 @@ function ProjectContext({
           commit={(bpm) => update((p) => ({ ...p, bpm }))} />
         <b>BPM</b>
       </div>
-      <label className="global-meter">
-        <span>Time signature</span>
-        <input aria-label="Time signature beats per bar" type="number" min="1" max="16" value={meterTop || 4} onChange={(event)=>changeMeter(`${Math.max(1,Math.min(16,Number(event.target.value)||4))}/${meterBottom===8?8:4}`)}/>
-        <b>/</b>
-        <select aria-label="Time signature subdivision" value={meterBottom===8?8:4} onChange={(event)=>changeMeter(`${meterTop||4}/${event.target.value}`)}><option value="4">4</option><option value="8">8</option></select>
-      </label>
+      <MeterSelect value={project.meter} onChange={changeMeter}/>
       {toggleMetronome&&<button className={`context-metronome ${metronomeEnabled?"active":""}`} aria-pressed={metronomeEnabled} onClick={toggleMetronome}>♩ Metronome</button>}
     </section></details>
   );
@@ -3435,9 +3475,8 @@ function ChordTool({
       : rhythmizeChords(makeChordDrafts(root, mode, initialCount, "medium", initialSeed,meterBeats(project.meter),0,"diatonic","away","mixed","balanced",supportPitchClasses),initialSeed,"adaptive",project.meter,section),
   );
   const [previousChords, setPreviousChords] = useDraftState<ChordDraft[] | null>("previousChords", null);
-  const [generationFeedback,setGenerationFeedback]=useState("");
   const engine = useAudioEngine();
-  const regenerate = (nextRoot = root, nextMode = mode) => {
+  const regenerate = (nextRoot = root, nextMode = mode, showFeedback = true) => {
     setPreviousChords(chords);
     const nextSeed = seed + 1;
     setSeed(nextSeed);
@@ -3457,8 +3496,7 @@ function ChordTool({
         supportPitchClasses,
       ),nextSeed,chordRhythm,project.meter,section),
     );
-    setGenerationFeedback("New progression ready");
-    window.setTimeout(()=>setGenerationFeedback(""),1200);
+    if(showFeedback)announceGenerated("Chord progression");
   };
   const totalBeats = chords.reduce((sum, chord) => sum + chord.beats, 0);
   const beatSeconds = beatDurationSeconds(project.bpm);
@@ -3516,7 +3554,7 @@ function ChordTool({
       <ProjectContext
         project={project}
         update={updateProject}
-        onHarmonyChange={(nextRoot, nextMode) => regenerate(nextRoot, nextMode)}
+        onHarmonyChange={(nextRoot, nextMode) => regenerate(nextRoot, nextMode, false)}
         metronomeEnabled={metronomeEnabled}
         toggleMetronome={toggleMetronome}
       />
@@ -3638,7 +3676,6 @@ function ChordTool({
           <button className="primary-button wide" onClick={() => regenerate()}>
             Generate progression <span>↻</span>
           </button>
-          <span className="generation-feedback" role="status">{generationFeedback}</span>
         </GeneratorSettings>}
         <section className="result-panel">
           {workspaceMode==="generate"&&<VariationControls value={chords} apply={value=>{transport.stop();setChords(value);}} vary={(kind,locks)=>{
@@ -4147,6 +4184,7 @@ function MelodyTool({
               setPreviousMelody(melody);
               setSavedMelody(null);
               setSeed((s) => s + 1);
+              announceGenerated("Melody");
             }}
           >
             Generate melody <span>↻</span>
@@ -4308,7 +4346,7 @@ function BassTool({
   }, [bass, beatSeconds, engine, length, metronomeEnabled, project.meter, voice]);
   const transport = useLoopTransport(play, length * beatSeconds * 1000, engine.stopAll, engine.unlock);
   useDraftPreview({ type:"bass", data:bass.map(encodeBassEvent), voice });
-  const regenerate = () => { transport.stop(); setSavedBass(null); setSeed((value) => value + 1); };
+  const regenerate = () => { transport.stop(); setSavedBass(null); setSeed((value) => value + 1); announceGenerated("Bass line"); };
   const updateBassEvent = (index: number, changes: Partial<BassEvent>) => {
     transport.stop();
     setSavedBass((current) => (current ?? generated).map((event,eventIndex) => eventIndex === index ? { ...event, ...changes } : event));
@@ -4538,6 +4576,7 @@ function RiffTool({
             onClick={() => {
               setSavedRiff(null);
               setSeed((value) => value + 1);
+              announceGenerated("Synth pattern");
             }}
           >
             Create another pattern <span>↻</span>
@@ -4789,7 +4828,6 @@ function DrumTool({
   const [seed, setSeed] = useDraftState("seed", () => freshSeed() + Math.max(0, sectionIndex));
   const [voice, setVoice] = useDraftState<DrumKit>("kit", (idea?.voice as DrumKit) || "acoustic studio");
   const [sampleStatus,setSampleStatus]=useState("");
-  const [generationFeedback,setGenerationFeedback]=useState("");
   const drumPaint=useRef<{instrument:DrumInstrument;mode:"add"|"erase";last:number}|null>(null);
   const [savedLoop, setSavedLoop] = useDraftState<DrumHit[] | null>("savedLoop", () =>
     idea ? decodeDrumIdea(idea) : null,
@@ -4842,8 +4880,7 @@ function DrumTool({
   const regenerate = () => {
     setSavedLoop(null);
     setSeed((current) => current + 1);
-    setGenerationFeedback("New phrase ready");
-    window.setTimeout(()=>setGenerationFeedback(""),1200);
+    announceGenerated("Drum phrase");
   };
   const paintHit=(instrument:DrumInstrument,step:number,mode:"add"|"erase")=>{
     const next=[...loop];
@@ -4938,7 +4975,6 @@ function DrumTool({
           >
             Generate new phrase <span>↻</span>
           </button>
-          <span className="generation-feedback" role="status">{generationFeedback}</span>
         </GeneratorSettings>}
         <section className="result-panel">
           {workspaceMode==="generate"&&<VariationControls percussion value={loop} apply={value=>{transport.stop();setSavedLoop(value);}} vary={(kind,locks)=>{
@@ -5531,8 +5567,7 @@ function ProjectModal({
   const [bpm, setBpm] = useState(120);
   const [root, setRoot] = useState("E");
   const [mode, setMode] = useState("dorian");
-  const [meterTop,setMeterTop]=useState(4);
-  const [meterBottom,setMeterBottom]=useState(4);
+  const [meter,setMeter]=useState("4/4");
   return (
     <div className="modal-layer">
       <div className="modal">
@@ -5566,14 +5601,11 @@ function ProjectModal({
           set={setMode}
           options={[...SELECTABLE_MODES]}
         />
-        <div className="two-cols meter-fields">
-          <label className="field"><span>Beats per bar</span><input type="number" min="1" max="16" value={meterTop} onChange={event=>setMeterTop(Math.max(1,Math.min(16,Number(event.target.value)||4)))}/></label>
-          <label className="field"><span>Beat subdivision</span><select value={meterBottom} onChange={event=>setMeterBottom(Number(event.target.value))}><option value="4">Quarter note / 4</option><option value="8">Eighth note / 8</option></select></label>
-        </div>
+        <MeterSelect value={meter} onChange={setMeter} className="modal-meter"/>
         <button
           className="primary-button wide"
           disabled={!name.trim()}
-          onClick={() => submit(name.trim(), bpm, `${root} ${mode}`, `${meterTop}/${meterBottom}`)}
+          onClick={() => submit(name.trim(), bpm, `${root} ${mode}`, meter)}
         >
           Create project
         </button>
