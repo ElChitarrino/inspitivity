@@ -253,12 +253,12 @@ test("mobile playback explicitly unlocks and masters the Web Audio graph", () =>
   assert.match(source, /engine\.unlock/);
 });
 
-test("the home screen can create a coherent playable sketch in one flow", () => {
+test("easy mode creates one coordinated song draft with optional customization", () => {
   assert.match(source, /Start something/);
-  assert.match(source, /Quick sketch/);
+  assert.match(source, /Easy mode/);
   assert.match(source, /Empty project/);
   assert.match(source, /Record idea/);
-  assert.match(source, /Build playable sketch/);
+  assert.match(source, /Generate connected draft/);
   assert.match(source, /function buildPlayableSketch/);
   assert.match(source, /Emotive space/);
   assert.match(source, /Neo-soul glow/);
@@ -281,6 +281,13 @@ test("the home screen can create a coherent playable sketch in one flow", () => 
   assert.match(source, /includePattern/);
   assert.match(source, /extendedForm/);
   assert.match(source, /preferredForms/);
+  assert.match(source, /const themeChords=/);
+  assert.match(source, /const coreMotif=/);
+  assert.match(source, /const coreRiff=/);
+  assert.match(source, /relationFor/);
+  assert.match(source, /voice:bassVoice/);
+  assert.match(source, /follows harmony and kick/);
+  assert.match(source, /Customize key, tempo and parts/);
 });
 
 test("existing songs can generate a complete context-aware section", () => {

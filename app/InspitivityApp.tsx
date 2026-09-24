@@ -630,55 +630,80 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions): Proj
   };
   const preferredForms=forms[preset.id].filter(candidate=>options.extendedForm?candidate.length>=5:candidate.length<=4);
   const form = pick(preferredForms.length?preferredForms:forms[preset.id]);
+  type SketchRelation="theme"|"develop"|"contrast"|"return";
+  const relationFor=(name:string,index:number):SketchRelation=>{
+    if(index===0)return "theme";
+    if(/return|outro|coda|tag|resolve|final|riff a|theme a|verse return/i.test(name))return "return";
+    if(/contrast|break|clean|interlude|half-time|release|drop/i.test(name))return "contrast";
+    return "develop";
+  };
+  const themeCount=preset.id==="emotive"?3:4;
+  const themeChords=makeChordDrafts(
+    root,mode,themeCount,preset.id==="neo-soul"||preset.id==="prog"?"advanced":"medium",
+    seed,beatsPerBar,0,preset.id==="heavy"?"pedal point":"diatonic",preset.opening,
+    preset.id==="emotive"?"open":"mixed",preset.tension,
+  );
+  const themePitchClasses=themeChords.map(chord=>notePitchClass(chord.name)).filter((pitch):pitch is number=>pitch!==null);
+  const coreMotif=fitMelodyToChords(generateMelody({
+    root,mode,notes:preset.id==="emotive"?12:16,density:preset.id==="emotive"?.42:.58,
+    mood:preset.mood,seed:seed+7,shape:preset.id==="heavy"?"hook":preset.id==="emotive"?"floating":"answer",
+  }),themeChords);
+  const coreRiff=options.includePattern?fitMelodyToChords(generateProgRiff({
+    root,mode,beats:beatsPerBar*2,cycle:preset.id==="heavy"?7:5,
+    grouping:preset.id==="heavy"?"3+2+2":"3+3+2",density:preset.id==="heavy"?.72:.48,
+    seed:seed+23,startOffset:preset.id==="heavy"?.25:.5,motion:preset.id==="heavy"?"anchor":"orbit",
+  }).map(note=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),themeChords):[];
+  const chordVoice=pick(preset.id==="heavy"?["distorted guitar","warm pad"]:["warm pad","glass","pluck"] as SynthVoice[]);
+  const melodyVoice=pick(["air flute","glass","pluck"] as SynthVoice[]);
+  const patternVoice=pick(["analog pulse","pluck",...(preset.id==="heavy"?["distorted guitar" as SynthVoice]:[])] as SynthVoice[]);
+  const drumVoice=pick(preset.id==="heavy"?["prog metal","rock","dry studio"]:["acoustic studio","dry studio","roomy rock"] as DrumKit[]);
+  const bassVoice=pick(preset.id==="heavy"?["deep bass","sub bass"]:["deep bass","808 bass","sub bass"] as BassVoice[]);
+  const mainBars=options.extendedForm?pick([4,8]):4;
   const sections = form.map((formSection, sectionIndex): SongSection => {
     const sectionSeed = seed + sectionIndex * 17;
     const finalSection = sectionIndex === form.length - 1;
-    const bars = pick(preset.id === "emotive" ? [2,4,4,6,8] : [2,4,4,8]);
-    const density = Math.max(.25, Math.min(.9, formSection.energy + (random()-.5)*.12));
-    const chordCount = pick(preset.id === "neo-soul" || preset.id === "prog" ? [4,4,5,6] : [3,4,4,5]);
-    const colour=pick([preset.colour,preset.colour,preset.id==="heavy"?"chromatic mediant":preset.id==="emotive"?"diatonic":"modal interchange"] as HarmonyColour[]);
-    const opening=finalSection?pick(["tonic",preset.opening] as ProgressionOpening[]):pick([preset.opening,"away","surprise"] as ProgressionOpening[]);
-    const tension=pick([preset.tension,preset.tension,preset.id==="emotive"?"smooth":"balanced"] as HarmonicTension[]);
-    const chords = rhythmizeChords(makeChordDrafts(
-      root, mode, chordCount,
-      preset.id === "neo-soul" || preset.id === "prog" ? "advanced" : "medium",
-      sectionSeed, beatsPerBar, finalSection ? pick([0,8,14]) : pick([0,0,6]),
-      colour, opening, pick(["mixed","open","drop 2"] as VoicingStyle[]), tension,
-    ),sectionSeed,pick(preset.id==="emotive"?["sparse","sustain","adaptive"]:preset.id==="heavy"?["driving","syncopated","adaptive"]:["adaptive","syncopated","sparse"]),meter);
-    const melody = fitMelodyToChords(generateMelody({
-      root, mode,
-      notes:Math.round(10+density*pick([18,22,26])), density,
-      mood:sectionIndex===0 ? "calm" : preset.mood, seed:sectionSeed+7,
-      shape:pick(sectionIndex===0 ? ["floating","flow"] : finalSection ? ["hook","answer","flow"] : ["flow","answer"]),
-    }),chords);
-    const addRiff = options.includePattern && (finalSection || random() > (preset.id === "prog" || preset.id === "heavy" ? .42 : .68));
-    const riff = addRiff ? fitMelodyToChords(generateProgRiff({
-      root, mode, beats:beatsPerBar,
-      cycle:preset.id === "heavy" ? pick([5,7]) : pick([5,7,9]),
-      grouping:preset.id === "heavy" ? "3+2+2" : "2+2+3",
-      density:preset.id === "heavy" ? .72 : .52, seed:sectionSeed+23,
-      startOffset:pick([.25,.5,1]), motion:preset.id === "heavy" ? "anchor" : "orbit",
-    }).map((note)=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),chords) : [];
-    const groove=sectionIndex===0?pick(["steady",preset.groove] as DrumStyle[]):pick([preset.groove,preset.groove,preset.id==="heavy"?"linear":"syncopated"] as DrumStyle[]);
-    let drums = generateDrumLoop({ beatsPerBar, density, style:groove, energy:sectionIndex===0 ? "mellow" : preset.energy, seed:sectionSeed+13, bars });
+    const relation=relationFor(formSection.name,sectionIndex);
+    const bars=relation==="theme"||(/outro|coda|tag/i.test(formSection.name)&&finalSection)?Math.min(4,mainBars):mainBars;
+    const density=Math.max(.28,Math.min(.88,formSection.energy));
+    const voicing:VoicingStyle=relation==="return"?"open":relation==="contrast"?"drop 2":"mixed";
+    const sourceChords=relation==="contrast"?makeChordDrafts(
+      root,mode,themeCount,preset.id==="neo-soul"||preset.id==="prog"?"advanced":"medium",
+      seed+101,beatsPerBar,0,preset.id==="neo-soul"?"modal interchange":"diatonic","surprise",voicing,
+      preset.tension,themePitchClasses,
+    ):themeChords.map((chord,index)=>({...chord,id:uid(),pitches:voiceChord(chord.name,sectionSeed+index*997,voicing)}));
+    const rhythmStyle:ChordRhythm=relation==="theme"?(preset.id==="emotive"?"sustain":"adaptive")
+      :relation==="contrast"?"sparse":relation==="return"?(preset.id==="heavy"?"driving":"adaptive"):preset.id==="emotive"?"sparse":"syncopated";
+    const chords=rhythmizeChords(sourceChords,relation==="return"?seed:sectionSeed,rhythmStyle,meter);
+    const motifSource=relation==="contrast"
+      ?generateMelody({root,mode,notes:Math.max(8,Math.round(12*density)),density:Math.min(.65,density),mood:preset.mood,seed:seed+107,shape:"answer"})
+      :coreMotif;
+    let melody=fitMelodyToChords(motifSource,chords).map(note=>({...note,velocity:Math.max(.48,Math.min(.82,.5+density*.35))}));
+    if(relation==="theme"&&formSection.energy<.4)melody=melody.filter((_,index)=>index%2===0);
+    const riff=options.includePattern&&formSection.energy>=.45?fitMelodyToChords(coreRiff,chords):[];
+    if(riff.length)melody=melody.filter((_,index)=>index%2===0);
+    const sectionEnergy:GrooveEnergy=formSection.energy<.43?"mellow":formSection.energy>.72?"powerful":"balanced";
+    const groove:DrumStyle=relation==="contrast"?(preset.id==="heavy"?"linear":"steady"):relation==="theme"?"steady":preset.groove;
+    const drumSeed=relation==="return"?seed+13:relation==="contrast"?seed+113:seed+13+(relation==="develop"?17:0);
+    let drums = generateDrumLoop({ beatsPerBar, density, style:groove, energy:sectionEnergy, seed:drumSeed, bars });
     drums = reinforceDrumAccents(drums,(riff.length ? riff : melody).filter((_,index)=>index%4===0).map(note=>note.start),beatsPerBar*bars*4);
     const ideas: Idea[] = [
-      { id:uid(),type:"chords",name:`${formSection.name} harmony`,voice:pick(preset.id==="heavy"?["distorted guitar","warm pad"]:["warm pad","glass","pluck"] as SynthVoice[]),detail:chords.map(chord=>chord.name).join(" · "),data:chords.map(encodeChord) },
-      { id:uid(),type:"drums",name:`${formSection.name} pocket`,voice:pick(preset.id==="heavy"?["prog metal","rock","dry studio"]:["acoustic studio","dry studio","roomy rock"] as DrumKit[]),detail:`${drums.length} hits · ${meter}`,data:drums.map(hit=>`${hit.instrument}|${hit.step}|${hit.velocity}|${beatsPerBar*4}`) },
+      { id:uid(),type:"chords",name:`${formSection.name} harmony`,voice:chordVoice,detail:chords.map(chord=>chord.name).join(" · "),data:chords.map(encodeChord) },
+      { id:uid(),type:"drums",name:`${formSection.name} pocket`,voice:drumVoice,detail:`${drums.length} hits · ${meter}`,data:drums.map(hit=>`${hit.instrument}|${hit.step}|${hit.velocity}|${beatsPerBar*4}`) },
     ];
-    if(options.includeMelody)ideas.splice(1,0,{ id:uid(),type:"melody",name:`${formSection.name} motif`,voice:pick(["air flute","glass","pluck"] as SynthVoice[]),detail:melody.map(note=>note.note).join(" · "),data:melody.map(note=>`${note.note}|${note.start}|${note.duration}|${note.pitch}`) });
-    if(riff.length) ideas.push({ id:uid(),type:"riff",name:`${formSection.name} pulse`,voice:pick(["analog pulse","pluck","distorted guitar"] as SynthVoice[]),detail:`${riff.length} notes · ${meter}`,data:riff.map(note=>`${note.pitch}|${note.start}|${note.duration}|${note.accent?1:0}|${note.muted?1:0}`) });
-    const section: SongSection = { id:uid(),name:formSection.name,bars,color:formSection.color,ideas,meterMap:Array.from({length:bars},()=>meter),energy:sectionIndex===0?"mellow":preset.energy };
+    if(options.includeMelody)ideas.splice(1,0,{ id:uid(),type:"melody",name:`${formSection.name} motif`,voice:melodyVoice,detail:melody.map(note=>note.note).join(" · "),data:melody.map(note=>`${note.note}|${note.start}|${note.duration}|${note.pitch}`) });
+    if(riff.length) ideas.push({ id:uid(),type:"riff",name:`${formSection.name} pulse`,voice:patternVoice,detail:`${riff.length} notes · ${meter}`,data:riff.map(note=>`${note.pitch}|${note.start}|${note.duration}|${note.accent?1:0}|${note.muted?1:0}`) });
+    const section: SongSection = { id:uid(),name:formSection.name,bars,color:formSection.color,ideas,meterMap:Array.from({length:bars},()=>meter),energy:sectionEnergy };
     const sketchContext: Project = { id:"preview",name:preset.label,bpm,meter,key:formatProjectKey(root,mode),updated:0,sections:[section] };
     const bass = generateBassLine(
       sketchContext,
       section,
-      sectionIndex===0 ? "sustained" : preset.id==="prog" ? "progressive" : "groove",
-      preset.id==="heavy" ? "rooted" : preset.id==="neo-soul" || preset.id==="prog" ? "melodic" : "supportive",
+      relation==="theme" ? "sustained" : preset.id==="prog" ? "progressive" : "groove",
+      riff.length||preset.id==="heavy" ? "rooted" : preset.id==="neo-soul" || preset.id==="prog" ? "melodic" : "supportive",
       true,
       sectionSeed+29,
+      .35+density*.45,
     );
-    ideas.push({ id:uid(),type:"bass",name:`${formSection.name} bass`,detail:`${bass.length} notes · chord and kick aware`,data:bass.map(encodeBassEvent),voice:pick(preset.id==="heavy"?["deep bass","sub bass"]:["deep bass","808 bass","sub bass"] as BassVoice[]) });
+    ideas.push({ id:uid(),type:"bass",name:`${formSection.name} bass`,detail:`${bass.length} notes · follows harmony and kick`,data:bass.map(encodeBassEvent),voice:bassVoice });
     section.mix=automaticSectionMix(section,sketchContext);
     return section;
   });
@@ -2241,7 +2266,7 @@ function Home({
         </div>
         <div className="start-actions" aria-label="Ways to start">
           <button className={startMode === "quick" ? "active" : ""} aria-expanded={startMode === "quick"} onClick={() => setStartMode(current => current === "quick" ? null : "quick")}>
-            <span aria-hidden="true">✦</span><b>Quick sketch</b><small>Generate something playable from a direction.</small>
+            <span aria-hidden="true">✦</span><b>Easy mode</b><small>Build a connected song draft in one step.</small>
           </button>
           <button onClick={create}>
             <span aria-hidden="true">＋</span><b>Empty project</b><small>Shape the song manually from a blank section.</small>
@@ -2251,7 +2276,7 @@ function Home({
           </button>
         </div>
         {startMode === "quick" && <div className="quick-sketch-panel">
-          <div className="quick-sketch-heading"><b>Choose a musical direction</b><span>Then refine every generated part.</span></div>
+          <div className="quick-sketch-heading"><b>Choose the song&apos;s direction</b><span>Every part follows one shared musical plan.</span></div>
           <div className="preset-grid" role="radiogroup" aria-label="Sketch direction">
             {SKETCH_PRESETS.map((candidate) => (
             <button
@@ -2267,7 +2292,9 @@ function Home({
             </button>
             ))}
           </div>
-          <div className="sketch-options" aria-label="Quick sketch settings">
+          <details className="sketch-customize">
+            <summary>Customize key, tempo and parts</summary>
+          <div className="sketch-options" aria-label="Easy mode settings">
             <label><span>Key</span><select aria-label="Sketch key" value={sketchRoot} onChange={event=>setSketchRoot(event.target.value as Root)}>{ROOTS.map(root=><option key={root}>{root}</option>)}</select></label>
             <label><span>Scale</span><select aria-label="Sketch scale" value={sketchMode} onChange={event=>setSketchMode(event.target.value as Mode)}>{MODES.map(mode=><option key={mode} value={mode}>{MODE_LABELS[mode]}</option>)}</select></label>
             <label><span>Tempo</span><div className="sketch-tempo"><input aria-label="Sketch tempo" type="text" inputMode="numeric" pattern="[0-9]*" enterKeyHint="done" value={sketchBpm} onChange={event=>setSketchBpm(event.target.value.replace(/\D/g,"").slice(0,3))} onBlur={()=>setSketchBpm(String(parsedSketchBpm))}/><small>BPM</small></div></label>
@@ -2278,6 +2305,7 @@ function Home({
             <label><input type="checkbox" checked={includePattern} onChange={event=>setIncludePattern(event.target.checked)}/><span><b>Synth pattern</b><small>Add a rhythmic counter-layer</small></span></label>
             <label><input type="checkbox" checked={extendedForm} onChange={event=>setExtendedForm(event.target.checked)}/><span><b>Extended form</b><small>Build five contrasting sections</small></span></label>
           </div>
+          </details>
           <div className="sketch-launcher">
             <div className="sketch-spec">
               <span><small>Key</small>{formatProjectKey(sketchOptions.root, sketchOptions.mode)}</span>
@@ -2285,7 +2313,7 @@ function Home({
               <span><small>Time signature</small>{sketchOptions.meter}</span>
             </div>
             <button className="primary-button" onClick={() => launchSketch(preset,sketchOptions)}>
-              Build playable sketch <span>＋</span>
+              Generate connected draft <span>＋</span>
             </button>
           </div>
         </div>}
