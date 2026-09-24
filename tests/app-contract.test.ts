@@ -268,6 +268,15 @@ test("the home screen can create a coherent playable sketch in one flow", () => 
   assert.match(source, /const forms: Record<SketchPreset/);
   assert.match(source, /reinforceDrumAccents/);
   assert.match(source, /sectionPitchContext/);
+  assert.match(source, /aria-label="Sketch key"/);
+  assert.match(source, /aria-label="Sketch scale"/);
+  assert.match(source, /aria-label="Sketch tempo"/);
+  assert.match(source, /aria-label="Time signature beats"/);
+  assert.match(source, /aria-label="Time signature subdivision"/);
+  assert.match(source, /includeMelody/);
+  assert.match(source, /includePattern/);
+  assert.match(source, /extendedForm/);
+  assert.match(source, /preferredForms/);
 });
 
 test("existing songs can generate a complete context-aware section", () => {

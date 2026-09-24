@@ -211,6 +211,15 @@ type SketchPreset = {
   opening: ProgressionOpening;
   tension: HarmonicTension;
 };
+type SketchOptions = {
+  root: Root;
+  mode: Mode;
+  bpm: number;
+  meter: string;
+  includeMelody: boolean;
+  includePattern: boolean;
+  extendedForm: boolean;
+};
 
 const SYNTH_VOICES: SynthVoice[] = [
   "air flute",
@@ -587,67 +596,80 @@ function reinforceDrumAccents(hits: DrumHit[], starts: number[], phraseSteps: nu
   return next.sort((a,b) => a.step-b.step);
 }
 
-function buildPlayableSketch(preset: SketchPreset): Project {
+function buildPlayableSketch(preset: SketchPreset, options: SketchOptions): Project {
   const seed = freshSeed();
   const random = seededRandom(seed);
   const pick = <T,>(values: T[]) => values[Math.floor(random() * values.length)];
-  const beatsPerBar = meterBeats(preset.meter);
+  const root=options.root,mode=options.mode,meter=options.meter,bpm=clampBpm(options.bpm);
+  const beatsPerBar = meterBeats(meter);
   const forms: Record<SketchPreset["id"], Array<Array<{ name:string; color:string; energy:number }>>> = {
     emotive: [
       [{name:"Intro",color:"violet",energy:.32},{name:"Verse",color:"mint",energy:.48},{name:"Bloom",color:"amber",energy:.64}],
       [{name:"Verse",color:"blue",energy:.4},{name:"Lift",color:"violet",energy:.58},{name:"Release",color:"mint",energy:.34},{name:"Outro",color:"amber",energy:.24}],
+      [{name:"Prelude",color:"blue",energy:.25},{name:"Verse",color:"mint",energy:.42},{name:"Refrain",color:"violet",energy:.62},{name:"Verse Return",color:"mint",energy:.48},{name:"Coda",color:"amber",energy:.3}],
+      [{name:"Theme",color:"violet",energy:.38},{name:"Answer",color:"blue",energy:.5},{name:"Open Sky",color:"amber",energy:.68},{name:"Theme Return",color:"mint",energy:.36}],
     ],
     "neo-soul": [
       [{name:"Pocket A",color:"mint",energy:.48},{name:"Turn",color:"violet",energy:.58},{name:"Hook",color:"amber",energy:.66}],
       [{name:"Intro",color:"blue",energy:.36},{name:"Verse",color:"mint",energy:.52},{name:"Lift",color:"violet",energy:.62},{name:"Return",color:"amber",energy:.54}],
+      [{name:"Pickup",color:"blue",energy:.4},{name:"Pocket A",color:"mint",energy:.52},{name:"Pocket B",color:"violet",energy:.58},{name:"Hook",color:"amber",energy:.7},{name:"Tag",color:"coral",energy:.46}],
+      [{name:"Verse",color:"mint",energy:.46},{name:"Pre-Hook",color:"blue",energy:.6},{name:"Hook",color:"amber",energy:.68},{name:"Break",color:"violet",energy:.38}],
     ],
     prog: [
       [{name:"Theme A",color:"violet",energy:.44},{name:"Development",color:"blue",energy:.6},{name:"Return",color:"amber",energy:.7}],
       [{name:"Intro",color:"mint",energy:.36},{name:"Theme",color:"violet",energy:.54},{name:"Contrast",color:"blue",energy:.46},{name:"Climax",color:"coral",energy:.76}],
+      [{name:"Motif",color:"mint",energy:.42},{name:"Expansion",color:"violet",energy:.58},{name:"Half-Time",color:"blue",energy:.4},{name:"Motif Return",color:"amber",energy:.68},{name:"Resolve",color:"coral",energy:.52}],
+      [{name:"Pulse",color:"blue",energy:.48},{name:"Theme A",color:"violet",energy:.58},{name:"Interlude",color:"mint",energy:.34},{name:"Theme B",color:"amber",energy:.66},{name:"Finale",color:"coral",energy:.8}],
     ],
     heavy: [
       [{name:"Intro",color:"blue",energy:.34},{name:"Riff A",color:"violet",energy:.62},{name:"Impact",color:"coral",energy:.82}],
       [{name:"Pulse",color:"mint",energy:.5},{name:"Riff A",color:"violet",energy:.7},{name:"Contrast",color:"blue",energy:.42},{name:"Return",color:"coral",energy:.86}],
+      [{name:"Tension",color:"blue",energy:.4},{name:"Riff A",color:"violet",energy:.72},{name:"Breakdown",color:"coral",energy:.88},{name:"Clean Air",color:"mint",energy:.34},{name:"Final Impact",color:"amber",energy:.92}],
+      [{name:"Stab",color:"coral",energy:.66},{name:"Verse",color:"violet",energy:.72},{name:"Hook",color:"amber",energy:.82},{name:"Drop",color:"blue",energy:.9}],
     ],
   };
-  const form = pick(forms[preset.id]);
+  const preferredForms=forms[preset.id].filter(candidate=>options.extendedForm?candidate.length>=5:candidate.length<=4);
+  const form = pick(preferredForms.length?preferredForms:forms[preset.id]);
   const sections = form.map((formSection, sectionIndex): SongSection => {
     const sectionSeed = seed + sectionIndex * 17;
     const finalSection = sectionIndex === form.length - 1;
-    const bars = pick(preset.id === "emotive" ? [4,4,6,8] : [4,4,8]);
+    const bars = pick(preset.id === "emotive" ? [2,4,4,6,8] : [2,4,4,8]);
     const density = Math.max(.25, Math.min(.9, formSection.energy + (random()-.5)*.12));
     const chordCount = pick(preset.id === "neo-soul" || preset.id === "prog" ? [4,4,5,6] : [3,4,4,5]);
+    const colour=pick([preset.colour,preset.colour,preset.id==="heavy"?"chromatic mediant":preset.id==="emotive"?"diatonic":"modal interchange"] as HarmonyColour[]);
+    const opening=finalSection?pick(["tonic",preset.opening] as ProgressionOpening[]):pick([preset.opening,"away","surprise"] as ProgressionOpening[]);
+    const tension=pick([preset.tension,preset.tension,preset.id==="emotive"?"smooth":"balanced"] as HarmonicTension[]);
     const chords = rhythmizeChords(makeChordDrafts(
-      preset.root, preset.mode, chordCount,
+      root, mode, chordCount,
       preset.id === "neo-soul" || preset.id === "prog" ? "advanced" : "medium",
       sectionSeed, beatsPerBar, finalSection ? pick([0,8,14]) : pick([0,0,6]),
-      preset.colour, finalSection && random() > .45 ? "tonic" : preset.opening,
-      pick(["mixed","open","drop 2"] as VoicingStyle[]), preset.tension,
-    ),sectionSeed,preset.id==="emotive"?"sparse":preset.id==="heavy"?"driving":"adaptive",preset.meter);
+      colour, opening, pick(["mixed","open","drop 2"] as VoicingStyle[]), tension,
+    ),sectionSeed,pick(preset.id==="emotive"?["sparse","sustain","adaptive"]:preset.id==="heavy"?["driving","syncopated","adaptive"]:["adaptive","syncopated","sparse"]),meter);
     const melody = fitMelodyToChords(generateMelody({
-      root:preset.root, mode:preset.mode,
+      root, mode,
       notes:Math.round(10+density*pick([18,22,26])), density,
       mood:sectionIndex===0 ? "calm" : preset.mood, seed:sectionSeed+7,
       shape:pick(sectionIndex===0 ? ["floating","flow"] : finalSection ? ["hook","answer","flow"] : ["flow","answer"]),
     }),chords);
-    const addRiff = (preset.id === "prog" || preset.id === "heavy") && (finalSection || random() > .58);
+    const addRiff = options.includePattern && (finalSection || random() > (preset.id === "prog" || preset.id === "heavy" ? .42 : .68));
     const riff = addRiff ? fitMelodyToChords(generateProgRiff({
-      root:preset.root, mode:preset.mode, beats:beatsPerBar,
+      root, mode, beats:beatsPerBar,
       cycle:preset.id === "heavy" ? pick([5,7]) : pick([5,7,9]),
       grouping:preset.id === "heavy" ? "3+2+2" : "2+2+3",
       density:preset.id === "heavy" ? .72 : .52, seed:sectionSeed+23,
       startOffset:pick([.25,.5,1]), motion:preset.id === "heavy" ? "anchor" : "orbit",
     }).map((note)=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),chords) : [];
-    let drums = generateDrumLoop({ beatsPerBar, density, style:sectionIndex===0 ? "steady" : preset.groove, energy:sectionIndex===0 ? "mellow" : preset.energy, seed:sectionSeed+13, bars });
+    const groove=sectionIndex===0?pick(["steady",preset.groove] as DrumStyle[]):pick([preset.groove,preset.groove,preset.id==="heavy"?"linear":"syncopated"] as DrumStyle[]);
+    let drums = generateDrumLoop({ beatsPerBar, density, style:groove, energy:sectionIndex===0 ? "mellow" : preset.energy, seed:sectionSeed+13, bars });
     drums = reinforceDrumAccents(drums,(riff.length ? riff : melody).filter((_,index)=>index%4===0).map(note=>note.start),beatsPerBar*bars*4);
     const ideas: Idea[] = [
-      { id:uid(),type:"chords",name:`${formSection.name} harmony`,voice:preset.id==="heavy"?"distorted guitar":preset.id==="emotive"?"glass":"warm pad",detail:chords.map(chord=>chord.name).join(" · "),data:chords.map(encodeChord) },
-      { id:uid(),type:"melody",name:`${formSection.name} motif`,detail:melody.map(note=>note.note).join(" · "),data:melody.map(note=>`${note.note}|${note.start}|${note.duration}|${note.pitch}`) },
-      { id:uid(),type:"drums",name:`${formSection.name} pocket`,voice:preset.id==="heavy"?"prog metal":"acoustic studio",detail:`${drums.length} hits · ${preset.meter}`,data:drums.map(hit=>`${hit.instrument}|${hit.step}|${hit.velocity}|${beatsPerBar*4}`) },
+      { id:uid(),type:"chords",name:`${formSection.name} harmony`,voice:pick(preset.id==="heavy"?["distorted guitar","warm pad"]:["warm pad","glass","pluck"] as SynthVoice[]),detail:chords.map(chord=>chord.name).join(" · "),data:chords.map(encodeChord) },
+      { id:uid(),type:"drums",name:`${formSection.name} pocket`,voice:pick(preset.id==="heavy"?["prog metal","rock","dry studio"]:["acoustic studio","dry studio","roomy rock"] as DrumKit[]),detail:`${drums.length} hits · ${meter}`,data:drums.map(hit=>`${hit.instrument}|${hit.step}|${hit.velocity}|${beatsPerBar*4}`) },
     ];
-    if(riff.length) ideas.push({ id:uid(),type:"riff",name:`${formSection.name} pulse`,detail:`${riff.length} notes · ${preset.meter}`,data:riff.map(note=>`${note.pitch}|${note.start}|${note.duration}|${note.accent?1:0}|${note.muted?1:0}`) });
-    const section: SongSection = { id:uid(),name:formSection.name,bars,color:formSection.color,ideas,meterMap:Array.from({length:bars},()=>preset.meter),energy:sectionIndex===0?"mellow":preset.energy };
-    const sketchContext: Project = { id:"preview",name:preset.label,bpm:preset.bpm,meter:preset.meter,key:formatProjectKey(preset.root,preset.mode),updated:0,sections:[section] };
+    if(options.includeMelody)ideas.splice(1,0,{ id:uid(),type:"melody",name:`${formSection.name} motif`,voice:pick(["air flute","glass","pluck"] as SynthVoice[]),detail:melody.map(note=>note.note).join(" · "),data:melody.map(note=>`${note.note}|${note.start}|${note.duration}|${note.pitch}`) });
+    if(riff.length) ideas.push({ id:uid(),type:"riff",name:`${formSection.name} pulse`,voice:pick(["analog pulse","pluck","distorted guitar"] as SynthVoice[]),detail:`${riff.length} notes · ${meter}`,data:riff.map(note=>`${note.pitch}|${note.start}|${note.duration}|${note.accent?1:0}|${note.muted?1:0}`) });
+    const section: SongSection = { id:uid(),name:formSection.name,bars,color:formSection.color,ideas,meterMap:Array.from({length:bars},()=>meter),energy:sectionIndex===0?"mellow":preset.energy };
+    const sketchContext: Project = { id:"preview",name:preset.label,bpm,meter,key:formatProjectKey(root,mode),updated:0,sections:[section] };
     const bass = generateBassLine(
       sketchContext,
       section,
@@ -656,16 +678,16 @@ function buildPlayableSketch(preset: SketchPreset): Project {
       true,
       sectionSeed+29,
     );
-    ideas.push({ id:uid(),type:"bass",name:`${formSection.name} bass`,detail:`${bass.length} notes · chord and kick aware`,data:bass.map(encodeBassEvent),voice:"deep bass" });
+    ideas.push({ id:uid(),type:"bass",name:`${formSection.name} bass`,detail:`${bass.length} notes · chord and kick aware`,data:bass.map(encodeBassEvent),voice:pick(preset.id==="heavy"?["deep bass","sub bass"]:["deep bass","808 bass","sub bass"] as BassVoice[]) });
     section.mix=automaticSectionMix(section,sketchContext);
     return section;
   });
   return {
     id: uid(),
     name: `${preset.label} sketch`,
-    bpm: preset.bpm,
-    meter: preset.meter,
-    key: formatProjectKey(preset.root, preset.mode),
+    bpm,
+    meter,
+    key: formatProjectKey(root, mode),
     updated: Date.now(),
     sections,
   };
@@ -1771,8 +1793,8 @@ export default function InspitivityApp({ account, signOutPath }: {
     notify(`Deleted ${projectToDelete.name}`);
     setProjectToDelete(null);
   };
-  const launchSketch = (preset: SketchPreset) => {
-    const project = buildPlayableSketch(preset);
+  const launchSketch = (preset: SketchPreset, options: SketchOptions) => {
+    const project = buildPlayableSketch(preset, options);
     setProjects((items) => [project, ...items]);
     setSelectedId(project.id);
     setScreen("project");
@@ -2180,13 +2202,27 @@ function Home({
   go: (s: Screen) => void;
   create: () => void;
   record: () => void;
-  launchSketch: (preset: SketchPreset) => void;
+  launchSketch: (preset: SketchPreset, options: SketchOptions) => void;
 }) {
   const [startMode, setStartMode] = useState<"quick" | null>(null);
   const [presetId, setPresetId] = useState<SketchPreset["id"]>("neo-soul");
   const preset =
     SKETCH_PRESETS.find((candidate) => candidate.id === presetId) ??
     SKETCH_PRESETS[0];
+  const [sketchRoot,setSketchRoot]=useState<Root>(preset.root);
+  const [sketchMode,setSketchMode]=useState<Mode>(canonicalMode(preset.mode) as Mode);
+  const [sketchBpm,setSketchBpm]=useState(preset.bpm);
+  const [meterTop,setMeterTop]=useState(Number(preset.meter.split("/")[0]));
+  const [meterBottom,setMeterBottom]=useState(Number(preset.meter.split("/")[1]));
+  const [includeMelody,setIncludeMelody]=useState(true);
+  const [includePattern,setIncludePattern]=useState(preset.id==="prog"||preset.id==="heavy");
+  const [extendedForm,setExtendedForm]=useState(false);
+  const choosePreset=(candidate:SketchPreset)=>{
+    setPresetId(candidate.id);setSketchRoot(candidate.root);setSketchMode(canonicalMode(candidate.mode) as Mode);setSketchBpm(candidate.bpm);
+    setMeterTop(Number(candidate.meter.split("/")[0]));setMeterBottom(Number(candidate.meter.split("/")[1]));
+    setIncludeMelody(true);setIncludePattern(candidate.id==="prog"||candidate.id==="heavy");setExtendedForm(false);
+  };
+  const sketchOptions:SketchOptions={root:sketchRoot,mode:sketchMode,bpm:clampBpm(sketchBpm),meter:`${Math.max(1,Math.min(16,Math.round(meterTop)||4))}/${meterBottom===8?8:4}`,includeMelody,includePattern,extendedForm};
   return (
     <>
       <Topbar
@@ -2221,7 +2257,7 @@ function Home({
               className={candidate.id === preset.id ? "active" : ""}
               role="radio"
               aria-checked={candidate.id === preset.id}
-              onClick={() => setPresetId(candidate.id)}
+              onClick={() => choosePreset(candidate)}
             >
               <b>{candidate.accent}</b>
               <span>{candidate.label}</span>
@@ -2229,13 +2265,24 @@ function Home({
             </button>
             ))}
           </div>
+          <div className="sketch-options" aria-label="Quick sketch settings">
+            <label><span>Key</span><select aria-label="Sketch key" value={sketchRoot} onChange={event=>setSketchRoot(event.target.value as Root)}>{ROOTS.map(root=><option key={root}>{root}</option>)}</select></label>
+            <label><span>Scale</span><select aria-label="Sketch scale" value={sketchMode} onChange={event=>setSketchMode(event.target.value as Mode)}>{MODES.map(mode=><option key={mode} value={mode}>{MODE_LABELS[mode]}</option>)}</select></label>
+            <label><span>Tempo</span><div className="sketch-tempo"><input aria-label="Sketch tempo" type="number" inputMode="numeric" min="30" max="260" value={sketchBpm} onChange={event=>setSketchBpm(clampBpm(Number(event.target.value)))}/><small>BPM</small></div></label>
+            <label><span>Time signature</span><div className="sketch-meter"><input aria-label="Time signature beats" type="number" inputMode="numeric" min="1" max="16" value={meterTop} onChange={event=>setMeterTop(Math.max(1,Math.min(16,Number(event.target.value)||4)))}/><b>/</b><select aria-label="Time signature subdivision" value={meterBottom} onChange={event=>setMeterBottom(Number(event.target.value))}><option value="4">4</option><option value="8">8</option></select></div></label>
+          </div>
+          <div className="sketch-toggles" aria-label="Sketch arrangement options">
+            <label><input type="checkbox" checked={includeMelody} onChange={event=>setIncludeMelody(event.target.checked)}/><span><b>Melody</b><small>Add a lead motif</small></span></label>
+            <label><input type="checkbox" checked={includePattern} onChange={event=>setIncludePattern(event.target.checked)}/><span><b>Synth pattern</b><small>Add a rhythmic counter-layer</small></span></label>
+            <label><input type="checkbox" checked={extendedForm} onChange={event=>setExtendedForm(event.target.checked)}/><span><b>Extended form</b><small>Build five contrasting sections</small></span></label>
+          </div>
           <div className="sketch-launcher">
             <div className="sketch-spec">
-              <span><small>Key</small>{formatProjectKey(preset.root, preset.mode)}</span>
-              <span><small>Tempo</small>{preset.bpm} BPM</span>
-              <span><small>Time signature</small>{preset.meter}</span>
+              <span><small>Key</small>{formatProjectKey(sketchOptions.root, sketchOptions.mode)}</span>
+              <span><small>Tempo</small>{sketchOptions.bpm} BPM</span>
+              <span><small>Time signature</small>{sketchOptions.meter}</span>
             </div>
-            <button className="primary-button" onClick={() => launchSketch(preset)}>
+            <button className="primary-button" onClick={() => launchSketch(preset,sketchOptions)}>
               Build playable sketch <span>＋</span>
             </button>
           </div>
