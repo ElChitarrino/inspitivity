@@ -273,6 +273,10 @@ test("the home screen can create a coherent playable sketch in one flow", () => 
   assert.match(source, /aria-label="Sketch tempo"/);
   assert.match(source, /aria-label="Time signature beats"/);
   assert.match(source, /aria-label="Time signature subdivision"/);
+  assert.match(source, /aria-label="Sketch tempo" type="text" inputMode="numeric" pattern="\[0-9\]\*"/);
+  assert.match(source, /aria-label="Time signature beats" type="text" inputMode="numeric" pattern="\[0-9\]\*"/);
+  assert.doesNotMatch(source, /setSketchBpm\(clampBpm\(Number\(event\.target\.value\)\)\)/);
+  assert.doesNotMatch(source, /setMeterTop\(Math\.max\(1,Math\.min\(16,Number\(event\.target\.value\)/);
   assert.match(source, /includeMelody/);
   assert.match(source, /includePattern/);
   assert.match(source, /extendedForm/);

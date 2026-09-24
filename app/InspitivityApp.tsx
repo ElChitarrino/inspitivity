@@ -2211,18 +2211,20 @@ function Home({
     SKETCH_PRESETS[0];
   const [sketchRoot,setSketchRoot]=useState<Root>(preset.root);
   const [sketchMode,setSketchMode]=useState<Mode>(canonicalMode(preset.mode) as Mode);
-  const [sketchBpm,setSketchBpm]=useState(preset.bpm);
-  const [meterTop,setMeterTop]=useState(Number(preset.meter.split("/")[0]));
+  const [sketchBpm,setSketchBpm]=useState(String(preset.bpm));
+  const [meterTop,setMeterTop]=useState(preset.meter.split("/")[0]);
   const [meterBottom,setMeterBottom]=useState(Number(preset.meter.split("/")[1]));
   const [includeMelody,setIncludeMelody]=useState(true);
   const [includePattern,setIncludePattern]=useState(preset.id==="prog"||preset.id==="heavy");
   const [extendedForm,setExtendedForm]=useState(false);
   const choosePreset=(candidate:SketchPreset)=>{
-    setPresetId(candidate.id);setSketchRoot(candidate.root);setSketchMode(canonicalMode(candidate.mode) as Mode);setSketchBpm(candidate.bpm);
-    setMeterTop(Number(candidate.meter.split("/")[0]));setMeterBottom(Number(candidate.meter.split("/")[1]));
+    setPresetId(candidate.id);setSketchRoot(candidate.root);setSketchMode(canonicalMode(candidate.mode) as Mode);setSketchBpm(String(candidate.bpm));
+    setMeterTop(candidate.meter.split("/")[0]);setMeterBottom(Number(candidate.meter.split("/")[1]));
     setIncludeMelody(true);setIncludePattern(candidate.id==="prog"||candidate.id==="heavy");setExtendedForm(false);
   };
-  const sketchOptions:SketchOptions={root:sketchRoot,mode:sketchMode,bpm:clampBpm(sketchBpm),meter:`${Math.max(1,Math.min(16,Math.round(meterTop)||4))}/${meterBottom===8?8:4}`,includeMelody,includePattern,extendedForm};
+  const parsedSketchBpm=clampBpm(Number.parseInt(sketchBpm,10)||preset.bpm);
+  const parsedMeterTop=Math.max(1,Math.min(16,Number.parseInt(meterTop,10)||Number(preset.meter.split("/")[0])||4));
+  const sketchOptions:SketchOptions={root:sketchRoot,mode:sketchMode,bpm:parsedSketchBpm,meter:`${parsedMeterTop}/${meterBottom===8?8:4}`,includeMelody,includePattern,extendedForm};
   return (
     <>
       <Topbar
@@ -2268,8 +2270,8 @@ function Home({
           <div className="sketch-options" aria-label="Quick sketch settings">
             <label><span>Key</span><select aria-label="Sketch key" value={sketchRoot} onChange={event=>setSketchRoot(event.target.value as Root)}>{ROOTS.map(root=><option key={root}>{root}</option>)}</select></label>
             <label><span>Scale</span><select aria-label="Sketch scale" value={sketchMode} onChange={event=>setSketchMode(event.target.value as Mode)}>{MODES.map(mode=><option key={mode} value={mode}>{MODE_LABELS[mode]}</option>)}</select></label>
-            <label><span>Tempo</span><div className="sketch-tempo"><input aria-label="Sketch tempo" type="number" inputMode="numeric" min="30" max="260" value={sketchBpm} onChange={event=>setSketchBpm(clampBpm(Number(event.target.value)))}/><small>BPM</small></div></label>
-            <label><span>Time signature</span><div className="sketch-meter"><input aria-label="Time signature beats" type="number" inputMode="numeric" min="1" max="16" value={meterTop} onChange={event=>setMeterTop(Math.max(1,Math.min(16,Number(event.target.value)||4)))}/><b>/</b><select aria-label="Time signature subdivision" value={meterBottom} onChange={event=>setMeterBottom(Number(event.target.value))}><option value="4">4</option><option value="8">8</option></select></div></label>
+            <label><span>Tempo</span><div className="sketch-tempo"><input aria-label="Sketch tempo" type="text" inputMode="numeric" pattern="[0-9]*" enterKeyHint="done" value={sketchBpm} onChange={event=>setSketchBpm(event.target.value.replace(/\D/g,"").slice(0,3))} onBlur={()=>setSketchBpm(String(parsedSketchBpm))}/><small>BPM</small></div></label>
+            <label><span>Time signature</span><div className="sketch-meter"><input aria-label="Time signature beats" type="text" inputMode="numeric" pattern="[0-9]*" enterKeyHint="done" value={meterTop} onChange={event=>setMeterTop(event.target.value.replace(/\D/g,"").slice(0,2))} onBlur={()=>setMeterTop(String(parsedMeterTop))}/><b>/</b><select aria-label="Time signature subdivision" value={meterBottom} onChange={event=>setMeterBottom(Number(event.target.value))}><option value="4">4</option><option value="8">8</option></select></div></label>
           </div>
           <div className="sketch-toggles" aria-label="Sketch arrangement options">
             <label><input type="checkbox" checked={includeMelody} onChange={event=>setIncludeMelody(event.target.checked)}/><span><b>Melody</b><small>Add a lead motif</small></span></label>
