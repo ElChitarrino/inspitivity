@@ -40,7 +40,7 @@ import { reorderSection, timelineDuration } from "../packages/workspace/arrangem
 import { playbackProject } from "../packages/workspace/playback";
 import { bassHarmonics } from "../packages/sequencing/bass-timbre";
 import { activityGain } from "../packages/workspace/mix-activity";
-import {DRUM_KITS,DRUM_KIT_LABELS,loadDrumSamples,drumSample,type DrumKit} from '../packages/sequencing/drum-samples';
+import {DRUM_KITS,DRUM_KIT_LABELS,loadDrumSamples,drumSample,drumKitProfile,type AcousticDrumKit,type DrumKit} from '../packages/sequencing/drum-samples';
 import { CHORD_RHYTHMS, CHORD_RHYTHM_LABELS, chordNoteEvents, decodeRhythmicChord, encodeChordAttacks, generateChordRhythm, type ChordRhythm, type ChordAttack } from "../packages/music-theory/chord-rhythm";
 import {
   beatDurationSeconds,
@@ -1336,17 +1336,17 @@ function useAudioEngine() {
         drumTakes.set(instrument,take+1);
         const source=ctx.createBufferSource(),volume=ctx.createGain(),eq=ctx.createBiquadFilter();
         source.buffer=buffer;
-        const metal=kit==="prog metal",dry=kit==="dry studio",dark=kit==="dark acoustic",room=kit==="roomy rock";
+        const profile=drumKitProfile(kit as AcousticDrumKit,instrument,buffer.duration);
         const gains:Record<DrumInstrument,number>={kick:.64,snare:.45,hihat:.2,openhat:.22,crash:.27,ride:.22,tomhigh:.48,tomlow:.5};
         const peak=gains[instrument]*Math.pow(Math.max(0,velocity),1.15)*level;
-        const tail=dry?.42:metal?(instrument==="kick"?.3:instrument==="snare"?.55:2.5):buffer.duration;
-        const end=when+Math.min(buffer.duration,tail);
-        eq.type=dark?"lowpass":"peaking";eq.frequency.value=dark?4800:metal?(instrument==="kick"?2800:instrument==="snare"?1900:3500):kit==="rock"?180:300;
-        eq.Q.value=.7;eq.gain.value=metal?2:kit==="rock"?1.5:0;
+        const end=when+profile.tailSeconds;
+        source.playbackRate.setValueAtTime(profile.playbackRate,when);
+        eq.type=profile.filter;eq.frequency.value=profile.frequency;
+        eq.Q.value=profile.q;eq.gain.value=profile.gain;
         volume.gain.setValueAtTime(peak,when);
         volume.gain.setValueAtTime(peak,Math.max(when,end-.06));
         volume.gain.linearRampToValueAtTime(0,end);
-        source.connect(eq).connect(volume).connect(room?getGraph().input:getGraph().dryInput);
+        source.connect(eq).connect(volume).connect(profile.route==="room"?getGraph().input:getGraph().dryInput);
         if(instrument==="hihat")for(const hat of openHats)if(hat.when<=when){hat.gain.gain.cancelScheduledValues(when);hat.gain.gain.setTargetAtTime(0,when,.008);try{hat.source.stop(when+.04);}catch{}}
         const hat={source,gain:volume,when};if(instrument==="openhat")openHats.add(hat);
         sources.add(source);source.onended=()=>{sources.delete(source);openHats.delete(hat);source.disconnect();eq.disconnect();volume.disconnect();};
@@ -1592,6 +1592,7 @@ function useLoopTransport(
   unlockAudio: () => Promise<boolean>,
 ) {
   const [mode, setMode] = useState<"stopped" | "once" | "loop">("stopped");
+  const modeRef = useRef<"stopped" | "once" | "loop">("stopped");
   const timer = useRef<number | null>(null);
   const visualTimer = useRef<ReturnType<typeof setInterval>|null>(null);
   const startGeneration = useRef(0);
@@ -1613,27 +1614,31 @@ function useLoopTransport(
   }, [stopAudio]);
   const stop = useCallback(() => {
     clear();
+    modeRef.current = "stopped";
     setMode("stopped");
   }, [clear]);
   const start = useCallback(
     async (loop: boolean) => {
       clear();
+      modeRef.current = "stopped";
       window.dispatchEvent(new Event("inspitivity-solo-preview"));
       const token=++startGeneration.current;
       const unlocked = await unlockAudio();
       if(token !== startGeneration.current) return;
       if (!unlocked) {
+        modeRef.current = "stopped";
         setMode("stopped");
         return;
       }
-      setMode(loop ? "loop" : "once");
+      modeRef.current = loop ? "loop" : "once";
+      setMode(modeRef.current);
       const run = () => {
         const origin=sharedAudioGraph?.context.currentTime??0;
         playRef.current();
         if(visualTimer.current)clearInterval(visualTimer.current);
         visualTimer.current=setInterval(()=>publishPlayhead(Math.max(0,(sharedAudioGraph?.context.currentTime??origin)-origin)),25);
         timer.current = window.setTimeout(
-          () => {if(loop)run();else {clear();setMode("stopped");}},
+          () => {if(loop)run();else {clear();modeRef.current="stopped";setMode("stopped");}},
           Math.max(120, durationRef.current),
         );
       };
@@ -1641,8 +1646,26 @@ function useLoopTransport(
     },
     [clear, unlockAudio],
   );
+  const refresh = useCallback(async () => {
+    if(modeRef.current==="stopped")return;
+    const activeMode=modeRef.current;
+    const token=++startGeneration.current;
+    const unlocked=await unlockAudio();
+    if(!unlocked||token!==startGeneration.current||modeRef.current==="stopped")return;
+    clear();
+    modeRef.current=activeMode;
+    const loop=activeMode==="loop";
+    const run=()=>{
+      const origin=sharedAudioGraph?.context.currentTime??0;
+      playRef.current();
+      if(visualTimer.current)clearInterval(visualTimer.current);
+      visualTimer.current=setInterval(()=>publishPlayhead(Math.max(0,(sharedAudioGraph?.context.currentTime??origin)-origin)),25);
+      timer.current=window.setTimeout(()=>{if(loop)run();else {clear();modeRef.current="stopped";setMode("stopped");}},Math.max(120,durationRef.current));
+    };
+    run();
+  },[clear,unlockAudio]);
   useEffect(() => { window.addEventListener("inspitivity-context-play",stop); return () => { window.removeEventListener("inspitivity-context-play",stop); clear(); }; }, [clear,stop]);
-  return { mode, start, stop };
+  return { mode, start, stop, refresh };
 }
 
 export default function InspitivityApp({ account, signOutPath }: {
@@ -3515,6 +3538,7 @@ function ChordTool({
     engine.stopAll,
     engine.unlock,
   );
+  useEffect(()=>{void transport.refresh();},[voice,transport.refresh]);
   const updateChord = (id: string, changes: Partial<ChordDraft>) =>
     setChords((items) =>
       items.map((chord) =>
@@ -3925,6 +3949,7 @@ function MelodyTool({
     engine.stopAll,
     engine.unlock,
   );
+  useEffect(()=>{void transport.refresh();},[voice,transport.refresh]);
   const melodyBeats = Math.max(
     4,
     ...melody.map((note) => note.start + note.duration),
@@ -4345,6 +4370,7 @@ function BassTool({
     if (metronomeEnabled) scheduleClickTrack(engine, Math.ceil(length), beatSeconds, project.meter);
   }, [bass, beatSeconds, engine, length, metronomeEnabled, project.meter, voice]);
   const transport = useLoopTransport(play, length * beatSeconds * 1000, engine.stopAll, engine.unlock);
+  useEffect(()=>{void transport.refresh();},[voice,transport.refresh]);
   useDraftPreview({ type:"bass", data:bass.map(encodeBassEvent), voice });
   const regenerate = () => { transport.stop(); setSavedBass(null); setSeed((value) => value + 1); announceGenerated("Bass line"); };
   const updateBassEvent = (index: number, changes: Partial<BassEvent>) => {
@@ -4392,7 +4418,7 @@ function BassTool({
         <ControlTitle n="2" title="Note density" />
         <label className="range-control"><span>{density<.45?"Sparse":density>.75?"Dense":"Balanced"} · {Math.round(density*100)}%</span><input aria-label="Bass note density" type="range" min=".25" max="1" step=".05" value={density} onChange={event=>{transport.stop();setSavedBass(null);setBassDensity(Number(event.target.value));}}/></label>
         <ControlTitle n="3" title="Bass sound" />
-        <Select label="Instrument" value={voice} options={BASS_VOICES} set={(value) => { transport.stop(); setVoice(value as BassVoice); }} />
+        <Select label="Instrument" value={voice} options={BASS_VOICES} set={(value) => setVoice(value as BassVoice)} />
         <ControlTitle n="4" title="Rhythm-section lock" />
         <label className="bass-lock"><input type="checkbox" checked={lockToKick} onChange={(event) => { transport.stop(); setSavedBass(null); setLockToKick(event.target.checked); }} /><span>Follow kick attacks when drums exist</span></label>
         <p className="control-note">Rooted mirrors each chord change. Supportive adds chord tones and fifths. Melodic connects the chords with scale movement.</p>
@@ -4482,6 +4508,7 @@ function RiffTool({
     engine.stopAll,
     engine.unlock,
   );
+  useEffect(()=>{void transport.refresh();},[voice,transport.refresh]);
   useDraftPreview({ type: "riff", data: riff.map(n => `${n.pitch}|${n.start}|${n.duration}|${n.accent ? 1 : 0}|${n.muted ? 1 : 0}`), voice });
   return (
     <>
@@ -4856,6 +4883,7 @@ function DrumTool({
     engine.stopAll,
     unlockDrums,
   );
+  useEffect(()=>{void transport.refresh();},[voice,transport.refresh]);
   const toggleHit = (instrument: DrumInstrument, step: number) => {
       const next = [...loop];
       const index = next.findIndex(
@@ -4995,7 +5023,7 @@ function DrumTool({
             </div>
 
           </div>
-          {workspaceMode==="edit"&&<div className="editor-sound-row"><Select label="Drum sound" value={voice} set={value => {transport.stop();setSampleStatus("");setVoice(value as DrumKit);}} options={DRUM_KITS} /><button className="danger-outline" disabled={!loop.length} onClick={()=>{transport.stop();setSavedLoop([]);}}>Clear all drums</button></div>}
+          {workspaceMode==="edit"&&<div className="editor-sound-row"><Select label="Drum sound" value={voice} set={value => {setSampleStatus("");setVoice(value as DrumKit);}} options={DRUM_KITS} /><button className="danger-outline" disabled={!loop.length} onClick={()=>{transport.stop();setSavedLoop([]);}}>Clear all drums</button></div>}
           {sampleStatus&&<p role="status">{sampleStatus}</p>}
           <div className="phrase-bars" aria-label="Phrase bars">{Array.from({length:bars},(_,i)=><button key={i} aria-pressed={activeBar===i} onClick={()=>{setFollowPlayback(false);setVisibleBar(i);}}>Bar {i+1}{i===bars-1 && bars>1 ? " · fill" : ""}</button>)}</div>
           <label className="follow-playback"><input type="checkbox" checked={followPlayback} onChange={e=>setFollowPlayback(e.target.checked)} /> Follow playback</label>

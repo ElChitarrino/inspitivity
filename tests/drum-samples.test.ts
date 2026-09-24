@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
-import {DRUM_KITS,DRUM_SAMPLE_KEYS,loadDrumSamples,drumSample} from '../packages/sequencing/drum-samples.js';
+import {DRUM_KITS,DRUM_SAMPLE_KEYS,loadDrumSamples,drumSample,drumKitProfile,type AcousticDrumKit} from '../packages/sequencing/drum-samples.js';
 import {SELECTABLE_MODES,canonicalMode} from '../packages/music-theory/index.js';
 import {validProjects} from '../packages/workspace/index.js';
 
@@ -28,6 +28,16 @@ test('all acoustic samples are packaged as nonempty 44.1 kHz stereo PCM with bou
 });
 test('all kit choices survive account project validation',()=>{
   for(const voice of DRUM_KITS)assert.ok(validProjects([{id:'p',name:'Test',key:'C ionian',meter:'4/4',bpm:120,updated:1,sections:[{id:'s',name:'Verse',color:'mint',bars:4,ideas:[{id:'d',type:'drums',name:'Kit',detail:'',voice,data:['kick|0|1|16']}]}]}]),voice);
+});
+test('every acoustic drum kit has a distinct audible playback profile',()=>{
+  const acoustic=DRUM_KITS.filter((kit):kit is AcousticDrumKit=>kit!=='current');
+  for(const instrument of ['kick','snare','hihat'] as const){
+    const signatures=acoustic.map(kit=>JSON.stringify(drumKitProfile(kit,instrument,2)));
+    assert.equal(new Set(signatures).size,acoustic.length,`${instrument} kit profiles must all differ`);
+  }
+  assert.equal(drumKitProfile('roomy rock','snare',2).route,'room');
+  assert.equal(drumKitProfile('dark acoustic','hihat',2).filter,'lowpass');
+  assert.ok(drumKitProfile('dry studio','snare',2).tailSeconds<drumKitProfile('acoustic studio','snare',2).tailSeconds);
 });
 test('acoustic samples load once per audio context and alternate strength and take',async()=>{
   const originalFetch=globalThis.fetch;

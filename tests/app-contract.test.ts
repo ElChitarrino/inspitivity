@@ -408,6 +408,14 @@ test("songwriting tools offer varied synth voices and MIDI export", () => {
   assert.match(source, /Export drums as MIDI/);
 });
 
+test("instrument and drum-kit changes hot-swap active playback instead of stopping it", () => {
+  const editors=source.slice(source.indexOf("function ChordTool"),source.indexOf("function Metronome"));
+  assert.ok((editors.match(/void transport\.refresh\(\)/g)??[]).length>=5);
+  assert.doesNotMatch(editors,/label="Instrument" value=\{voice\} options=\{BASS_VOICES\} set=\{\(value\) => \{ transport\.stop\(\)/);
+  assert.doesNotMatch(editors,/label="Drum sound"[\s\S]{0,140}transport\.stop\(\)/);
+  assert.match(source,/return \{ mode, start, stop, refresh \}/);
+});
+
 test("project tempo and key are shared by every musical tool", () => {
   assert.match(source, /function ProjectContext/);
   assert.match(source, /bpm: clampBpm/);
