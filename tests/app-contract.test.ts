@@ -79,7 +79,7 @@ test("arrangement playback exposes timing, looping, count-in, and automatic bala
   assert.match(source, /aria-label="Playback position"/);
   assert.match(source, /Bar \$\{markerIndex\+1\} · Beat/);
   assert.match(source, /> Count-in</);
-  assert.match(source, /↻ Loop/);
+  assert.match(source, /Full song · loop/);
   assert.match(source, /automaticSectionMix/);
   assert.match(source, /Auto balance all/);
   assert.match(source, /Peak-safe|peak-safe/);
@@ -393,7 +393,7 @@ test("song and section audition use the saved musical plan without generating mi
   assert.doesNotMatch(player,/generateChordProgression|generateMelody|generateDrumLoop/);
   assert.match(player,/playbackProject/);
   assert.match(player,/value="song"/);
-  assert.match(player,/value="section"/);
+  assert.match(player,/value=\{`section:\$\{section.id\}`\}/);
   assert.match(player,/inspitivity-song-position/);
 });
 
@@ -409,10 +409,13 @@ test("the app gives music tools distinct accessible visual identities", () => {
   assert.match(source, /title="Bass line"/);
 });
 
-test("all editors share one accessible transport and its loop setting", () => {
-  assert.match(source, /aria-label="Playback scope"/);
-  assert.match(source, /checked=\{loop\}/);
-  assert.match(source, /<option value="section">Section<\/option><option value="song">Song<\/option>/);
+test("all editors share a song-first transport with sections and loops in one selector", () => {
+  assert.match(source, /aria-label="Play song or section"/);
+  assert.match(source, /useState<"section"\|"song">\("song"\)/);
+  assert.match(source, /useState\(false\);\s*const \[countIn/);
+  assert.match(source, /Full song · play once/);
+  assert.match(source, /\{section.name\} · loop/);
+  assert.doesNotMatch(source, /aria-label="Playback scope"|Mobile playback scope/);
   assert.doesNotMatch(source, /value="part">This part/);
   const editors=source.slice(source.indexOf("function ChordTool"),source.indexOf("function Metronome"));
   assert.doesNotMatch(editors, /<PlayButton/);

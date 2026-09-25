@@ -27,7 +27,7 @@ test("section transport suspends the audio clock and retains a separate reset",(
   const app=readFileSync("app/InspitivityApp.tsx","utf8");
   assert.match(app,/await engine.get\(\).suspend\(\)/);
   assert.match(app,/if\(pausedRef.current\)\{/);
-  assert.match(app,/Stop and rewind current section/);
+  assert.match(app,/Stop and rewind playback/);
   assert.match(app,/Selected chord inspector/);
   assert.match(app,/chord.id!==selectedChord\?\.id\?null/);
   assert.match(app,/data-mobile-hidden=\{workspaceMode==="edit"&&selectedDrum!==instrument\}/);

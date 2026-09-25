@@ -3225,14 +3225,26 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
   const pausedRef=useRef(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
-  const [scope,setScope]=useState<"section"|"song">("section");
-  const [loop,setLoop]=useState(true);
+  const [scope,setScope]=useState<"section"|"song">("song");
+  const [loop,setLoop]=useState(false);
   const [countIn,setCountIn]=useState(false);
   const [click,setClick]=useState(false);
   const [position,setPosition]=useState("Ready");
   const effectiveScope=scope;
   const structureKey=project.sections.map(s=>`${s.id}:${s.bars}:${s.repeats??1}:${s.meterMap?.join(",")}`).join("/");
   const selectedSection = project.sections.find(s => s.id === activeSectionId) ?? project.sections[0];
+  const playbackSelection=scope==="song"?`song${loop?":loop":""}`:`section:${selectedSection?.id ?? ""}${loop?":loop":""}`;
+  const selectPlayback=(value:string)=>{
+    stop();
+    const repeating=value.endsWith(":loop");
+    const destination=repeating?value.slice(0,-5):value;
+    setLoop(repeating);
+    if(destination==="song")setScope("song");
+    else if(destination.startsWith("section:")){
+      const sectionId=destination.slice(8);
+      if(project.sections.some(section=>section.id===sectionId)){setScope("section");chooseSection(sectionId);}
+    }
+  };
   const mix = sectionMix(selectedSection);
   const previewProject=useMemo(()=>playbackProject(project,previews,activeSectionId,effectiveScope,activeTool),[project,previews,activeSectionId,effectiveScope,activeTool]);
   const plan = useMemo(() => buildSongPlan(previewProject), [previewProject]);
@@ -3358,17 +3370,19 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
   </div>);
   return <section className="section-player" aria-label="Song transport">
     <div className="section-player-heading"><div className="section-player-caption"><p className="eyebrow">{effectiveScope==="song"?"Song":"Section"}</p></div>
-      <label className="transport-scope"><span className="sr-only">Playback scope</span><select aria-label="Playback scope" value={effectiveScope} onChange={event=>{stop();setScope(event.target.value as typeof scope);setLoop(event.target.value!=="song");}}><option value="section">Section</option><option value="song">Song</option></select></label>
-      <label><span className="sr-only">Section</span><select aria-label="Current section" disabled={!selectedSection} value={selectedSection?.id ?? ""} onChange={e => { stop(); chooseSection(e.target.value); }}>
-        {!selectedSection && <option value="">No sections yet</option>}
-        {project.sections.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+      <label className="transport-destination"><span className="sr-only">Play song or section</span><select aria-label="Play song or section" value={playbackSelection} onChange={event=>selectPlayback(event.target.value)}>
+        <optgroup label="Full song"><option value="song">Full song · play once</option><option value="song:loop">Full song · loop</option></optgroup>
+        <optgroup label="Sections">{project.sections.flatMap(section=>[
+          <option key={section.id} value={`section:${section.id}`}>{section.name} · play once</option>,
+          <option key={`${section.id}:loop`} value={`section:${section.id}:loop`}>{section.name} · loop</option>,
+        ])}</optgroup>
       </select></label>
       <PlayButton playing={playing} pausable label={effectiveScope==="song"?"song":"current section"} disabled={!selectedSection||busy} hint={paused?"Resume playback":undefined} onClick={() => playing ? void pause() : void start()} />
-      <button className="section-reset" aria-label="Stop and rewind current section" disabled={busy||(!playing&&!paused)} onClick={stop}>↤</button>
+      <button className="section-reset" aria-label="Stop and rewind playback" disabled={busy||(!playing&&!paused)} onClick={stop}>↤</button>
       <span className="transport-time" aria-label={`Playback time ${formatTime(elapsedSeconds)} of ${formatTime(plan.seconds)}`}>{formatTime(elapsedSeconds)} / {formatTime(plan.seconds)}</span>
     </div>
     <progress aria-label="Playback position" max={1} value={progress} />
-    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="transport-preferences"><summary aria-label="Playback options">•••</summary><div><b>{busy?"Preparing audio…":position}</b><label className="mobile-transport-scope"><span>Scope</span><select aria-label="Mobile playback scope" value={effectiveScope} onChange={event=>{stop();setScope(event.target.value as typeof scope);setLoop(event.target.value!=="song");}}><option value="section">Section</option><option value="song">Song</option></select></label><label><input type="checkbox" checked={loop} onChange={e=>setLoop(e.target.checked)}/> ↻ Loop</label><label><input type="checkbox" checked={countIn} onChange={e=>setCountIn(e.target.checked)}/> Count-in</label><label><input type="checkbox" checked={click} onChange={e=>setClick(e.target.checked)}/> Metronome</label><details className="mobile-transport-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details><button onClick={()=>{stop();go("metronome");}}>Open metronome</button><button onClick={()=>{stop();updateProject(p=>({...p,sections:p.sections.map(s=>({...s,mix:automaticSectionMix(s,p)}))}));}}>Auto balance all tracks</button></div></details>
+    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="transport-preferences"><summary aria-label="Playback options">•••</summary><div><b>{busy?"Preparing audio…":position}</b><label><input type="checkbox" checked={countIn} onChange={e=>setCountIn(e.target.checked)}/> Count-in</label><label><input type="checkbox" checked={click} onChange={e=>setClick(e.target.checked)}/> Metronome</label><details className="mobile-transport-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details><button onClick={()=>{stop();go("metronome");}}>Open metronome</button><button onClick={()=>{stop();updateProject(p=>({...p,sections:p.sections.map(s=>({...s,mix:automaticSectionMix(s,p)}))}));}}>Auto balance all tracks</button></div></details>
     <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="section-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details>
     {(busy||message)&&<p role="status">{busy?"Preparing audio…":message}</p>}
   </section>;
@@ -3689,6 +3703,33 @@ function ChordTool({
     engine.stopAll,
     engine.unlock,
   );
+  const auditionTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const auditionGeneration=useRef(0);
+  const stopAudition=useCallback(()=>{
+    auditionGeneration.current++;
+    if(auditionTimer.current)clearTimeout(auditionTimer.current);
+    auditionTimer.current=null;
+    engine.stopAll();
+  },[engine]);
+  useEffect(()=>{
+    const cancel=()=>{if(auditionTimer.current)stopAudition();};
+    window.addEventListener("inspitivity-context-play",cancel);
+    window.addEventListener("inspitivity-solo-preview",cancel);
+    return ()=>{
+      window.removeEventListener("inspitivity-context-play",cancel);
+      window.removeEventListener("inspitivity-solo-preview",cancel);
+      cancel();
+    };
+  },[stopAudition]);
+  const auditionChord=async(chord:ChordDraft)=>{
+    transport.stop();
+    stopAudition();
+    window.dispatchEvent(new Event("inspitivity-solo-preview"));
+    const token=auditionGeneration.current;
+    if(!await engine.unlock(undefined,voice==="acoustic guitar")||token!==auditionGeneration.current)return;
+    chordNoteEvents([chord]).forEach(note=>engine.tone(note.pitch,note.start*beatSeconds,note.duration*beatSeconds,.045*note.velocity,voice));
+    auditionTimer.current=setTimeout(()=>{if(token===auditionGeneration.current)stopAudition();},chord.beats*beatSeconds*1000);
+  };
   useEffect(()=>{void transport.refresh();},[voice,transport.refresh]);
   const updateChord = (id: string, changes: Partial<ChordDraft>) =>
     setChords((items) =>
@@ -3883,7 +3924,7 @@ function ChordTool({
           {workspaceMode==="edit"&&<button className="danger-outline" disabled={!chords.length} onClick={()=>{transport.stop();setPreviousChords(chords);setChords([]);setSelectedChordId(null);}}>Clear all chords</button>}
           {!chords.length&&<div className="empty-sequence"><b>No chords yet</b><span>Add a chord below or generate a new progression.</span></div>}
           <div className="chord-overview" aria-label="Generated chord progression">
-            {chords.map((chord,index)=><button key={chord.id} aria-pressed={workspaceMode==="edit"&&selectedChord?.id===chord.id} data-playing={soundingChord===index} onClick={()=>{setSelectedChordId(chord.id);setWorkspaceMode("edit");}} aria-label={`Edit chord ${index+1}: ${chord.name}`}>
+            {chords.map((chord,index)=><button key={chord.id} aria-pressed={workspaceMode==="edit"&&selectedChord?.id===chord.id} data-playing={soundingChord===index} onClick={()=>{setSelectedChordId(chord.id);setWorkspaceMode("edit");void auditionChord(chord);}} aria-label={`Play and edit chord ${index+1}: ${chord.name}`}>
               <span>{index+1}</span><b>{chord.name}</b><small>{chordRole(chord.name,root,mode)} · {chord.beats} beats</small>
               <span className="chord-rhythm-strip" aria-label={`${chord.attacks?.length??1} attacks; ${(chord.attacks?.[0]?.start??0)<0?"anticipated entry":(chord.attacks?.[0]?.start??0)>0?"offbeat entry":"on beat"}`}>{(chord.attacks??[{start:0}]).map((attack,i)=><i key={i} style={{left:`${Math.max(0,attack.start/chord.beats)*94}%`}} />)}</span>
             </button>)}
