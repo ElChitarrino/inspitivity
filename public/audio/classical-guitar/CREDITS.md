@@ -1,0 +1,1 @@
+FreePats Spanish classical guitar, recorded by roberto@zenvoid.org (2008), instrument version 2019-06-18. CC0 1.0. Source: https://github.com/freepats/spanish-classical-guitar . The MP3 files are converted from the source FLAC samples with FFmpeg.

@@ -242,7 +242,7 @@ test("native select values and options remain readable in both dark themes", () 
 });
 
 test("mobile playback explicitly unlocks and masters the Web Audio graph", () => {
-  assert.match(source, /const unlock = async \(kit\?:DrumKit\) =>/);
+  assert.match(source, /const unlock = async \(kit\?:DrumKit, guitar=false\) =>/);
   assert.match(source, /context\.state === "running" \? Promise\.resolve\(\) : context\.resume\(\)/);
   assert.match(source, /sharedAudioGraph/);
   assert.match(source, /sharedNativeAudioUnlock\.play/);

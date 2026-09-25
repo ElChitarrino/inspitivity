@@ -33,6 +33,7 @@ import {
   seededRandom,
 } from "../packages/music-theory";
 import { createMidiFile, type MidiNoteEvent } from "../packages/midi";
+import { voiceProgression } from "../packages/music-theory/voicing";
 import { playbackBeat, activeChordIndex } from "../packages/sequencing/playhead";
 import { scheduleWindow } from "../packages/sequencing/schedule-window";
 import { AudioQueue } from "../packages/sequencing/audio-queue";
@@ -43,6 +44,7 @@ import { activityGain } from "../packages/workspace/mix-activity";
 import { alignPhrase } from "../packages/workspace/sketch";
 import { chooseSketch } from "../packages/workspace/sketch-quality";
 import {DRUM_KITS,DRUM_KIT_LABELS,loadDrumSamples,drumSample,drumKitProfile,type AcousticDrumKit,type DrumKit} from '../packages/sequencing/drum-samples';
+import {loadGuitarSamples,guitarSample} from '../packages/sequencing/guitar-samples';
 import { CHORD_RHYTHMS, CHORD_RHYTHM_LABELS, chordNoteEvents, decodeRhythmicChord, encodeChordAttacks, generateChordRhythm, type ChordRhythm, type ChordAttack } from "../packages/music-theory/chord-rhythm";
 import {
   beatDurationSeconds,
@@ -81,6 +83,7 @@ import {
 import { useCloudProjects, saveRecording, getRecording, downloadBackup, restoreBackup } from "./workspace-storage";
 import { DraftSession, DraftToolbar, useDraftState, useDraftPreview, type DraftPreview } from "./draft-session";
 import { sectionFeel, buildSongPlan, type SongLayer } from "../packages/workspace/music";
+import { exportSongMidi } from "../packages/workspace/song-export";
 import { analyzeArrangement, type ArrangementInsight } from "../packages/workspace/arrangement";
 import type { Idea, SongSection, Project, TrackMix, SectionEnergy } from "../packages/workspace";
 import { varyIdeaData, varyNotes } from "../packages/workspace/variation";
@@ -250,7 +253,7 @@ const MIDI_PROGRAMS: Record<SynthVoice, number> = {
   "deep bass": 33,
   "808 bass": 38,
   "sub bass": 39,
-  "acoustic guitar": 25,
+  "acoustic guitar": 24,
   "distorted guitar": 30,
 };
 const DRUM_MIDI_NOTES = DRUM_PITCHES;
@@ -411,9 +414,11 @@ const makeChordDrafts = (
   voicing: VoicingStyle = "mixed",
   tension: HarmonicTension = "balanced",
   preferredPitchClasses: number[] = [],
-): ChordDraft[] =>
-  generateChordProgression({ root, mode, bars: count, complexity, seed, opening, tension, preferredPitchClasses }).map(
-    (chord, index) => {
+): ChordDraft[] => {
+  const progression = generateChordProgression({ root, mode, bars: count, complexity, seed, opening, tension, preferredPitchClasses });
+  const symbols = progression.map((chord,index) => applyHarmonyColour(chord.name, root, colour, index));
+  const voicings = voiceProgression(symbols,seed,voicing);
+  return progression.map((chord, index) => {
       const wiggle = Math.round(
         (variation / 100) * Math.max(1, defaultBeats - 1),
       );
@@ -422,12 +427,13 @@ const makeChordDrafts = (
         : 0;
       return {
         id: uid(),
-        name: applyHarmonyColour(chord.name, root, colour, index),
+        name: symbols[index],
         beats: Math.max(1, Math.min(8, defaultBeats + offset)),
-        pitches: voiceChord(applyHarmonyColour(chord.name, root, colour, index), seed + index*997, voicing),
+        pitches: voicings[index],
       };
     },
   );
+};
 const decodeChordDrafts = (idea: Idea): ChordDraft[] =>
   (idea.data?.length ? idea.data : idea.detail.split(" · ")).map((value) => {
     return { id: uid(), ...decodeRhythmicChord(value) };
@@ -658,7 +664,7 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions, seed 
     grouping:preset.id==="heavy"?"3+2+2":"3+3+2",density:preset.id==="heavy"?.72:.48,
     seed:seed+23,startOffset:preset.id==="heavy"?.25:.5,motion:preset.id==="heavy"?"anchor":"orbit",
   }).map(note=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),beatsPerBar*2),themeChords):[];
-  const chordVoice=pick(preset.id==="heavy"?["distorted guitar","warm pad"]:["warm pad","glass","pluck"] as SynthVoice[]);
+  const chordVoice=pick(preset.id==="heavy"?["distorted guitar","warm pad"]:preset.id==="emotive"?["acoustic guitar","acoustic guitar","warm pad"]:["warm pad","glass","pluck"] as SynthVoice[]);
   const melodyVoice=pick(["air flute","glass","pluck"] as SynthVoice[]);
   const patternVoice=pick(["analog pulse","pluck",...(preset.id==="heavy"?["distorted guitar" as SynthVoice]:[])] as SynthVoice[]);
   const drumVoice=pick(preset.id==="heavy"?["prog metal","rock","dry studio"]:["acoustic studio","dry studio","roomy rock"] as DrumKit[]);
@@ -671,11 +677,12 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions, seed 
     const bars=relation==="theme"||(/outro|coda|tag/i.test(formSection.name)&&finalSection)?Math.min(4,mainBars):mainBars;
     const density=Math.max(.28,Math.min(.88,formSection.energy));
     const voicing:VoicingStyle=relation==="return"?"open":relation==="contrast"?"drop 2":"mixed";
+    const returnVoicings=voiceProgression(themeChords.map(chord=>chord.name),sectionSeed,voicing);
     const sourceChords=relation==="contrast"?makeChordDrafts(
       root,mode,themeCount,preset.id==="neo-soul"||preset.id==="prog"?"advanced":"medium",
       seed+101,beatsPerBar,0,preset.id==="neo-soul"?"modal interchange":"diatonic","surprise",voicing,
       preset.tension,themePitchClasses,
-    ):themeChords.map((chord,index)=>({...chord,id:uid(),pitches:voiceChord(chord.name,sectionSeed+index*997,voicing)}));
+    ):themeChords.map((chord,index)=>({...chord,id:uid(),pitches:returnVoicings[index]}));
     const rhythmStyle:ChordRhythm=relation==="theme"?(preset.id==="emotive"?"sustain":"adaptive")
       :relation==="contrast"?"sparse":relation==="return"?(preset.id==="heavy"?"driving":"adaptive"):preset.id==="emotive"?"sparse":"syncopated";
     const chords=rhythmizeChords(sourceChords,relation==="return"?seed:sectionSeed,rhythmStyle,meter);
@@ -1106,7 +1113,7 @@ function useAudioEngine() {
       if (context.state === "suspended") void context.resume();
       return context;
     };
-    const unlock = async (kit?:DrumKit) => {
+    const unlock = async (kit?:DrumKit, guitar=false) => {
       const { context, input } = getGraph();
       if (!sharedNativeAudioUnlock) {
         sharedNativeAudioUnlock = new Audio(silentWavUrl());
@@ -1121,6 +1128,7 @@ function useAudioEngine() {
       if(kit&&kit!=="current"){
         try{await loadDrumSamples(context);}catch{return false;}
       }
+      if(guitar){try{await loadGuitarSamples(context);}catch{return false;}}
       const silence = context.createBufferSource();
       silence.buffer = context.createBuffer(1, 1, context.sampleRate);
       silence.connect(input);
@@ -1137,6 +1145,24 @@ function useAudioEngine() {
       const ctx = get();
       const when = ctx.currentTime + start;
       if (voice === "acoustic guitar") {
+        const recorded=guitarSample(ctx,midi);
+        if(recorded){
+          const source=ctx.createBufferSource(),volume=ctx.createGain();
+          source.buffer=recorded.buffer;source.playbackRate.value=recorded.rate;
+          const release=Math.max(.1,Math.min(.28,duration*.25));
+          const end=Math.min(recorded.buffer.duration/recorded.rate,Math.max(.16,duration)+release);
+          volume.gain.setValueAtTime(.0001,when);
+          volume.gain.linearRampToValueAtTime(gain*2.4,when+.008);
+          volume.gain.setValueAtTime(gain*2.4,Math.max(when+.008,when+end-release));
+          volume.gain.exponentialRampToValueAtTime(.0001,when+end);
+          source.connect(volume).connect(getGraph().dryInput);
+          sources.add(source);
+          source.onended=()=>{sources.delete(source);source.disconnect();volume.disconnect();};
+          source.start(when);source.stop(when+end);
+          return;
+        }
+        void loadGuitarSamples(ctx).catch(()=>undefined);
+        // Keep an audible fallback for a sound selected during active playback.
         const frequency = 440 * Math.pow(2, (midi - 69) / 12);
         const period = Math.max(8,Math.round(ctx.sampleRate/frequency));
         const seconds = Math.min(3.2,Math.max(.55,duration+.72));
@@ -2795,7 +2821,7 @@ function ProjectView({
     }
     stopArrangement();
     stopIdea();
-    if (!(await engine.unlock(idea.type==="drums"?(idea.voice as DrumKit)||"current":undefined))) {setAudioStatus("Drum samples or audio unavailable. Try Play again.");return;}
+    if (!(await engine.unlock(idea.type==="drums"?(idea.voice as DrumKit)||"current":undefined,idea.voice==="acoustic guitar"))) {setAudioStatus("Instrument samples or audio unavailable. Try Play again.");return;}
     const beat = beatDurationSeconds(project.bpm);
     const beatsPerBar = Number(project.meter.split("/")[0]) || 4;
     setPlayingIdeaId(idea.id);
@@ -3084,6 +3110,7 @@ function ProjectView({
       <details className="project-options">
         <summary>Project options <span aria-hidden="true">•••</span></summary>
         <div>
+          <button onClick={()=>downloadMidi(project.name,exportSongMidi(project))} disabled={!arrangementPlan.events.length}>⇩ Export song as multitrack MIDI</button>
           <button onClick={()=>{setProjectRename(project.name);setRenamingProject(true);}}>✎ Rename project</button>
           <button onClick={record}><RecordIcon /> Record idea</button>
           <button onClick={shareProject}><ShareIcon /> Share project</button>
@@ -3237,7 +3264,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
     const token = generation.current;
     try {
       setBusy(true);
-      if (!(await engine.unlock(latest.current.plan.events.some(e=>e.layer==="drums"&&e.voice&&e.voice!=="current")?"acoustic studio":undefined)) || token !== generation.current) {setMessage("Audio or drum samples unavailable. Try Play again.");return;}
+      if (!(await engine.unlock(latest.current.plan.events.some(e=>e.layer==="drums"&&e.voice&&e.voice!=="current")?"acoustic studio":undefined,latest.current.plan.events.some(e=>e.voice==="acoustic guitar"))) || token !== generation.current) {setMessage("Audio or instrument samples unavailable. Try Play again.");return;}
       if (!latest.current.plan.events.length) { setMessage("Add or generate a part to hear this section."); return; }
       window.dispatchEvent(new Event("inspitivity-context-play"));
       setMessage(""); setPlaying(true);
@@ -3815,10 +3842,11 @@ function ChordTool({
           </details>
           <Select label="Chord voicing" value={voicing} options={["mixed", "close", "open", "drop 2"]} set={value => {
             transport.stop(); setVoicing(value as VoicingStyle); setSeed(seed+1);
-            setChords(chords.map((c,i)=>({...c,pitches:voiceChord(c.name,seed+1+i*997,value as VoicingStyle)})));
+            const voicings=voiceProgression(chords.map(c=>c.name),seed+1,value as VoicingStyle);
+            setChords(chords.map((c,i)=>({...c,pitches:voicings[i]})));
           }} />
           {voicing==="drop 2"&&<p className="control-note inline-explanation">Drop 2 lowers the second-highest tone by an octave for a wider, more open chord.</p>}
-          <button className="secondary-button wide" onClick={()=>{transport.stop();setSeed(seed+1);setChords(chords.map((c,i)=>({...c,pitches:voiceChord(c.name,seed+1+i*997,voicing)})));}}>↻ Revoice these chords</button>
+          <button className="secondary-button wide" onClick={()=>{transport.stop();setSeed(seed+1);const voicings=voiceProgression(chords.map(c=>c.name),seed+1,voicing);setChords(chords.map((c,i)=>({...c,pitches:voicings[i]})));}}>↻ Revoice these chords</button>
           <p className="control-note">
             Each generation explores a new harmonic path. Revoice keeps your chords and changes their inversions, spacing and register.
           </p>
@@ -5409,7 +5437,7 @@ function Select({
       <span>{label}</span>
       <select value={options.includes("ionian")?canonicalMode(value):value} onChange={(e) => set(e.target.value)}>
         {options.map((o) => (
-          <option key={o} value={o}>{label==="Drum kit"?DRUM_KIT_LABELS[o as DrumKit]:label==="Strum rhythm"?CHORD_RHYTHM_LABELS[o as ChordRhythm]:MODE_LABELS[o as Mode] ?? o}</option>
+          <option key={o} value={o}>{label==="Drum kit"?DRUM_KIT_LABELS[o as DrumKit]:label==="Strum rhythm"?CHORD_RHYTHM_LABELS[o as ChordRhythm]:o==="acoustic guitar"?"Classical guitar · recorded":MODE_LABELS[o as Mode] ?? o}</option>
         ))}
       </select>
     </label>
