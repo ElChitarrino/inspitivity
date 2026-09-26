@@ -420,8 +420,23 @@ html[data-theme] .section-player { grid-template-columns:minmax(0,1fr) auto auto
 /* Match the header navigation controls and keep the playback destination visible at every size. */
 .topbar .back-button { display:grid; place-items:center; flex:0 0 46px; width:46px; height:46px; min-width:46px; min-height:46px; padding:0; line-height:1; border-radius:10px; }
 .topbar .round-button { display:grid; place-items:center; flex:0 0 46px; width:46px; height:46px; min-width:46px; min-height:46px; padding:0; line-height:1; border-radius:10px; }
+.sketch-choices { margin-top:18px; padding-top:16px; border-top:1px solid var(--line); }
+.sketch-choices>p,.harmony-decision>p { margin:0 0 14px; color:var(--muted); font-size:14px; line-height:1.5; }
+.sketch-choice-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.sketch-choice-grid button { display:grid; align-content:start; gap:8px; min-width:0; min-height:132px; padding:14px; border:1px solid var(--line); border-radius:10px; background:var(--surface); text-align:left; }
+.sketch-choice-grid button.active { border-color:var(--mint); background:var(--surface2); }
+.sketch-choice-grid span,.sketch-choice-grid small { overflow-wrap:anywhere; }
+.sketch-choice-grid span { font-size:14px; }
+.sketch-choice-grid small { color:var(--muted); font-size:13px; }
+.sketch-choice-grid em { color:var(--mint); font-size:13px; font-style:normal; }
+.sketch-choice-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:10px; margin-top:14px; }
+.sketch-choice-actions button,.harmony-decision button { min-height:44px; }
+.harmony-decision { display:grid; gap:10px; }
+.harmony-decision h2 { margin:0; }
 @media(max-width:700px) {
   .section-player .section-player-heading>.transport-destination { grid-column:1; grid-row:1; }
   .project-screen .topbar,.inside-project .topbar { padding-top:max(12px,env(safe-area-inset-top)); padding-bottom:12px; }
   .topbar :is(.back-button,.round-button) { align-self:center; }
+  .sketch-choice-grid { grid-template-columns:minmax(0,1fr); }
+  .sketch-choice-actions button { flex:1 1 140px; }
 }

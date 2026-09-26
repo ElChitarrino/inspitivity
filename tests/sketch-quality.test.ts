@@ -19,3 +19,11 @@ test("quality selection rewards a grounded, spacious draft", () => {
   assert.ok(scoreSketch(grounded)>scoreSketch(crowded));
   assert.equal(chooseSketch([crowded,grounded]),grounded);
 });
+
+test("quality selection checks harmony at chord changes even between strums",()=>{
+  const grounded=project(["48|0|1|1","43|4|1|1"],["E4|0|1|64","D4|4|1|62"]);
+  grounded.sections[0].ideas[0].data=["C|4|48,52,55|.5,.3,.6,0","G|4|43,47,50|.5,.3,.6,0"];
+  const wrong:Project=JSON.parse(JSON.stringify(grounded));
+  wrong.sections[0].ideas.find(idea=>idea.type==="bass")!.data=["49|0|1|1","44|4|1|1"];
+  assert.ok(scoreSketch(grounded)>scoreSketch(wrong));
+});

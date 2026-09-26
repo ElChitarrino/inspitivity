@@ -42,7 +42,8 @@ import { playbackProject } from "../packages/workspace/playback";
 import { bassHarmonics } from "../packages/sequencing/bass-timbre";
 import { activityGain } from "../packages/workspace/mix-activity";
 import { alignPhrase } from "../packages/workspace/sketch";
-import { chooseSketch } from "../packages/workspace/sketch-quality";
+import { chooseSketch, scoreSketch } from "../packages/workspace/sketch-quality";
+import { adaptAccompaniment, harmonyChanged } from "../packages/workspace/harmony-adapt";
 import {DRUM_KITS,DRUM_KIT_LABELS,loadDrumSamples,drumSample,drumKitProfile,type AcousticDrumKit,type DrumKit} from '../packages/sequencing/drum-samples';
 import {loadGuitarSamples,guitarSample} from '../packages/sequencing/guitar-samples';
 import { CHORD_RHYTHMS, CHORD_RHYTHM_LABELS, chordNoteEvents, decodeRhythmicChord, encodeChordAttacks, generateChordRhythm, type ChordRhythm, type ChordAttack } from "../packages/music-theory/chord-rhythm";
@@ -1798,6 +1799,7 @@ export default function InspitivityApp({ account, signOutPath }: {
   const [projectToShare, setProjectToShare] = useState<Project | null>(null);
   const [editingIdea, setEditingIdea] = useState<Idea | null>(null);
   const [pendingSave, setPendingSave] = useState<IdeaDraft | null>(null);
+  const [pendingHarmony, setPendingHarmony] = useState<{projectId:string;sectionId:string;idea:Idea;existingId:string}|null>(null);
   const savedDraftId = useRef<string | null>(null);
   const [draftSectionId, setDraftSectionId] = useState<string | null>(null);
   const [returnToArrangement, setReturnToArrangement] = useState(false);
@@ -1879,13 +1881,11 @@ export default function InspitivityApp({ account, signOutPath }: {
     notify(`Deleted ${projectToDelete.name}`);
     setProjectToDelete(null);
   };
-  const launchSketch = (preset: SketchPreset, options: SketchOptions) => {
-    const seed = freshSeed();
-    const project = chooseSketch(Array.from({length:4}, (_, index) => buildPlayableSketch(preset, options, seed + index * 7919)));
+  const launchSketch = (project:Project) => {
     setProjects((items) => [project, ...items]);
     setSelectedId(project.id);
     setScreen("project");
-    notify(`${preset.label} sketch is ready to play`);
+    notify(`${project.name} is ready to edit`);
   };
   const updateSelected = useCallback(
     (fn: (project: Project) => Project) =>
@@ -1909,7 +1909,15 @@ export default function InspitivityApp({ account, signOutPath }: {
       return;
     }
     if (!selected) return;
-    const existingId = editingIdea?.type === type ? editingIdea.id : savedDraftId.current;
+    const destination=selected.sections.find(section=>section.id===draftSectionId);
+    const existingId = editingIdea?.type === type ? editingIdea.id : savedDraftId.current
+      ?? (type==="chords"?destination?.ideas.find(idea=>idea.type==="chords")?.id:null);
+    const previous=destination?.ideas.find(idea=>idea.id===existingId);
+    if(type==="chords"&&destination&&previous?.data?.length&&data?.length
+      &&harmonyChanged(previous.data,data)&&destination.ideas.some(idea=>["bass","melody","riff"].includes(idea.type))){
+      setPendingHarmony({projectId:selected.id,sectionId:destination.id,existingId:existingId!,idea:{id:existingId!,type,name,detail,data,voice}});
+      return;
+    }
     if (existingId) {
       updateSelected((project) => ({
         ...project,
@@ -1926,9 +1934,6 @@ export default function InspitivityApp({ account, signOutPath }: {
       notify(`Saved changes to ${name}`);
       return;
     }
-    const destination = selected.sections.find(
-      (section) => section.id === draftSectionId,
-    );
     if (!destination) {
       setPendingSave({ type, name, detail, data, voice });
       return;
@@ -1952,12 +1957,32 @@ export default function InspitivityApp({ account, signOutPath }: {
     window.dispatchEvent(new Event("inspitivity-draft-saved"));
     notify(`Saved to ${selected.name} · ${destination.name}`);
   };
+  const resolveHarmony=(choice:"adapt"|"keep"|"revert")=>{
+    if(!pendingHarmony)return;
+    const pending=pendingHarmony;
+    setPendingHarmony(null);
+    if(choice==="revert")return;
+    setProjects(projects=>projects.map(project=>project.id!==pending.projectId?project:{...project,updated:Date.now(),sections:project.sections.map(section=>{
+      if(section.id!==pending.sectionId)return section;
+      const shaped=choice==="adapt"?adaptAccompaniment(section,pending.idea.data??[]):section;
+      return {...shaped,ideas:shaped.ideas.map(idea=>idea.id===pending.existingId?pending.idea:idea)};
+    })}));
+    window.dispatchEvent(new Event("inspitivity-draft-saved"));
+    notify(choice==="adapt"?"Chords saved · accompaniment adapted":"Chords saved · accompaniment kept");
+  };
   const saveIdeaTo = (projectId: string, sectionId: string) => {
     if (!pendingSave) return;
     const project = projects.find((item) => item.id === projectId);
     const section = project?.sections.find((item) => item.id === sectionId);
     if (!project || !section) return;
     const draft = pendingSave;
+    const existing=draft.type==="chords"?section.ideas.find(idea=>idea.type==="chords"):undefined;
+    if(existing?.data?.length&&draft.data?.length&&harmonyChanged(existing.data,draft.data)
+      &&section.ideas.some(idea=>["bass","melody","riff"].includes(idea.type))){
+      setPendingSave(null);
+      setPendingHarmony({projectId,sectionId,existingId:existing.id,idea:{id:existing.id,...draft}});
+      return;
+    }
     setProjects((items) =>
       items.map((item) =>
         item.id === projectId
@@ -2246,6 +2271,13 @@ export default function InspitivityApp({ account, signOutPath }: {
           save={saveIdeaTo}
         />
       )}
+      {pendingHarmony && <div className="modal-layer" role="presentation"><section className="modal harmony-decision" role="dialog" aria-modal="true" aria-labelledby="harmony-decision-title">
+        <h2 id="harmony-decision-title">These chords change the section</h2>
+        <p>The saved bass and lead still follow the previous harmony. Choose what to hear before saving.</p>
+        <button className="primary-button wide" onClick={()=>resolveHarmony("adapt")}>Adapt bass and lead, then save</button>
+        <button className="secondary-button wide" onClick={()=>resolveHarmony("keep")}>Keep other parts, save chords</button>
+        <button className="export-button wide" onClick={()=>resolveHarmony("revert")}>Return to editing</button>
+      </section></div>}
       {projectToDelete && (
         <ConfirmProjectDelete
           project={projectToDelete}
@@ -2289,7 +2321,7 @@ function Home({
   go: (s: Screen) => void;
   create: () => void;
   record: () => void;
-  launchSketch: (preset: SketchPreset, options: SketchOptions) => void;
+  launchSketch: (project:Project) => void;
 }) {
   const [startMode, setStartMode] = useState<"quick" | null>(null);
   const [presetId, setPresetId] = useState<SketchPreset["id"]>("neo-soul");
@@ -2304,6 +2336,9 @@ function Home({
   const [includeMelody,setIncludeMelody]=useState(true);
   const [includePattern,setIncludePattern]=useState(preset.id==="prog"||preset.id==="heavy");
   const [extendedForm,setExtendedForm]=useState(false);
+  const [draftChoices,setDraftChoices]=useState<{settings:string;projects:Project[]}|null>(null);
+  const [previewIndex,setPreviewIndex]=useState(0);
+  const [previewSectionId,setPreviewSectionId]=useState<string|null>(null);
   const choosePreset=(candidate:SketchPreset)=>{
     setPresetId(candidate.id);setSketchRoot(candidate.root);setSketchMode(canonicalMode(candidate.mode) as Mode);setSketchBpm(String(candidate.bpm));
     setMeterTop(candidate.meter.split("/")[0]);setMeterBottom(Number(candidate.meter.split("/")[1]));
@@ -2312,6 +2347,19 @@ function Home({
   const parsedSketchBpm=clampBpm(Number.parseInt(sketchBpm,10)||preset.bpm);
   const parsedMeterTop=Math.max(1,Math.min(16,Number.parseInt(meterTop,10)||Number(preset.meter.split("/")[0])||4));
   const sketchOptions:SketchOptions={root:sketchRoot,mode:sketchMode,bpm:parsedSketchBpm,meter:`${parsedMeterTop}/${meterBottom===8?8:4}`,includeMelody,includePattern,extendedForm};
+  const settings=JSON.stringify([preset.id,sketchOptions]);
+  const choices=draftChoices?.settings===settings?draftChoices.projects:null;
+  const selectedDraft=choices?.[previewIndex];
+  const generateChoices=()=>{
+    const seed=freshSeed();
+    const candidates=Array.from({length:4},(_,index)=>buildPlayableSketch(preset,sketchOptions,seed+index*7919));
+    const best=chooseSketch(candidates);
+    const signature=(project:Project)=>project.sections[0]?.ideas.find(idea=>idea.type==="chords")?.data?.map(value=>value.split("|")[0]).join("|");
+    const alternative=candidates.filter(candidate=>candidate!==best).sort((a,b)=>scoreSketch(b)-scoreSketch(a))
+      .find(candidate=>signature(candidate)!==signature(best))??candidates.find(candidate=>candidate!==best)!;
+    setDraftChoices({settings,projects:[best,alternative]});
+    setPreviewIndex(0);setPreviewSectionId(null);
+  };
   return (
     <>
       <Topbar
@@ -2328,7 +2376,7 @@ function Home({
         </div>
         <div className="start-actions" aria-label="Ways to start">
           <button className={startMode === "quick" ? "active" : ""} aria-expanded={startMode === "quick"} onClick={() => setStartMode(current => current === "quick" ? null : "quick")}>
-            <span aria-hidden="true">✦</span><b>Easy mode</b><small>Build a connected song draft in one step.</small>
+            <span aria-hidden="true">✦</span><b>Easy mode</b><small>Hear two connected drafts before saving.</small>
           </button>
           <button onClick={create}>
             <span aria-hidden="true">＋</span><b>Empty project</b><small>Shape the song manually from a blank section.</small>
@@ -2374,12 +2422,27 @@ function Home({
               <span><small>Tempo</small>{sketchOptions.bpm} BPM</span>
               <span><small>Time signature</small>{sketchOptions.meter}</span>
             </div>
-            <button className="primary-button" onClick={() => launchSketch(preset,sketchOptions)}>
-              Generate connected draft <span>＋</span>
+            <button className="primary-button" onClick={generateChoices}>
+              Hear two drafts <span>＋</span>
             </button>
           </div>
+          {choices&&<section className="sketch-choices" aria-label="Compare song drafts">
+            <p>Choose a draft to play. Both follow your key, tempo and time signature. Save only the one you want to edit.</p>
+            <div className="sketch-choice-grid" role="radiogroup" aria-label="Song draft">
+              {choices.map((candidate,index)=><button key={candidate.id} role="radio" aria-checked={previewIndex===index} className={previewIndex===index?"active":""} onClick={()=>{setPreviewIndex(index);setPreviewSectionId(null);}}>
+                <b>Draft {index+1}</b><span>{candidate.sections.map(section=>section.name).join(" → ")}</span>
+                <small>{candidate.sections[0]?.ideas.find(idea=>idea.type==="chords")?.data?.map(value=>value.split("|")[0]).join(" · ")}</small>
+                <em>{previewIndex===index?"Selected for playback":"Select to hear"}</em>
+              </button>)}
+            </div>
+            <div className="sketch-choice-actions">
+              <button className="secondary-button" onClick={generateChoices}>Try two more</button>
+              <button className="primary-button" onClick={()=>selectedDraft&&launchSketch(selectedDraft)}>Keep this draft</button>
+            </div>
+          </section>}
         </div>}
       </section>
+      {startMode==="quick"&&selectedDraft&&<SharedSectionPlayer key={selectedDraft.id} project={selectedDraft} previews={{}} activeSectionId={previewSectionId} activeTool="project" go={go} chooseSection={setPreviewSectionId} updateProject={()=>{}} previewOnly />}
       <SectionTitle
         eyebrow="Pick up where you left off"
         title="Recent projects"
@@ -2570,6 +2633,7 @@ function ProjectView({
   const [renamingProject,setRenamingProject]=useState(false);
   const [projectRename,setProjectRename]=useState(project.name);
   const [undoRemoval,setUndoRemoval]=useState<UndoRemoval|null>(null);
+  const [pendingVariation,setPendingVariation]=useState<{sourceId:string;copy:SongSection}|null>(null);
   const [arrangementPlaying, setArrangementPlaying] = useState(false);
   const [playbackSeconds, setPlaybackSeconds] = useState(0);
   const [countIn, setCountIn] = useState(false);
@@ -2752,19 +2816,13 @@ function ProjectView({
   const setSectionEnergy = (sectionId: string, energy: SectionEnergy) => {
     stopArrangement();
     update((p) => ({ ...p, sections:p.sections.map((section) => {
-      if(section.id!==sectionId)return section;
-      const shapedIdeas=section.ideas.map((idea)=>{
-        if(!idea.data?.length||energy==="balanced"||idea.type==="audio"||idea.type==="text"||idea.type==="transition")return idea;
-        if(energy==="mellow") {
-          if(idea.type==="drums") return {...idea,data:idea.data.filter((value,index)=>!value.startsWith("hihat|")||index%2===0).map(value=>{const fields=value.split("|");fields[2]=String(Math.max(.2,(Number(fields[2])||.7)*.78));return fields.join("|");})};
-          if(["melody","riff","bass"].includes(idea.type)) return {...idea,data:idea.data.filter((_,index)=>index===0||index%3!==2)};
-          return idea;
-        }
-        const varied=varyIdeaData(idea.type,idea.data,Date.now()+idea.id.length);
-        return {...idea,data:idea.type==="drums"?varied.map(value=>{const fields=value.split("|");fields[2]=String(Math.min(1,(Number(fields[2])||.7)*1.16));return fields.join("|");}):varied};
-      });
-      const shaped={...section,ideas:shapedIdeas,energy};
-      return {...shaped,mix:automaticSectionMix(shaped,p)};
+      if(section.id!==sectionId||section.energy===energy)return section;
+      const next={...section,energy};
+      const previousAuto=automaticSectionMix(section,p),nextAuto=automaticSectionMix(next,p);
+      const current=sectionMix(section);
+      return {...next,mix:Object.fromEntries(LAYER_LABELS.map(([layer])=>[
+        layer,{...current[layer],volume:Math.max(0,Math.min(1,Number((current[layer].volume+nextAuto[layer].volume-previousAuto[layer].volume).toFixed(2))))},
+      ])) as Record<SongLayer,TrackMix>};
     }) }));
   };
   const finishAddingSection=()=>{setSectionName("");setSectionDirection("continue");setNewSectionEnergy("balanced");setAdding(false);};
@@ -2784,14 +2842,36 @@ function ProjectView({
     announceGenerated("Complete section");
     finishAddingSection();
   };
-  const duplicateSection = (sectionId: string, variation: boolean) => update((p) => {
-    const index = p.sections.findIndex((section) => section.id === sectionId);
-    if (index < 0) return p;
-    const source = p.sections[index];
+  const duplicateSection = (sectionId: string, variation: boolean) => {
+    const index=project.sections.findIndex(section=>section.id===sectionId);
+    if(index<0)return;
+    const source=project.sections[index];
     const varyData = (idea: Idea) => !variation || !idea.data ? idea.data : varyIdeaData(idea.type,idea.data,Date.now()+idea.id.length);
     const copy: SongSection = { ...source, id:uid(), name:variation ? `${source.name} variation` : `${source.name} copy`, repeats:1, ideas:source.ideas.map((idea)=>({ ...idea,id:uid(),name:variation?`${idea.name} variation`:idea.name,data:varyData(idea) })) };
-    const sections=[...p.sections]; sections.splice(index+1,0,copy); return { ...p,sections };
-  });
+    const before=source.ideas.find(idea=>idea.type==="chords")?.data??[];
+    const after=copy.ideas.find(idea=>idea.type==="chords")?.data??[];
+    if(variation&&harmonyChanged(before,after)&&source.ideas.some(idea=>["bass","melody","riff"].includes(idea.type))){setPendingVariation({sourceId:sectionId,copy});return;}
+    update(p=>{const sections=[...p.sections];sections.splice(sections.findIndex(s=>s.id===sectionId)+1,0,copy);return {...p,sections};});
+  };
+  const resolveVariation=(choice:"adapt"|"keep"|"revert")=>{
+    if(!pendingVariation)return;
+    const {sourceId,copy}=pendingVariation;
+    setPendingVariation(null);
+    if(choice==="revert")return;
+    update(p=>{
+      const index=p.sections.findIndex(section=>section.id===sourceId);
+      if(index<0)return p;
+      let chosen=copy;
+      if(choice==="adapt"){
+        const harmony=copy.ideas.find(idea=>idea.type==="chords")?.data??[];
+        const original=p.sections[index].ideas.find(idea=>idea.type==="chords")?.data??[];
+        const before={...copy,ideas:copy.ideas.map(idea=>idea.type==="chords"?{...idea,data:original}:idea)};
+        const adapted=adaptAccompaniment(before,harmony);
+        chosen={...copy,ideas:adapted.ideas.map(idea=>idea.type==="chords"?copy.ideas.find(item=>item.type==="chords")!:idea)};
+      }
+      const sections=[...p.sections];sections.splice(index+1,0,chosen);return {...p,sections};
+    });
+  };
   const createSectionReturn=(sectionId:string)=>update(p=>{
     const source=p.sections.find(section=>section.id===sectionId);
     if(!source)return p;
@@ -2943,6 +3023,13 @@ function ProjectView({
       />
       <ProjectContext project={project} update={update}/>
       {undoRemoval&&<div className="undo-removal" role="status"><span>Removed {undoRemoval.label}</span><button onClick={restoreRemoval}>Undo</button><button aria-label="Dismiss undo" onClick={()=>setUndoRemoval(null)}>×</button></div>}
+      {pendingVariation&&<div className="modal-layer" role="presentation"><section className="modal harmony-decision" role="dialog" aria-modal="true" aria-labelledby="variation-decision-title">
+        <h2 id="variation-decision-title">Variation changes the harmony</h2>
+        <p>Choose how the new section should treat its bass and lead.</p>
+        <button className="primary-button wide" onClick={()=>resolveVariation("adapt")}>Adapt bass and lead</button>
+        <button className="secondary-button wide" onClick={()=>resolveVariation("keep")}>Keep their original notes</button>
+        <button className="export-button wide" onClick={()=>resolveVariation("revert")}>Cancel variation</button>
+      </section></div>}
       <SectionTitle
         eyebrow=""
         title="Arrangement"
@@ -3209,7 +3296,7 @@ function ProjectView({
   );
 }
 
-function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, go, chooseSection, updateProject }: {
+function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, go, chooseSection, updateProject, previewOnly=false }: {
   project: Project;
   previews: Record<string, DraftPreview>;
   activeSectionId: string | null;
@@ -3217,6 +3304,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
   go: (screen:Screen)=>void;
   chooseSection: (id: string) => void;
   updateProject: (fn: (project: Project) => Project) => void;
+  previewOnly?: boolean;
 }) {
   const engine = useAudioEngine();
   const [playing, setPlaying] = useState(false);
@@ -3382,8 +3470,8 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
       <span className="transport-time" aria-label={`Playback time ${formatTime(elapsedSeconds)} of ${formatTime(plan.seconds)}`}>{formatTime(elapsedSeconds)} / {formatTime(plan.seconds)}</span>
     </div>
     <progress aria-label="Playback position" max={1} value={progress} />
-    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="transport-preferences"><summary aria-label="Playback options">•••</summary><div><b>{busy?"Preparing audio…":position}</b><label><input type="checkbox" checked={countIn} onChange={e=>setCountIn(e.target.checked)}/> Count-in</label><label><input type="checkbox" checked={click} onChange={e=>setClick(e.target.checked)}/> Metronome</label><details className="mobile-transport-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details><button onClick={()=>{stop();go("metronome");}}>Open metronome</button><button onClick={()=>{stop();updateProject(p=>({...p,sections:p.sections.map(s=>({...s,mix:automaticSectionMix(s,p)}))}));}}>Auto balance all tracks</button></div></details>
-    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="section-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details>
+    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="transport-preferences"><summary aria-label="Playback options">•••</summary><div><b>{busy?"Preparing audio…":position}</b><label><input type="checkbox" checked={countIn} onChange={e=>setCountIn(e.target.checked)}/> Count-in</label><label><input type="checkbox" checked={click} onChange={e=>setClick(e.target.checked)}/> Metronome</label>{!previewOnly&&<><details className="mobile-transport-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details><button onClick={()=>{stop();go("metronome");}}>Open metronome</button><button onClick={()=>{stop();updateProject(p=>({...p,sections:p.sections.map(s=>({...s,mix:automaticSectionMix(s,p)}))}));}}>Auto balance all tracks</button></>}</div></details>
+    {!previewOnly&&<details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="section-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details>}
     {(busy||message)&&<p role="status">{busy?"Preparing audio…":message}</p>}
   </section>;
 }

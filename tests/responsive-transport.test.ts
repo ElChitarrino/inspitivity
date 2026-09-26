@@ -29,3 +29,11 @@ test("phone keeps the song selector and equal play/options targets in its fixed 
   assert.match(phone,/\.topbar \.back-button \{ display:grid; place-items:center; flex:0 0 46px; width:46px; height:46px/);
   assert.match(readFileSync("app/theme.css","utf8"),/\.studio-nav-toggle\{display:grid;place-items:center;position:fixed;[^}]*width:46px;height:46px/);
 });
+
+test("draft comparison keeps two columns on desktop and one column on phones",()=>{
+  assert.match(css,/\.sketch-choice-grid \{ display:grid; grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css,/@media\(max-width:700px\) \{[\s\S]*?\.sketch-choice-grid \{ grid-template-columns:minmax\(0,1fr\); \}/);
+  assert.match(app,/role="radiogroup" aria-label="Song draft"/);
+  assert.match(app,/draftChoices\?\.settings===settings/);
+  assert.match(app,/selectedDraft&&<SharedSectionPlayer key=\{selectedDraft.id\}/);
+});

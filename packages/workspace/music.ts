@@ -1,7 +1,7 @@
 import { DRUM_PITCHES, drumPatternBeats, type DrumInstrument } from "../sequencing/index.js";
 import { decodeVoicing, notePitchClass } from "../music-theory/index.js";
 import { chordNoteEvents, decodeRhythmicChord } from "../music-theory/chord-rhythm.js";
-import type { Project, SongSection } from "./index.js";
+import type { Project, SongSection, SectionEnergy } from "./index.js";
 import type { GrooveEnergy } from "../sequencing/index.js";
 
 export function sectionFeel(project: Project, section?: SongSection): { energy: GrooveEnergy; reason: string } {
@@ -30,6 +30,11 @@ export function sectionFeel(project: Project, section?: SongSection): { energy: 
 export type SongLayer = "drums" | "bass" | "chords" | "melody" | "riff";
 export type SongEvent = { sectionId: string; voice?: string; layer: SongLayer; pitch: number; start: number; duration: number; velocity: number; seconds: number; secondsDuration: number };
 export type SongMarker = { start: number; seconds: number; meter: string; bpm: number; name?: string };
+export function feelVelocity(layer: SongLayer, energy: SectionEnergy = "balanced", velocity = 1) {
+  const gain = energy === "mellow" ? { drums:.72, bass:.84, chords:.9, melody:.88, riff:.7 }[layer]
+    : energy === "powerful" ? { drums:1.16, bass:1.1, chords:1, melody:1.08, riff:1.14 }[layer] : 1;
+  return Math.max(0,Math.min(1,velocity*gain));
+}
 export function buildSongPlan(project: Project) {
   const events: SongEvent[] = [], markers: SongMarker[] = [];
   let quarterOffset = 0, secondOffset = 0;
@@ -52,8 +57,10 @@ export function buildSongPlan(project: Project) {
     }
     const add = (layer: SongLayer, pitch: number, start: number, duration: number, velocity: number) => {
       if (![pitch,start,duration,velocity].every(Number.isFinite) || start < 0 || start >= length || duration <= 0) return;
+      // Feel shapes the arrangement at playback/export time; saved notes remain intact.
+      if(section.energy === "mellow" && layer === "drums" && pitch === DRUM_PITCHES.hihat && Math.round(start*4)%8===2)return;
       const end = Math.min(length, start+duration);
-      events.push({ sectionId: section.id, voice: section.ideas.find(i => i.type === layer)?.voice, layer, pitch, start: quarterOffset+toQuarter(start), duration: toQuarter(end)-toQuarter(start), velocity, seconds: secondOffset+start*unitSeconds, secondsDuration: (end-start)*unitSeconds });
+      events.push({ sectionId: section.id, voice: section.ideas.find(i => i.type === layer)?.voice, layer, pitch, start: quarterOffset+toQuarter(start), duration: toQuarter(end)-toQuarter(start), velocity:feelVelocity(layer,section.energy,velocity), seconds: secondOffset+start*unitSeconds, secondsDuration: (end-start)*unitSeconds });
     };
     for (const layer of ["chords", "melody", "bass", "riff", "drums"] as const) {
       const idea = section.ideas.find(i => i.type === layer);

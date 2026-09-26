@@ -258,7 +258,9 @@ test("easy mode creates one coordinated song draft with optional customization",
   assert.match(source, /Easy mode/);
   assert.match(source, /Empty project/);
   assert.match(source, /Record idea/);
-  assert.match(source, /Generate connected draft/);
+  assert.match(source, /Hear two drafts/);
+  assert.match(source, /Keep this draft/);
+  assert.match(source, /Try two more/);
   assert.match(source, /function buildPlayableSketch/);
   assert.match(source, /Emotive space/);
   assert.match(source, /Neo-soul glow/);
