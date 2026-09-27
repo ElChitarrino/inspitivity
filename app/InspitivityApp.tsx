@@ -147,8 +147,8 @@ const LAYER_LABELS = [
   ["riff", "Pattern"],
 ] as const satisfies readonly (readonly [SongLayer, string])[];
 const DEFAULT_SECTION_MIX: Record<SongLayer, TrackMix> = {
-  drums: { muted: false, solo: false, volume: 0.76 },
-  bass: { muted: false, solo: false, volume: 0.62 },
+  drums: { muted: false, solo: false, volume: 0.82 },
+  bass: { muted: false, solo: false, volume: 0.74 },
   chords: { muted: false, solo: false, volume: 0.58 },
   melody: { muted: false, solo: false, volume: 0.72 },
   riff: { muted: false, solo: false, volume: 0.54 },
@@ -165,8 +165,8 @@ const automaticSectionMix = (section: SongSection, context?: Project): Record<So
   const present = new Set(section.ideas.map((idea) => idea.type));
   const energy = section.energy ?? "balanced";
   const mix = Object.fromEntries(LAYER_LABELS.map(([layer]) => [layer, { ...DEFAULT_SECTION_MIX[layer] }])) as Record<SongLayer, TrackMix>;
-  if (energy === "mellow") { mix.drums.volume = .64; mix.bass.volume = .56; mix.chords.volume = .62; }
-  if (energy === "powerful") { mix.drums.volume = .78; mix.bass.volume = .66; mix.chords.volume = .52; }
+  if (energy === "mellow") { mix.drums.volume = .7; mix.bass.volume = .68; mix.chords.volume = .62; }
+  if (energy === "powerful") { mix.drums.volume = .9; mix.bass.volume = .8; mix.chords.volume = .52; }
   if (present.has("chords") && present.has("riff")) { mix.chords.volume -= .08; mix.riff.volume -= .05; }
   if (present.has("melody")) mix.melody.volume = energy === "powerful" ? .68 : .74;
   if(context){
@@ -603,9 +603,12 @@ function reinforceDrumAccents(hits: DrumHit[], starts: number[], phraseSteps: nu
   starts.slice(0, 6).forEach((start) => {
     const step = Math.round(start * 4);
     if (step >= 0 && step < phraseSteps && !next.some((hit) => hit.instrument === "kick" && hit.step === step))
-      next.push({ instrument:"kick", step, velocity:.78 });
+      next.push({ instrument:"kick", step, velocity:.88 });
   });
-  return next.sort((a,b) => a.step-b.step);
+  return next.map(hit=>({
+    ...hit,
+    velocity:Math.min(1,hit.velocity+(hit.instrument==="kick"?.08:hit.instrument==="snare"?.06:0)),
+  })).sort((a,b) => a.step-b.step);
 }
 
 function buildPlayableSketch(preset: SketchPreset, options: SketchOptions, seed = freshSeed()): Project {
@@ -2344,6 +2347,14 @@ function Home({
     setMeterTop(candidate.meter.split("/")[0]);setMeterBottom(Number(candidate.meter.split("/")[1]));
     setIncludeMelody(true);setIncludePattern(candidate.id==="prog"||candidate.id==="heavy");setExtendedForm(false);
   };
+  const randomizeSketchSettings=()=>{
+    const random=seededRandom(freshSeed());
+    const pick=<T,>(values:readonly T[])=>values[Math.floor(random()*values.length)];
+    setSketchRoot(pick(ROOTS));
+    setSketchMode(pick(MODES));
+    setSketchBpm(String(72+Math.floor(random()*89)));
+    setDraftChoices(null);
+  };
   const parsedSketchBpm=clampBpm(Number.parseInt(sketchBpm,10)||preset.bpm);
   const parsedMeterTop=Math.max(1,Math.min(16,Number.parseInt(meterTop,10)||Number(preset.meter.split("/")[0])||4));
   const sketchOptions:SketchOptions={root:sketchRoot,mode:sketchMode,bpm:parsedSketchBpm,meter:`${parsedMeterTop}/${meterBottom===8?8:4}`,includeMelody,includePattern,extendedForm};
@@ -2368,14 +2379,8 @@ function Home({
         onCreate={create}
       />
       <section className="spark-studio">
-        <div className="spark-heading">
-          <div>
-            <p className="eyebrow">Start something</p>
-            <h2>Turn the next spark into music.</h2>
-          </div>
-        </div>
         <div className="start-actions" aria-label="Ways to start">
-          <button className={startMode === "quick" ? "active" : ""} aria-expanded={startMode === "quick"} onClick={() => setStartMode(current => current === "quick" ? null : "quick")}>
+          <button aria-haspopup="dialog" onClick={() => setStartMode("quick")}>
             <span aria-hidden="true">✦</span><b>Easy mode</b><small>Hear two connected drafts before saving.</small>
           </button>
           <button onClick={create}>
@@ -2385,8 +2390,10 @@ function Home({
             <span aria-hidden="true"><RecordIcon /></span><b>Record idea</b><small>Capture audio before the moment disappears.</small>
           </button>
         </div>
-        {startMode === "quick" && <div className="quick-sketch-panel">
-          <div className="quick-sketch-heading"><b>Choose the song&apos;s direction</b><span>Every part follows one shared musical plan.</span></div>
+        {startMode === "quick" && <div className="modal-layer easy-mode-layer" onMouseDown={event=>{if(event.target===event.currentTarget)setStartMode(null);}}>
+          <div className="modal easy-mode-modal" role="dialog" aria-modal="true" aria-labelledby="easy-mode-title">
+          <button className="modal-close" aria-label="Close Easy Mode" onClick={()=>setStartMode(null)}>×</button>
+          <div className="quick-sketch-heading"><div><p className="eyebrow">Easy mode</p><h2 id="easy-mode-title">Choose the song&apos;s direction</h2></div><span>Every part follows one shared musical plan.</span></div>
           <div className="preset-grid" role="radiogroup" aria-label="Sketch direction">
             {SKETCH_PRESETS.map((candidate) => (
             <button
@@ -2410,6 +2417,7 @@ function Home({
             <label><span>Tempo</span><div className="sketch-tempo"><input aria-label="Sketch tempo" type="text" inputMode="numeric" pattern="[0-9]*" enterKeyHint="done" value={sketchBpm} onChange={event=>setSketchBpm(event.target.value.replace(/\D/g,"").slice(0,3))} onBlur={()=>setSketchBpm(String(parsedSketchBpm))}/><small>BPM</small></div></label>
             <label><span>Time signature</span><div className="sketch-meter"><input aria-label="Time signature beats" type="text" inputMode="numeric" pattern="[0-9]*" enterKeyHint="done" value={meterTop} onChange={event=>setMeterTop(event.target.value.replace(/\D/g,"").slice(0,2))} onBlur={()=>setMeterTop(String(parsedMeterTop))}/><b>/</b><select aria-label="Time signature subdivision" value={meterBottom} onChange={event=>setMeterBottom(Number(event.target.value))}><option value="4">4</option><option value="8">8</option></select></div></label>
           </div>
+          <button className="randomize-sketch" onClick={randomizeSketchSettings}>↻ Randomize key, tempo &amp; scale</button>
           <div className="sketch-toggles" aria-label="Sketch arrangement options">
             <label><input type="checkbox" checked={includeMelody} onChange={event=>setIncludeMelody(event.target.checked)}/><span><b>Melody</b><small>Add a lead motif</small></span></label>
             <label><input type="checkbox" checked={includePattern} onChange={event=>setIncludePattern(event.target.checked)}/><span><b>Synth pattern</b><small>Add a rhythmic counter-layer</small></span></label>
@@ -2440,9 +2448,10 @@ function Home({
               <button className="primary-button" onClick={()=>selectedDraft&&launchSketch(selectedDraft)}>Keep this draft</button>
             </div>
           </section>}
+          {selectedDraft&&<SharedSectionPlayer key={selectedDraft.id} project={selectedDraft} previews={{}} activeSectionId={previewSectionId} activeTool="project" go={go} chooseSection={setPreviewSectionId} updateProject={()=>{}} previewOnly />}
+          </div>
         </div>}
       </section>
-      {startMode==="quick"&&selectedDraft&&<SharedSectionPlayer key={selectedDraft.id} project={selectedDraft} previews={{}} activeSectionId={previewSectionId} activeTool="project" go={go} chooseSection={setPreviewSectionId} updateProject={()=>{}} previewOnly />}
       <SectionTitle
         eyebrow="Pick up where you left off"
         title="Recent projects"
@@ -2588,6 +2597,15 @@ const SECTION_ASSETS = [
   ["drums", "Drums", "▦"], ["bass", "Bass", "♭"], ["chords", "Chords", "♯"],
   ["melody", "Melody", "♥"], ["riff", "Pattern", "⇶"],
 ] as const;
+const partPreviewLabel=(idea:Idea)=>{
+  if(idea.type==="chords")return idea.data?.slice(0,4).map(value=>value.split("|")[0]).join(" · ")||"Saved harmony";
+  if(idea.type==="drums")return idea.voice&&idea.voice in DRUM_KIT_LABELS?DRUM_KIT_LABELS[idea.voice as DrumKit]:"Saved groove";
+  if(idea.type==="bass")return idea.voice||"Follows the harmony";
+  if(idea.type==="melody")return idea.voice||"Saved melody";
+  if(idea.type==="riff")return idea.voice||"Saved pattern";
+  if(idea.type==="audio")return "Recorded take";
+  return "Saved part";
+};
 type UndoRemoval =
   | { kind:"section"; label:string; section:SongSection; index:number }
   | { kind:"idea"; label:string; idea:Idea; sectionId:string; index:number };
@@ -3120,7 +3138,7 @@ function ProjectView({
                 const playable=!!idea;
                 return <div key={type} className={`asset-tile ${idea ? "is-created" : "is-empty"}`}>
                   <button className="asset-open" aria-label={`${idea ? "Edit" : "Create"} ${label} in ${section.name}`} onClick={()=>idea ? openIdea(section.id,idea) : type!=="audio" && openSectionTool(section.id,type)}>
-                    <span aria-hidden="true">{icon}</span><span>{label}<small title={idea?.detail}>{idea ? (idea.detail || idea.data?.slice(0,4).join(" · ") || "Open editor") : `+ Add ${label.toLowerCase()}`}</small></span>
+                    <span aria-hidden="true">{icon}</span><span>{label}<small>{idea ? partPreviewLabel(idea) : `+ Add ${label.toLowerCase()}`}</small></span>
                   </button>
                   {idea&&<details className="part-actions"><summary aria-label={`${label} actions`}>•••</summary><div><button disabled={!playable} onClick={()=>void playIdea(idea)}>{playingIdeaId===idea.id?"Stop audition":"Audition saved part"}</button><button className="danger-action" aria-label={`Remove ${label} from ${section.name}`} onClick={()=>removeIdea(section.id,idea.id)}><TrashIcon /> Remove part</button></div></details>}
                   {assets.length>1 && <select className="asset-takes" aria-label={`${label} saved version in ${section.name}`} value={idea.id} onChange={e=>{
@@ -3318,6 +3336,9 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
   const [countIn,setCountIn]=useState(false);
   const [click,setClick]=useState(false);
   const [position,setPosition]=useState("Ready");
+  const focusedLayer = (["drums","bass","chords","melody","riff"] as const).find(layer=>layer===activeTool) ?? null;
+  const [soloFocusedPart,setSoloFocusedPart]=useState(Boolean(focusedLayer));
+  useEffect(()=>setSoloFocusedPart(Boolean(focusedLayer)),[focusedLayer]);
   const effectiveScope=scope;
   const structureKey=project.sections.map(s=>`${s.id}:${s.bars}:${s.repeats??1}:${s.meterMap?.join(",")}`).join("/");
   const selectedSection = project.sections.find(s => s.id === activeSectionId) ?? project.sections[0];
@@ -3404,14 +3425,14 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
           if (origin+event.seconds < now-.02) continue;
           const eventMix=latest.current.mixes.get(event.sectionId)??sectionMix(undefined);
           const settings=eventMix[event.layer], solo=Object.values(eventMix).some(m=>m.solo);
-          if (settings.muted || (solo && !settings.solo) || settings.volume <= 0) continue;
+          if (settings.muted || (solo && !settings.solo) || (soloFocusedPart && focusedLayer && event.layer!==focusedLayer) || settings.volume <= 0) continue;
           const delay=Math.max(0,origin+event.seconds-engine.get().currentTime);
           if (event.layer === "drums") {
             const instrument=(Object.entries(DRUM_PITCHES).find(([,pitch])=>pitch===event.pitch)?.[0] as DrumInstrument | undefined);
-            if (instrument) engine.drum(instrument,delay,event.velocity, (event.voice ?? "current") as DrumKit,settings.volume*.9);
+            if (instrument) engine.drum(instrument,delay,event.velocity, (event.voice ?? "current") as DrumKit,settings.volume*1.04);
           } else {
             const voice=(event.voice ?? (event.layer === "chords" ? "warm pad" : event.layer === "melody" ? "air flute" : event.layer === "bass" ? "deep bass" : "analog pulse")) as SynthVoice;
-            const baseGain = event.layer === "chords" ? .052 : event.layer === "melody" ? .058 : event.layer === "bass" ? .065 : .055;
+            const baseGain = event.layer === "chords" ? .052 : event.layer === "melody" ? .058 : event.layer === "bass" ? .094 : .055;
             engine.tone(event.pitch,delay,event.secondsDuration,baseGain*event.velocity*settings.volume,voice);
           }
         }
@@ -3470,7 +3491,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
       <span className="transport-time" aria-label={`Playback time ${formatTime(elapsedSeconds)} of ${formatTime(plan.seconds)}`}>{formatTime(elapsedSeconds)} / {formatTime(plan.seconds)}</span>
     </div>
     <progress aria-label="Playback position" max={1} value={progress} />
-    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="transport-preferences"><summary aria-label="Playback options">•••</summary><div><b>{busy?"Preparing audio…":position}</b><label><input type="checkbox" checked={countIn} onChange={e=>setCountIn(e.target.checked)}/> Count-in</label><label><input type="checkbox" checked={click} onChange={e=>setClick(e.target.checked)}/> Metronome</label>{!previewOnly&&<><details className="mobile-transport-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details><button onClick={()=>{stop();go("metronome");}}>Open metronome</button><button onClick={()=>{stop();updateProject(p=>({...p,sections:p.sections.map(s=>({...s,mix:automaticSectionMix(s,p)}))}));}}>Auto balance all tracks</button></>}</div></details>
+    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="transport-preferences"><summary aria-label="Playback options">•••</summary><div><b>{busy?"Preparing audio…":position}</b>{focusedLayer&&<label><input type="checkbox" checked={soloFocusedPart} onChange={e=>{stop();setSoloFocusedPart(e.target.checked);}}/> Solo {LAYER_LABELS.find(([layer])=>layer===focusedLayer)?.[1]}</label>}<label><input type="checkbox" checked={countIn} onChange={e=>setCountIn(e.target.checked)}/> Count-in</label><label><input type="checkbox" checked={click} onChange={e=>setClick(e.target.checked)}/> Metronome</label>{!previewOnly&&<><details className="mobile-transport-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details><button onClick={()=>{stop();go("metronome");}}>Open metronome</button><button onClick={()=>{stop();updateProject(p=>({...p,sections:p.sections.map(s=>({...s,mix:automaticSectionMix(s,p)}))}));}}>Auto balance all tracks</button></>}</div></details>
     {!previewOnly&&<details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="section-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details>}
     {(busy||message)&&<p role="status">{busy?"Preparing audio…":message}</p>}
   </section>;
@@ -5873,12 +5894,12 @@ function ProjectModal({
   const [meter,setMeter]=useState("4/4");
   return (
     <div className="modal-layer">
-      <div className="modal">
-        <button className="modal-close" onClick={close}>
+      <div className="modal project-create-modal" role="dialog" aria-modal="true" aria-labelledby="project-create-title">
+        <button className="modal-close" onClick={close} aria-label="Close new project">
           ×
         </button>
         <p className="eyebrow">New project</p>
-        <h2>What are you making?</h2>
+        <h2 id="project-create-title">What are you making?</h2>
         <label className="field">
           <span>Project title</span>
           <input

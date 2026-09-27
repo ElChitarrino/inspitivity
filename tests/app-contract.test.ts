@@ -254,8 +254,12 @@ test("mobile playback explicitly unlocks and masters the Web Audio graph", () =>
 });
 
 test("easy mode creates one coordinated song draft with optional customization", () => {
-  assert.match(source, /Start something/);
+  assert.doesNotMatch(source, /Turn the next spark into music/);
   assert.match(source, /Easy mode/);
+  assert.match(source, /role="dialog" aria-modal="true" aria-labelledby="easy-mode-title"/);
+  assert.match(source, /Randomize key, tempo &amp; scale/);
+  assert.match(source, /setSketchRoot\(pick\(ROOTS\)\)/);
+  assert.match(source, /setSketchMode\(pick\(MODES\)\)/);
   assert.match(source, /Empty project/);
   assert.match(source, /Record idea/);
   assert.match(source, /Hear two drafts/);
@@ -290,6 +294,17 @@ test("easy mode creates one coordinated song draft with optional customization",
   assert.match(source, /voice:bassVoice/);
   assert.match(source, /follows harmony and kick/);
   assert.match(source, /Customize key, tempo and parts/);
+});
+
+test("feedback refinements keep part previews concise and solo editors by default", () => {
+  assert.match(source, /const partPreviewLabel=/);
+  assert.match(source, /<small>\{idea \? partPreviewLabel\(idea\)/);
+  assert.match(source, /useState\(Boolean\(focusedLayer\)\)/);
+  assert.match(source, /Solo \{LAYER_LABELS\.find/);
+  assert.match(source, /event\.layer!==focusedLayer/);
+  assert.match(source, /event\.layer === "bass" \? \.094/);
+  assert.match(workspace, /\.sketch-choice-actions \.primary-button,.sketch-choice-actions \.secondary-button/);
+  assert.match(workspace, /\.project-create-modal>\.field \{ margin-bottom:14px/);
 });
 
 test("existing songs can generate a complete context-aware section", () => {

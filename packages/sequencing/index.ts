@@ -82,7 +82,7 @@ export function generateDrumLoop({ beatsPerBar=4, density=.6, style="steady", en
   const phraseBars=Math.max(1,Math.min(8,Math.round(bars)));
   const activity=Math.max(.1,Math.min(1,density));
   const random=seededRandom(seed), pick=<T,>(xs:T[])=>xs[Math.floor(random()*xs.length)];
-  const strength={mellow:.65,balanced:.84,powerful:1}[energy];
+  const strength={mellow:.68,balanced:.92,powerful:1}[energy];
   const busy=activity*(energy==="mellow"?.5:energy==="powerful"?1.2:1);
   const halfTime=random() < (style==="djent"?.55:style==="driving"?.1:.22);
   const oddGroups = beats===7 ? pick([[2,2,3],[3,2,2],[2,3,2]]) : beats===5 ? pick([[3,2],[2,3]]) : beats===9 ? pick([[3,3,3],[2,2,2,3]]) : beats===11 ? pick([[3,3,3,2],[2,3,3,3]]) : null;
@@ -110,7 +110,7 @@ export function generateDrumLoop({ beatsPerBar=4, density=.6, style="steady", en
       barHits.push({instrument,step,velocity:Math.round(Math.max(.2,Math.min(1,velocity)) * 100)/100});
     };
     backbeats.forEach(step=>add("snare",step,strength*(.94+random()*.06)));
-    for(const step of baseKick) if(bar===0||step===0||random()>.12)add("kick",step,strength*(step===0?1:.72+random()*.22));
+    for(const step of baseKick) if(bar===0||step===0||random()>.12)add("kick",step,strength*(step===0?1:.8+random()*.18));
     for(let step=0;step<steps;step++) {
       const strong=step%4===0;
       if(bar>0 && !backbeats.includes(step) && random()<busy*.12)add("kick",step,strength*(.6+random()*.3));
