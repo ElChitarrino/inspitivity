@@ -59,7 +59,7 @@ test("the product surface retains the core songwriting workflows", () => {
 
 test("project tool navigation stays visible above a compact section player", () => {
   assert.match(source, /returnToArrangement \? "inside-project" : ""/);
-  assert.match(source, /\["project", "drums", "chords", "melody", "bass", "riff", "transition", "metronome"\]\.includes\(screen\)/);
+  assert.match(source, /\["project", "drums", "chords", "melody", "bass", "riff", "metronome"\]\.includes\(screen\)/);
   assert.match(source, /back=\{backFromMusicTool\}/);
   assert.match(source, /projectName=\{project\.name\}/);
   assert.match(theme, /\.inside-project \.topbar\{order:-2/);
@@ -355,7 +355,7 @@ test("arrangement sections own playback and persistent per-track mixing", async 
   assert.match(source, /DEFAULT_SECTION_MIX/);
   assert.match(source, /mix: \{ \.\.\.section\.mix/);
   assert.match(source, /event\.sectionId/);
-  assert.match(source, /\["project", "drums", "chords", "melody", "bass", "riff", "transition", "metronome"\]\.includes\(screen\)/);
+  assert.match(source, /\["project", "drums", "chords", "melody", "bass", "riff", "metronome"\]\.includes\(screen\)/);
   assert.match(theme, /\.project-screen \.topbar,\.inside-project \.topbar\{position:sticky/);
 });
 
@@ -578,14 +578,13 @@ test("chords, melody, and rhythm ask for a project and section unless opened ins
   assert.match(source, /ideas: \[\.\.\.target\.ideas, \{ id: uid\(\), \.\.\.draft \}\]/);
 });
 
-test("progressive workflows include meter maps, synth patterns, transformations, tension, and transitions", () => {
+test("progressive workflows include meter maps, synth patterns, transformations, and tension", () => {
   for (const feature of [
     "meter-map",
     "Synth Pattern",
     "Pattern length",
     "Motif development",
     "Tension map",
-    "Transition Builder",
     "Harmony colour",
   ])
     assert.match(source, new RegExp(feature));

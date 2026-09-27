@@ -71,15 +71,11 @@ import {
   generateProgRiff,
   meterBeats,
   meterMapTotal,
-  nextProgMeter,
-  PROG_METERS,
   transformMotif,
-  transitionDescription,
   type HarmonyColour,
   type MotifTransform,
   type PatternMotion,
   type RiffEvent,
-  type TransitionStyle,
 } from "../packages/prog";
 
 import { useCloudProjects, saveRecording, getRecording, downloadBackup, restoreBackup } from "./workspace-storage";
@@ -117,7 +113,6 @@ type Screen =
   | "drums"
   | "bass"
   | "riff"
-  | "transition"
   | "metronome"
   | "settings";
 type ChordDraft = { id: string; name: string; beats: number; pitches?: number[]; attacks?: ChordAttack[] };
@@ -991,7 +986,7 @@ function BottomNav({
     ] },
   ];
   const mobilePrimary = new Set<Screen>(["home", "projects", "metronome", "settings"]);
-  const creating = ["drums", "chords", "bass", "melody", "riff", "transition"].includes(screen);
+  const creating = ["drums", "chords", "bass", "melody", "riff"].includes(screen);
   const navigateFromMenu = (target: Screen) => { setOpen(false); go(target); };
   return <>
     <button className="studio-nav-toggle" aria-label={open ? "Close navigation" : "Open navigation"} aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? "×" : "☰"}</button>
@@ -1973,12 +1968,12 @@ export default function InspitivityApp({ account, signOutPath }: {
     return () => document.removeEventListener("pointerdown", dismissOnOutsidePointer);
   }, []);
   const navigate = (next: Screen) => {
-    if(screen==="project"&&["chords","melody","drums","bass","riff","transition","metronome"].includes(next))setReturnToArrangement(true);
+    if(screen==="project"&&["chords","melody","drums","bass","riff","metronome"].includes(next))setReturnToArrangement(true);
     if (next !== screen) {
       setEditingIdea(selected?.sections.find(s => s.id === draftSectionId)?.ideas.find(i => i.type === next) ?? null);
       savedDraftId.current = null;
     }
-    if (!["chords", "melody", "drums", "bass", "riff", "transition", "metronome"].includes(next))
+    if (!["chords", "melody", "drums", "bass", "riff", "metronome"].includes(next))
       { setReturnToArrangement(false); setDraftSectionId(null); }
     setScreen(next);
   };
@@ -2154,7 +2149,7 @@ export default function InspitivityApp({ account, signOutPath }: {
   };
   const openSectionTool = (
     sectionId: string,
-    tool: "chords" | "melody" | "drums" | "bass" | "riff" | "transition",
+    tool: "chords" | "melody" | "drums" | "bass" | "riff",
   ) => {
     savedDraftId.current = null;
     setEditingIdea(selected?.sections.find(s => s.id === sectionId)?.ideas.find(i => i.type === tool) ?? null);
@@ -2177,8 +2172,7 @@ export default function InspitivityApp({ account, signOutPath }: {
       idea.type === "melody" ||
       idea.type === "drums" ||
       idea.type === "bass" ||
-      idea.type === "riff" ||
-      idea.type === "transition"
+      idea.type === "riff"
     ) {
       setDraftSectionId(sectionId);
       setEditingIdea(idea);
@@ -2216,7 +2210,7 @@ export default function InspitivityApp({ account, signOutPath }: {
         <div className="account-sync"><b>{account.displayName}</b><span role="status">{cloud.status}</span></div>
         <div className="account-actions"><button onClick={() => void cloud.sync()}>Sync now</button><a href={signOutPath} target="_top">Sign out</a></div>
       </div>
-      {selected && (screen === "project" || returnToArrangement) && ["project", "drums", "chords", "melody", "bass", "riff", "transition", "metronome"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} activeTool={screen} go={navigate} chooseSection={(id) => { savedDraftId.current=null; setDraftSectionId(id); setEditingIdea(selected.sections.find(section=>section.id===id)?.ideas.find(idea=>idea.type===screen)??null); }} updateProject={updateSelected} />}
+      {selected && (screen === "project" || returnToArrangement) && ["project", "drums", "chords", "melody", "bass", "riff", "metronome"].includes(screen) && <SharedSectionPlayer project={selected} previews={previews} activeSectionId={draftSectionId} activeTool={screen} go={navigate} chooseSection={(id) => { savedDraftId.current=null; setDraftSectionId(id); setEditingIdea(selected.sections.find(section=>section.id===id)?.ideas.find(idea=>idea.type===screen)??null); }} updateProject={updateSelected} />}
       <DraftSession key={`${returnToArrangement ? selected?.id : standaloneProject.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} id={`${returnToArrangement ? selected?.id : standaloneProject.id}/${draftSectionId ?? "scratch"}/${screen}/${editingIdea?.id ?? "new"}`} publish={publishPreview}>
       {screen === "home" && (
         <Home
@@ -2330,18 +2324,6 @@ export default function InspitivityApp({ account, signOutPath }: {
           go={navigate}
           metronomeEnabled={toolMetronomeEnabled}
           toggleMetronome={() => setToolMetronomeEnabled((enabled) => !enabled)}
-        />
-      )}
-      {screen === "transition" && (
-        <TransitionTool
-          key={`${editingIdea?.id ?? "new-transition"}-${draftSectionId ?? "default"}`}
-          idea={editingIdea?.type === "transition" ? editingIdea : undefined}
-          project={editorProject}
-          section={draftSection}
-          updateProject={updateEditorProject}
-          back={backFromMusicTool}
-          save={saveIdea}
-          go={navigate}
         />
       )}
       {screen === "metronome" && (
@@ -2781,7 +2763,7 @@ function ProjectView({
   record: () => void;
   openSectionTool: (
     sectionId: string,
-    tool: "chords" | "melody" | "drums" | "bass" | "riff" | "transition",
+    tool: "chords" | "melody" | "drums" | "bass" | "riff",
   ) => void;
   editIdea: (sectionId: string, idea: Idea) => void;
   deleteProject: () => void;
@@ -3159,8 +3141,7 @@ function ProjectView({
       idea.type === "melody" ||
       idea.type === "drums" ||
       idea.type === "bass" ||
-      idea.type === "riff" ||
-      idea.type === "transition"
+      idea.type === "riff"
     )
       editIdea(sectionId, idea);
     else void playIdea(idea);
@@ -3343,7 +3324,6 @@ function ProjectView({
               {section.ideas.filter(i=>i.type==="text").map(idea=><div className="existing-note" key={idea.id}><button data-no-translate aria-label={`Edit note in ${section.name}`} onClick={()=>openIdea(section.id,idea)}>{idea.detail}</button><button aria-label={`Remove ${idea.name}`} onClick={()=>removeIdea(section.id,idea.id)}><TrashIcon /></button></div>)}
             </section>}
             <footer className="section-order-controls">
-              <button onClick={()=>{const transition=section.ideas.find(i=>i.type==="transition");transition?openIdea(section.id,transition):openSectionTool(section.id,"transition");}}>⇄ Transition</button>
               <button onClick={()=>move(index,-1)} disabled={index===0} aria-label={`Move ${section.name} up`}>↑</button>
               <button onClick={()=>move(index,1)} disabled={index===project.sections.length-1} aria-label={`Move ${section.name} down`}>↓</button>
               <details className="section-more-actions">
@@ -3684,7 +3664,7 @@ function ToolHeader({
 }) {
   const destinations: [Screen, string, string][] = [
     ["drums", "▦", "Drums"], ["chords", "♯", "Chords"], ["bass", "♭", "Bass"],
-    ["melody", "♥", "Melody"], ["riff", "⇶", "Pattern"], ["transition", "⇄", "Transitions"],
+    ["melody", "♥", "Melody"], ["riff", "⇶", "Pattern"],
     ["metronome", "♩", "Metronome"],
   ];
   return (
@@ -5129,119 +5109,6 @@ function RiffTool({
   );
 }
 
-function TransitionTool({
-  idea,
-  project,
-  section,
-  updateProject,
-  back,
-  save,
-  go,
-}: {
-  idea?: Idea;
-  project: Project;
-  section?: SongSection;
-  updateProject: (fn: (p: Project) => Project) => void;
-  back: () => void;
-  save: SaveIdea;
-  go: (s: Screen) => void;
-}) {
-  const [style, setStyle] = useState<TransitionStyle>(
-    (idea?.data?.[0] as TransitionStyle) ?? "metric modulation",
-  );
-  const fromMeter = section
-    ? (sectionMeterMap(section, project.meter).at(-1) ?? project.meter)
-    : project.meter;
-  const [toMeter, setToMeter] = useState(
-    idea?.data?.[1] ?? nextProgMeter(fromMeter),
-  );
-  const apply = () => {
-    if (section && style === "metric modulation")
-      updateProject((current) => ({
-        ...current,
-        sections: current.sections.map((item) =>
-          item.id === section.id
-            ? {
-                ...item,
-                meterMap: [
-                  ...sectionMeterMap(item, current.meter).slice(0, -1),
-                  toMeter,
-                ],
-              }
-            : item,
-        ),
-      }));
-    save(
-      "transition",
-      `${style} into ${toMeter}`,
-      transitionDescription(style, fromMeter, toMeter),
-      [style, toMeter],
-    );
-  };
-  return (
-    <>
-      <ToolHeader
-        title="Transition Builder"
-        subtitle="Connect sections with intent, not just a cut"
-        projectName={project.name}
-        back={back}
-        go={go}
-        active="transition"
-      />
-      <ProjectContext project={project} update={updateProject} />
-      {section && (
-        <p className="destination-name">
-          From {section.name} · final bar {fromMeter}
-        </p>
-      )}
-      <div className="tool-layout">
-        <GeneratorSettings className="transition-panel">
-          <ControlTitle n="1" title="Transition device" />
-          <Select
-            label="Device"
-            value={style}
-            set={(value) => setStyle(value as TransitionStyle)}
-            options={[
-              "metric modulation",
-              "tempo ramp",
-              "drum fill",
-              "pivot chord",
-              "pedal point",
-              "riff mutation",
-            ]}
-          />
-          <ControlTitle n="2" title="Arrival meter" />
-          <Select
-            label="Target meter"
-            value={toMeter}
-            set={setToMeter}
-            options={PROG_METERS}
-          />
-          <p className="control-note">
-            Metric modulation writes the target meter into the last bar of this
-            section. Other devices become a saved arrangement instruction you
-            can reopen and refine.
-          </p>
-          <button className="primary-button wide" onClick={apply}>
-            {idea ? "✓ Update transition" : "＋ Add transition"}
-          </button>
-        </GeneratorSettings>
-        <section className="result-panel transition-preview">
-          <p className="eyebrow">YOUR TRANSITION</p>
-          <h2>{style}</h2>
-          <div className="transition-route">
-            <b>{fromMeter}</b>
-            <span>→</span>
-            <b>{toMeter}</b>
-          </div>
-          <p>{transitionDescription(style, fromMeter, toMeter)}</p>
-          <small>Saved with this section and visible in the arrangement.</small>
-        </section>
-      </div>
-    </>
-  );
-}
-
 function DrumTool({
   idea,
   project,
@@ -6124,7 +5991,7 @@ function CreateModal({
 }: {
   close: () => void;
   choose: (
-    a: "project" | "record" | "chords" | "bass" | "melody" | "drums" | "riff" | "transition",
+    a: "project" | "record" | "chords" | "bass" | "melody" | "drums" | "riff",
   ) => void;
 }) {
   return (
@@ -6177,13 +6044,6 @@ function CreateModal({
             title="Synth pattern"
             copy="Build a repeating guide"
             onClick={() => choose("riff")}
-          />
-          <ToolButton
-            tone="amber"
-            icon="⇄"
-            title="Transition"
-            copy="Connect two sections"
-            onClick={() => choose("transition")}
           />
            <ToolButton
             tone="amber"

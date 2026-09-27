@@ -13,6 +13,24 @@ export type SectionEnergy = "sparse" | "mellow" | "balanced" | "driving" | "powe
 export type SongSection = { id: string; name: string; bars: number; color: string; ideas: Idea[]; meterMap?: string[]; mix?: SectionMix; repeats?: number; energy?: SectionEnergy };
 export type Project = { id: string; name: string; bpm: number; meter: string; key: string; updated: number; sections: SongSection[] };
 
+/** Retire the text-only transition tool without losing anyone's saved instructions. */
+export function migrateTransitionNotes(projects: Project[]): Project[] {
+  return projects.map(project => {
+    if (!project.sections.some(section => section.ideas.some(idea => idea.type === "transition"))) return project;
+    return { ...project, sections: project.sections.map(section => ({
+      ...section,
+      ideas: section.ideas.map(idea => idea.type === "transition" ? {
+        ...idea,
+        type: "text" as const,
+        name: idea.name || "Transition note",
+        detail: idea.detail && idea.name && idea.name.length + idea.detail.length + 1 <= 10000
+          ? `${idea.name}\n${idea.detail}`
+          : idea.detail || idea.name || "Transition note",
+      } : idea),
+    })) };
+  });
+}
+
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const str = (v: unknown, max = 10000): v is string => typeof v === "string" && v.length <= max;
 const validMix = (value: unknown) => value === undefined || (record(value) && ["drums", "bass", "chords", "melody", "riff"].every(layer => {

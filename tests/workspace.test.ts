@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mergeProjects, validProjects, type Project } from "../packages/workspace/index.js";
+import { mergeProjects, migrateTransitionNotes, validProjects, type Project } from "../packages/workspace/index.js";
 import { sectionFeel, buildSongPlan } from "../packages/workspace/music.js";
 import { analyzeArrangement } from "../packages/workspace/arrangement.js";
 import { varyIdeaData, varyNotes } from "../packages/workspace/variation.js";
@@ -8,6 +8,22 @@ import { generateDrumLoop } from "../packages/sequencing/index.js";
 import { createMultitrackMidi } from "../packages/midi/index.js";
 
 const project = (): Project => ({ id:"p",name:"Idea",bpm:120,key:"C major",meter:"4/4",updated:1,sections:[{id:"s",name:"Verse",bars:2,color:"mint",ideas:[{id:"c",type:"chords",name:"Harmony",detail:"",data:["C|4","F|4"]}]}] });
+test("old transition instructions become section notes without changing saved meter shifts",()=>{
+  const song=project();
+  song.sections[0].meterMap=["4/4","7/8"];
+  song.sections[0].ideas.push({id:"t",type:"transition",name:"Verse to chorus",detail:"Build with a snare fill",data:["archive"]});
+  const migrated=migrateTransitionNotes([song]);
+  assert.equal(song.sections[0].ideas[1].type,"transition");
+  assert.deepEqual(migrated[0].sections[0].meterMap,["4/4","7/8"]);
+  assert.deepEqual(migrated[0].sections[0].ideas[1],{
+    id:"t",type:"text",name:"Verse to chorus",detail:"Verse to chorus\nBuild with a snare fill",data:["archive"],
+  });
+  assert.ok(validProjects(migrated));
+  assert.deepEqual(migrateTransitionNotes(migrated),migrated);
+  const long=project();long.sections[0].ideas.push({id:"t",type:"transition",name:"Title",detail:"x".repeat(10000)});
+  assert.ok(validProjects(migrateTransitionNotes([long])));
+  assert.equal(migrateTransitionNotes([long])[0].sections[0].ideas[1].detail.length,10000);
+});
 test("cloud merge keeps both conflicting projects and propagates uncontested deletions",()=>{
   const base=project(), local={...base,name:"Device A"}, remote={...base,name:"Device B"};
   const result=mergeProjects([base],[local],[remote],()=>"conflict");
