@@ -1850,6 +1850,24 @@ export default function InspitivityApp({ account, signOutPath }: {
       if (toastTimer.current) window.clearTimeout(toastTimer.current);
     };
   }, [notify]);
+  useEffect(() => {
+    const dismissOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.classList.contains("modal-layer")) {
+        event.preventDefault();
+        const dismiss = target.querySelector<HTMLButtonElement>(".modal-close, [data-dialog-dismiss]");
+        if (dismiss && !dismiss.disabled) dismiss.click();
+      }
+      for (const panel of document.querySelectorAll<HTMLDetailsElement>(
+        ".section-player .section-mixer[open], .section-player .transport-preferences[open], .project-options[open], .part-actions[open], .section-more-actions[open]",
+      )) {
+        if (!panel.contains(target)) panel.open = false;
+      }
+    };
+    document.addEventListener("pointerdown", dismissOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", dismissOnOutsidePointer);
+  }, []);
   const navigate = (next: Screen) => {
     if(screen==="project"&&["chords","melody","drums","bass","riff","transition","metronome"].includes(next))setReturnToArrangement(true);
     if (next !== screen) {
@@ -2301,7 +2319,7 @@ export default function InspitivityApp({ account, signOutPath }: {
         <p>The saved bass and lead still follow the previous harmony. Choose what to hear before saving.</p>
         <button className="primary-button wide" onClick={()=>resolveHarmony("adapt")}>Adapt bass and lead, then save</button>
         <button className="secondary-button wide" onClick={()=>resolveHarmony("keep")}>Keep other parts, save chords</button>
-        <button className="export-button wide" onClick={()=>resolveHarmony("revert")}>Return to editing</button>
+        <button className="export-button wide" data-dialog-dismiss onClick={()=>resolveHarmony("revert")}>Return to editing</button>
       </section></div>}
       {projectToDelete && (
         <ConfirmProjectDelete
@@ -3072,7 +3090,7 @@ function ProjectView({
         <p>Choose how the new section should treat its bass and lead.</p>
         <button className="primary-button wide" onClick={()=>resolveVariation("adapt")}>Adapt bass and lead</button>
         <button className="secondary-button wide" onClick={()=>resolveVariation("keep")}>Keep their original notes</button>
-        <button className="export-button wide" onClick={()=>resolveVariation("revert")}>Cancel variation</button>
+        <button className="export-button wide" data-dialog-dismiss onClick={()=>resolveVariation("revert")}>Cancel variation</button>
       </section></div>}
       <SectionTitle
         eyebrow=""
@@ -6088,6 +6106,11 @@ function SaveDestinationModal({
         aria-modal="true"
         aria-labelledby="save-destination-title"
         onCancel={(event) => { event.preventDefault(); close(); }}
+        onPointerDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          const bounds = event.currentTarget.getBoundingClientRect();
+          if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) close();
+        }}
       >
         <button className="modal-close" onClick={close} aria-label="Close">
           ×

@@ -316,6 +316,18 @@ test("auto balance confirms success and quick recording is centered",()=>{
   assert.match(source,/Inharmonic, short-lived partials/);
 });
 
+test("backdrop and popover outside clicks dismiss only the active overlay",()=>{
+  assert.match(source,/target\.classList\.contains\("modal-layer"\)/);
+  assert.match(source,/querySelector<HTMLButtonElement>\("\.modal-close, \[data-dialog-dismiss\]"\)/);
+  assert.match(source,/dismiss && !dismiss\.disabled/);
+  assert.match(source,/\.section-player \.section-mixer\[open\], \.section-player \.transport-preferences\[open\]/);
+  assert.match(source,/if \(!panel\.contains\(target\)\) panel\.open = false/);
+  assert.match(source,/data-dialog-dismiss onClick=\{\(\)=>resolveHarmony\("revert"\)\}/);
+  assert.match(source,/event\.clientX < bounds\.left \|\| event\.clientX > bounds\.right/);
+  assert.match(workspace,/\.project-context \.global-tempo input \{ height:36px;min-height:36px/);
+  assert.match(workspace,/\.global-tempo>span:first-child,\.sketch-options>label:has\(\.sketch-tempo\)>span \{ text-transform:uppercase/);
+});
+
 test("existing songs can generate a complete context-aware section", () => {
   assert.match(source, /function buildGuidedSection/);
   assert.match(source, /Generate complete section/);
