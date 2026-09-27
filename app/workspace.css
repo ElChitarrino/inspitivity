@@ -215,6 +215,9 @@ html[data-theme] .app-shell[data-density=compact] .section-player :is(button,sel
 .global-tempo>span:first-child,.sketch-options>label:has(.sketch-tempo)>span { text-transform:uppercase; letter-spacing:.06em; }
 .project-context .global-tempo input { height:36px;min-height:36px;padding:5px 8px;line-height:1.2; }
 .sketch-tempo input { height:40px;min-height:40px; }
+.language-options { display:flex;gap:8px; }
+.language-options button { min-height:44px;flex:1;padding:9px 14px;border:1px solid var(--control-line);border-radius:8px;background:var(--surface2); }
+.language-options button[aria-pressed=true] { border-color:var(--mint);background:var(--accent-soft); }
 .global-meter>select { min-width:190px; }
 .meter-custom-fields { display:flex; align-items:center; gap:6px; }
 .meter-custom-fields input { width:54px; min-width:0; text-align:center; }

@@ -45,7 +45,7 @@ export default function RootLayout({
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("inspitivity-theme");var valid=t==="electric"||t==="crimson";if(!valid)t=localStorage.getItem("inspitivity-projects")!==null?"electric":"crimson";document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme="crimson"}})();`,
+            __html: `(function(){try{var t=localStorage.getItem("inspitivity-theme");var valid=t==="electric"||t==="crimson";if(!valid)t=localStorage.getItem("inspitivity-projects")!==null?"electric":"crimson";document.documentElement.dataset.theme=t;document.documentElement.lang=localStorage.getItem("inspitivity-language")==="de"?"de":"en"}catch(e){document.documentElement.dataset.theme="crimson";document.documentElement.lang="en"}})();`,
           }}
         />
       </head>

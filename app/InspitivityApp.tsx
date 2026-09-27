@@ -96,6 +96,7 @@ import {
 } from "../packages/workspace/bass";
 import { VariationControls } from "./variation-controls";
 import { isTheme, resolveInitialTheme, type Theme } from "../packages/theme";
+import { isUiLanguage, LANGUAGE_STORAGE_KEY, observeUiLanguage, type UiLanguage } from "./i18n";
 
 type IdeaDraft = Omit<Idea, "id" | "recordingId">;
 type SaveIdea = (type: Idea["type"], name: string, detail: string, data?: string[], chooseDestination?: boolean, voice?: string) => void;
@@ -983,7 +984,7 @@ function BottomNav({
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
   const groups: { label: string; destinations: [Screen, React.ReactNode, string][] }[] = [
-    { label: "Workspace", destinations: [["home", "⌂", "Studio"], ["projects", "▱", "Projects"]] },
+    { label: "Workspace", destinations: [["home", "⌂", "Studio"], ["projects", "▱", "Projects"], ["metronome", "♩", "Metronome"]] },
     { label: "Preferences", destinations: [
       ["settings", <GearIcon key="settings" />, "Settings"],
     ] },
@@ -1806,6 +1807,22 @@ export default function InspitivityApp({ account, signOutPath }: {
 }) {
   const [projects, setProjects, cloud] = useCloudProjects(STARTER_PROJECTS, account.userId);
   const [theme, setTheme] = useTheme();
+  const [language, setLanguage] = useState<UiLanguage>("en");
+  const appRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+      if (isUiLanguage(saved)) setLanguage(saved);
+    } catch { /* English remains the default */ }
+  }, []);
+  useEffect(() => {
+    document.documentElement.lang = language;
+    return appRef.current ? observeUiLanguage(appRef.current, language) : undefined;
+  }, [language]);
+  const changeLanguage = (next: UiLanguage) => {
+    setLanguage(next);
+    try { localStorage.setItem(LANGUAGE_STORAGE_KEY, next); } catch { /* session-only preference */ }
+  };
   const [compact, setCompact] = useState(false);
   useEffect(() => { try { setCompact(localStorage.getItem("inspitivity-density") === "compact"); } catch { /* default density */ } }, []);
   const changeCompact = (value:boolean) => { setCompact(value); try { localStorage.setItem("inspitivity-density", value ? "compact" : "comfortable"); } catch { /* session-only preference */ } };
@@ -2106,7 +2123,7 @@ export default function InspitivityApp({ account, signOutPath }: {
   const updateEditorProject = returnToArrangement ? updateSelected : setStandaloneProject;
 
   return (
-    <main data-density={compact ? "compact" : "comfortable"} className={`app-shell ${screen}-screen ${returnToArrangement ? "inside-project" : ""}`}>
+    <main ref={appRef} data-density={compact ? "compact" : "comfortable"} className={`app-shell ${screen}-screen ${returnToArrangement ? "inside-project" : ""}`}>
       <div className="studio-workspace">
       <div className="sync-status">
         <div className="account-sync"><b>{account.displayName}</b><span role="status">{cloud.status}</span></div>
@@ -2253,6 +2270,8 @@ export default function InspitivityApp({ account, signOutPath }: {
           projects={projects}
           theme={theme}
           setTheme={setTheme}
+          language={language}
+          setLanguage={changeLanguage}
           compact={compact}
           setCompact={changeCompact}
           phoneInstall={phoneInstall}
@@ -2482,7 +2501,7 @@ function Home({
             <p>Choose a draft to play. Both follow your key, tempo and time signature. Save only the one you want to edit.</p>
             <div className="sketch-choice-grid" role="radiogroup" aria-label="Song draft">
               {choices.map((candidate,index)=><button key={candidate.id} role="radio" aria-checked={previewIndex===index} className={previewIndex===index?"active":""} onClick={()=>{setPreviewIndex(index);setPreviewSectionId(null);}}>
-                <b>Draft {index+1}</b><span>{candidate.sections.map(section=>section.name).join(" → ")}</span>
+                <b>Draft {index+1}</b><span data-no-translate>{candidate.sections.map(section=>section.name).join(" → ")}</span>
                 <small>{candidate.sections[0]?.ideas.find(idea=>idea.type==="chords")?.data?.map(value=>value.split("|")[0]).join(" · ")}</small>
                 <em>{previewIndex===index?"Selected for playback":"Select to hear"}</em>
               </button>)}
@@ -3136,7 +3155,7 @@ function ProjectView({
             }}
             onPointerCancel={()=>{dragSection.current=null;dragTarget.current=null;setDropTarget(null);}}
           >⠿ {String(index+1).padStart(2,"0")}</span>
-          <b>{section.name}</b>
+          <b data-no-translate>{section.name}</b>
           <small>{section.bars} bars{(section.repeats??1)>1?` · ×${section.repeats}`:""}</small>
           <i aria-label={`${section.ideas.filter(idea=>idea.type!=="text").length} parts`}>
             {SECTION_ASSETS.map(([type])=><em key={type} className={section.ideas.some(idea=>idea.type===type)?"filled":""}/>) }
@@ -3146,7 +3165,7 @@ function ProjectView({
       </div>
       <p className="sr-only" role="status">{orderMessage}</p>
       <div className="song-lanes" role="grid" aria-label="Song tracks across sections">
-        <div className="song-lane song-lane-heading" role="row"><b role="columnheader">Tracks</b>{project.sections.map(section=><span key={section.id} role="columnheader">{section.name}</span>)}</div>
+        <div className="song-lane song-lane-heading" role="row"><b role="columnheader">Tracks</b>{project.sections.map(section=><span key={section.id} role="columnheader" data-no-translate>{section.name}</span>)}</div>
         {SECTION_ASSETS.filter(([type])=>["drums","bass","chords","melody","riff"].includes(type)).map(([type,label])=><div className="song-lane" role="row" key={type}>
           <b role="rowheader">{label}</b>
           {project.sections.map(section=>{const idea=section.ideas.find(item=>item.type===type);return <button key={section.id} role="gridcell" className={idea?"has-part":""} aria-label={`${idea?"Edit":"Create"} ${label} in ${section.name}`} onClick={()=>{setSelectedSectionId(section.id);setSectionPanel("parts");idea?openIdea(section.id,idea):openSectionTool(section.id,type);}}>{idea?<span aria-hidden="true">▰</span>:<span aria-hidden="true">＋</span>}</button>;})}
@@ -3158,7 +3177,7 @@ function ProjectView({
           return (
           <article key={section.id} className={`section-card asset-section ${activeSectionIndex === index ? "playing" : ""}`}>
             <header className="asset-section-heading">
-              <div className="section-title-editor"><span className="section-position">SECTION {String(index+1).padStart(2,"0")}</span>{renamingSectionId===section.id?<form onSubmit={event=>{event.preventDefault();commitRename(section.id);}}><input autoFocus aria-label={`Rename ${section.name}`} value={sectionRename} onChange={event=>setSectionRename(event.target.value)} onKeyDown={event=>{if(event.key==="Escape")setRenamingSectionId(null);}}/><button type="submit">Save</button></form>:<div><h3>{section.name}</h3><button className="rename-section" aria-label={`Rename ${section.name}`} onClick={()=>beginRename(section)}>✎</button></div>}</div>
+              <div className="section-title-editor"><span className="section-position">SECTION {String(index+1).padStart(2,"0")}</span>{renamingSectionId===section.id?<form onSubmit={event=>{event.preventDefault();commitRename(section.id);}}><input autoFocus aria-label={`Rename ${section.name}`} value={sectionRename} onChange={event=>setSectionRename(event.target.value)} onKeyDown={event=>{if(event.key==="Escape")setRenamingSectionId(null);}}/><button type="submit">Save</button></form>:<div><h3 data-no-translate>{section.name}</h3><button className="rename-section" aria-label={`Rename ${section.name}`} onClick={()=>beginRename(section)}>✎</button></div>}</div>
               <span className="section-length-summary">{section.bars} bars · {section.energy??sectionFeel(project,section).energy}</span>
             </header>
             <div className="section-meta-chips" aria-label={`${section.name} settings`}>
@@ -3234,7 +3253,7 @@ function ProjectView({
                 <div><b>Section notes</b><span>{section.ideas.filter(i=>i.type==="text").length ? `${section.ideas.filter(i=>i.type==="text").length} saved` : "Lyrics, production or arrangement"}</span></div>
                 <button className="add-section-note" onClick={()=>addSectionNote(section.id)}>＋ Add note</button>
               </header>
-              {section.ideas.filter(i=>i.type==="text").map(idea=><div className="existing-note" key={idea.id}><button aria-label={`Edit note in ${section.name}`} onClick={()=>openIdea(section.id,idea)}>{idea.detail}</button><button aria-label={`Remove ${idea.name}`} onClick={()=>removeIdea(section.id,idea.id)}><TrashIcon /></button></div>)}
+              {section.ideas.filter(i=>i.type==="text").map(idea=><div className="existing-note" key={idea.id}><button data-no-translate aria-label={`Edit note in ${section.name}`} onClick={()=>openIdea(section.id,idea)}>{idea.detail}</button><button aria-label={`Remove ${idea.name}`} onClick={()=>removeIdea(section.id,idea.id)}><TrashIcon /></button></div>)}
             </section>}
             <footer className="section-order-controls">
               <button onClick={()=>{const transition=section.ideas.find(i=>i.type==="transition");transition?openIdea(section.id,transition):openSectionTool(section.id,"transition");}}>⇄ Transition</button>
@@ -3683,7 +3702,7 @@ function ProjectContext({
     <section className="project-context" aria-label="Project music settings">
       <div className="project-context-title">
         <span>Project settings</span>
-        <b>{project.name}</b>
+        <b data-no-translate>{project.name}</b>
       </div>
       <label className="key-highlight">
         <span>Key</span>
@@ -5675,6 +5694,8 @@ function Settings({
   notify,
   theme,
   setTheme,
+  language,
+  setLanguage,
 }: {
   compact: boolean;
   setCompact: (value:boolean) => void;
@@ -5686,6 +5707,8 @@ function Settings({
   notify: (message: string) => void;
   theme: Theme;
   setTheme: (theme: Theme) => void;
+  language: UiLanguage;
+  setLanguage: (language: UiLanguage) => void;
 }) {
   const installOnPhone = async () => {
     const installed = await phoneInstall.install();
@@ -5695,6 +5718,14 @@ function Settings({
   return (
     <>
       <Topbar title="Settings" subtitle="Your ideas, on every device" />
+      <div className="settings-card compact language-settings">
+        <h2>Language</h2>
+        <p>Choose the interface language. Saved on this device.</p>
+        <div className="language-options" role="group" aria-label="Language">
+          <button aria-pressed={language === "en"} onClick={() => setLanguage("en")}>English</button>
+          <button aria-pressed={language === "de"} onClick={() => setLanguage("de")}>German</button>
+        </div>
+      </div>
       <div className="settings-card">
         <h2>Interface density</h2>
         <label className="density-choice"><input type="checkbox" checked={compact} onChange={event=>setCompact(event.target.checked)} /> Compact mode</label>
@@ -6125,7 +6156,7 @@ function SaveDestinationModal({
             onChange={(event) => chooseProject(event.target.value)}
           >
             {projects.map((project) => (
-              <option key={project.id} value={project.id}>
+              <option key={project.id} value={project.id} data-no-translate>
                 {project.name}
               </option>
             ))}
@@ -6140,7 +6171,7 @@ function SaveDestinationModal({
             disabled={!destinationProject?.sections.length}
           >
             {(destinationProject?.sections ?? []).map((section) => (
-              <option key={section.id} value={section.id}>
+              <option key={section.id} value={section.id} data-no-translate>
                 {section.name}
               </option>
             ))}
@@ -6148,8 +6179,8 @@ function SaveDestinationModal({
         </label>
         {destinationSection ? (
           <p className="save-destination-summary">
-            {idea.name} will be added to <b>{destinationSection.name}</b> in{" "}
-            <b>{destinationProject.name}</b>.
+            {idea.name} will be added to <b data-no-translate>{destinationSection.name}</b> in{" "}
+            <b data-no-translate>{destinationProject.name}</b>.
           </p>
         ) : (
           <p className="save-destination-summary">
