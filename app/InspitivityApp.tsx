@@ -1059,6 +1059,7 @@ function useAudioEngine() {
     const noiseSamples = new Map<string, AudioBuffer>();
     const driveCurves = new Map<number, Float32Array<ArrayBuffer>>();
     let bassWave: PeriodicWave | null=null;
+    let pulseWave: PeriodicWave | null=null;
     const drumTakes=new Map<DrumInstrument,number>();
     const openHats=new Set<{source:AudioBufferSourceNode;gain:GainNode;when:number}>();
     const driveCurve = (amount: number) => {
@@ -1085,6 +1086,9 @@ function useAudioEngine() {
       const dryInput = context.createGain();
       const dry = context.createGain();
       const reverb = context.createConvolver();
+      const preDelay = context.createDelay(0.05);
+      const reverbHighpass = context.createBiquadFilter();
+      const reverbLowpass = context.createBiquadFilter();
       const wet = context.createGain();
       const compressor = context.createDynamicsCompressor();
       const master = context.createGain();
@@ -1100,19 +1104,26 @@ function useAudioEngine() {
         }
       }
       reverb.buffer = impulse;
-      dry.gain.value = 0.92;
-      wet.gain.value = 0.12;
-      compressor.threshold.value = -22;
-      compressor.knee.value = 18;
-      compressor.ratio.value = 4;
-      compressor.attack.value = 0.006;
-      compressor.release.value = 0.24;
-      master.gain.value = 0.92;
+      preDelay.delayTime.value = 0.019;
+      reverbHighpass.type = "highpass";
+      reverbHighpass.frequency.value = 280;
+      reverbLowpass.type = "lowpass";
+      reverbLowpass.frequency.value = 5800;
+      dry.gain.value = 1;
+      wet.gain.value = 0.095;
+      // Preserve the attack of drums and picked notes instead of pushing every
+      // layer through the old 4:1, fast-attack compressor.
+      compressor.threshold.value = -14;
+      compressor.knee.value = 12;
+      compressor.ratio.value = 2;
+      compressor.attack.value = 0.018;
+      compressor.release.value = 0.2;
+      master.gain.value = 0.82;
       analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0.2;
 
       input.connect(dry).connect(compressor);
-      input.connect(reverb).connect(wet).connect(compressor);
+      input.connect(preDelay).connect(reverb).connect(reverbHighpass).connect(reverbLowpass).connect(wet).connect(compressor);
       dryInput.connect(compressor);
       compressor.connect(master).connect(analyser).connect(context.destination);
       const createdGraph = { context, input, dryInput, analyser };
@@ -1340,10 +1351,21 @@ function useAudioEngine() {
         click: { type: "sine" as OscillatorType, attack: 0.001, cutoff: 7000, release: 0.025, detune: 0 },
       } as const;
       const profile = profiles[voice] ?? profiles.pluck;
+      if (voice === "analog pulse" && !pulseWave) {
+        const width = 0.23;
+        const real = new Float32Array(33);
+        const imaginary = new Float32Array(33);
+        for (let harmonic = 1; harmonic < real.length; harmonic++) {
+          real[harmonic] = Math.sin(2 * Math.PI * harmonic * width) / (Math.PI * harmonic);
+          imaginary[harmonic] = (1 - Math.cos(2 * Math.PI * harmonic * width)) / (Math.PI * harmonic);
+        }
+        pulseWave = ctx.createPeriodicWave(real, imaginary);
+      }
       let remainingOscillators=profile.detune ? 3 : 1;
       const oscillators = [0, ...(profile.detune ? [-profile.detune, profile.detune] : [])].map((detune) => {
         const oscillator = ctx.createOscillator();
-        oscillator.type = profile.type;
+        if (voice === "analog pulse") oscillator.setPeriodicWave(pulseWave!);
+        else oscillator.type = profile.type;
         oscillator.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
         oscillator.detune.value = detune;
         oscillator.connect(filter);
@@ -1355,13 +1377,13 @@ function useAudioEngine() {
         return oscillator;
       });
       filter.type = "lowpass";
-      filter.frequency.setValueAtTime(voice==="pluck"?profile.cutoff:Math.max(220, profile.cutoff * 0.46), when);
+      filter.frequency.setValueAtTime(voice==="pluck"?profile.cutoff:voice==="warm pad"?390:Math.max(220, profile.cutoff * 0.46), when);
       filter.frequency.exponentialRampToValueAtTime(
         profile.cutoff,
         when + Math.max(0.02, profile.attack),
       );
       filter.frequency.exponentialRampToValueAtTime(
-        Math.max(180, profile.cutoff * (voice==="pluck"?.12:voice==="analog pulse"?.25:.58)),
+        Math.max(180, profile.cutoff * (voice==="pluck"?.12:voice==="analog pulse"?.18:voice==="warm pad"?.42:.58)),
         when + duration + profile.release,
       );
       // The driven guitar has much more perceived loudness than the clean
@@ -1401,6 +1423,21 @@ function useAudioEngine() {
           partial.onended=()=>{sources.delete(partial);partial.disconnect();partialGain.disconnect();};
           partial.start(when);partial.stop(when+decay+.01);
         }
+      }
+      if (voice === "pluck") {
+        // A quiet pick transient gives this voice a defined front edge while
+        // the main triangle supplies the decaying body.
+        const pick = ctx.createOscillator();
+        const pickGain = ctx.createGain();
+        pick.type = "sine";
+        pick.frequency.value = Math.min(8500, 440 * Math.pow(2, (midi - 69) / 12) * 4);
+        pickGain.gain.setValueAtTime(0.0001, when);
+        pickGain.gain.linearRampToValueAtTime(scaledGain * 0.22, when + 0.002);
+        pickGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.045);
+        pick.connect(pickGain).connect(getGraph().input);
+        sources.add(pick);
+        pick.onended = () => { sources.delete(pick); pick.disconnect(); pickGain.disconnect(); };
+        pick.start(when); pick.stop(when + 0.05);
       }
       if (voice === "air flute") {
         const vibrato = ctx.createOscillator();
