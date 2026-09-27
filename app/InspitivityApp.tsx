@@ -2003,7 +2003,7 @@ export default function InspitivityApp({ account, signOutPath }: {
     const project: Project = {
       id: uid(),
       name,
-      bpm,
+      bpm: bpm > 0 ? clampBpm(bpm) : 120,
       meter,
       key,
       updated: Date.now(),
@@ -5965,8 +5965,12 @@ function ProjectModal({
             <span>BPM</span>
             <input
               type="number"
+              min="30"
+              max="260"
+              step="1"
               value={bpm}
               onChange={(e) => setBpm(Number(e.target.value))}
+              onBlur={() => setBpm(bpm > 0 ? clampBpm(bpm) : 120)}
             />
           </label>
           <Select label="Root" value={root} set={setRoot} options={ROOTS} />
