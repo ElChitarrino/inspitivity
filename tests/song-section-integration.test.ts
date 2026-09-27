@@ -5,7 +5,8 @@ import {voiceProgression} from "../packages/music-theory/voicing.js";
 import {chordNoteEvents, generateChordRhythm} from "../packages/music-theory/chord-rhythm.js";
 import {generateDrumLoop} from "../packages/sequencing/index.js";
 import {generateBassPhrase} from "../packages/workspace/bass.js";
-import {buildSongPlan} from "../packages/workspace/music.js";
+import {buildSongPlan,feelVelocity} from "../packages/workspace/music.js";
+import {validProjects} from "../packages/workspace/index.js";
 import {exportSongMidi} from "../packages/workspace/song-export.js";
 import type {Project} from "../packages/workspace/index.js";
 
@@ -38,3 +39,16 @@ for(const [meter,beats,root,mode] of [["4/4",4,"C","major"],["7/8",7,"E","dorian
     assert.ok(audition.every(note=>note.start+note.duration<=beats+.0001));
   });
 }
+
+test("five section feels retain saved notes and shape playback intensity",()=>{
+  const values=["sparse","mellow","balanced","driving","powerful"] as const;
+  const velocities=values.map(energy=>feelVelocity("drums",energy,.6));
+  assert.deepEqual([...velocities].sort((a,b)=>a-b),velocities);
+  const section={id:"a",name:"A",bars:1,color:"mint",ideas:[{id:"d",type:"drums" as const,name:"Drums",detail:"",data:["kick|0|0.7|4","hihat|2|0.5|4","snare|4|0.8|4"]}]};
+  const project:Project={id:"p",name:"Song",bpm:120,key:"C ionian",meter:"4/4",updated:1,sections:[section]};
+  for(const energy of values)assert.ok(validProjects([{...project,sections:[{...section,energy}]}]));
+  const sparse=buildSongPlan({...project,sections:[{...section,energy:"sparse"}]});
+  const balanced=buildSongPlan({...project,sections:[{...section,energy:"balanced"}]});
+  assert.ok(sparse.events.length<balanced.events.length);
+  assert.deepEqual(project.sections[0].ideas[0].data,section.ideas[0].data);
+});

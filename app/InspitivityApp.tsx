@@ -165,7 +165,9 @@ const automaticSectionMix = (section: SongSection, context?: Project): Record<So
   const present = new Set(section.ideas.map((idea) => idea.type));
   const energy = section.energy ?? "balanced";
   const mix = Object.fromEntries(LAYER_LABELS.map(([layer]) => [layer, { ...DEFAULT_SECTION_MIX[layer] }])) as Record<SongLayer, TrackMix>;
+  if (energy === "sparse") { mix.drums.volume = .55; mix.bass.volume = .7; mix.chords.volume = .66; }
   if (energy === "mellow") { mix.drums.volume = .7; mix.bass.volume = .68; mix.chords.volume = .62; }
+  if (energy === "driving") { mix.drums.volume = .86; mix.bass.volume = .78; mix.chords.volume = .54; }
   if (energy === "powerful") { mix.drums.volume = .9; mix.bass.volume = .8; mix.chords.volume = .52; }
   if (present.has("chords") && present.has("riff")) { mix.chords.volume -= .08; mix.riff.volume -= .05; }
   if (present.has("melody")) mix.melody.volume = energy === "powerful" ? .68 : .74;
@@ -226,6 +228,7 @@ type SketchOptions = {
   includeMelody: boolean;
   includePattern: boolean;
   extendedForm: boolean;
+  intensity: "mellow" | "steady" | "hard";
 };
 
 const SYNTH_VOICES: SynthVoice[] = [
@@ -274,12 +277,13 @@ const ROOTS: Root[] = [
   "B",
 ];
 const MODES: readonly Mode[] = SELECTABLE_MODES;
+const SECTION_FEELS: readonly SectionEnergy[] = ["sparse","mellow","balanced","driving","powerful"];
 const COLORS = ["mint", "violet", "amber", "blue", "coral"];
 const SKETCH_PRESETS: SketchPreset[] = [
   {
     id: "emotive",
-    label: "Emotive space",
-    copy: "Sparse, vocal-led and resolving",
+    label: "Mellow acoustic",
+    copy: "Quiet drums, acoustic chords and room to breathe",
     accent: "◌",
     root: "A",
     mode: "minor",
@@ -294,8 +298,8 @@ const SKETCH_PRESETS: SketchPreset[] = [
   },
   {
     id: "neo-soul",
-    label: "Neo-soul glow",
-    copy: "Extended harmony and pocket",
+    label: "Soulful groove",
+    copy: "Syncopated pocket, warm harmony and active bass",
     accent: "✦",
     root: "E",
     mode: "dorian",
@@ -310,8 +314,8 @@ const SKETCH_PRESETS: SketchPreset[] = [
   },
   {
     id: "prog",
-    label: "Progressive lift",
-    copy: "Odd pulse, melody and breathing room",
+    label: "Progressive motion",
+    copy: "Odd-meter accents, evolving motifs and riffs",
     accent: "⌁",
     root: "E",
     mode: "dorian",
@@ -326,8 +330,8 @@ const SKETCH_PRESETS: SketchPreset[] = [
   },
   {
     id: "heavy",
-    label: "Heavy tension",
-    copy: "Low pulse, restraint and impact",
+    label: "Heavy riffs",
+    copy: "Driven guitars, forceful drums and low bass",
     accent: "◆",
     root: "Eb",
     mode: "phrygian",
@@ -668,18 +672,19 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions, seed 
     grouping:preset.id==="heavy"?"3+2+2":"3+3+2",density:preset.id==="heavy"?.72:.48,
     seed:seed+23,startOffset:preset.id==="heavy"?.25:.5,motion:preset.id==="heavy"?"anchor":"orbit",
   }).map(note=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),beatsPerBar*2),themeChords):[];
-  const chordVoice=pick(preset.id==="heavy"?["distorted guitar","warm pad"]:preset.id==="emotive"?["acoustic guitar","acoustic guitar","warm pad"]:["warm pad","glass","pluck"] as SynthVoice[]);
-  const melodyVoice=pick(["air flute","glass","pluck"] as SynthVoice[]);
-  const patternVoice=pick(["analog pulse","pluck",...(preset.id==="heavy"?["distorted guitar" as SynthVoice]:[])] as SynthVoice[]);
-  const drumVoice=pick(preset.id==="heavy"?["prog metal","rock","dry studio"]:["acoustic studio","dry studio","roomy rock"] as DrumKit[]);
-  const bassVoice=pick(preset.id==="heavy"?["deep bass","sub bass"]:["deep bass","808 bass","sub bass"] as BassVoice[]);
+  const hard=options.intensity==="hard",mellow=options.intensity==="mellow";
+  const chordVoice:SynthVoice=hard?"distorted guitar":mellow?"acoustic guitar":preset.id==="emotive"?"acoustic guitar":preset.id==="neo-soul"?"warm pad":"glass";
+  const melodyVoice:SynthVoice=hard?"pluck":mellow?"air flute":preset.id==="neo-soul"?"glass":"analog pulse";
+  const patternVoice:SynthVoice=hard?"distorted guitar":preset.id==="prog"?"analog pulse":"pluck";
+  const drumVoice:DrumKit=hard?"prog metal":mellow?"dry studio":preset.id==="prog"?"rock":"roomy rock";
+  const bassVoice:BassVoice=hard?"deep bass":mellow?"sub bass":"808 bass";
   const mainBars=options.extendedForm?pick([4,8]):4;
   const sections = form.map((formSection, sectionIndex): SongSection => {
     const sectionSeed = seed + sectionIndex * 17;
     const finalSection = sectionIndex === form.length - 1;
     const relation=relationFor(formSection.name,sectionIndex);
     const bars=relation==="theme"||(/outro|coda|tag/i.test(formSection.name)&&finalSection)?Math.min(4,mainBars):mainBars;
-    const density=Math.max(.28,Math.min(.88,formSection.energy));
+    const density=Math.max(.2,Math.min(.95,formSection.energy+(hard?.13:mellow?-.15:0)));
     const voicing:VoicingStyle=relation==="return"?"open":relation==="contrast"?"drop 2":"mixed";
     const returnVoicings=voiceProgression(themeChords.map(chord=>chord.name),sectionSeed,voicing);
     const sourceChords=relation==="contrast"?makeChordDrafts(
@@ -687,17 +692,17 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions, seed 
       seed+101,beatsPerBar,0,preset.id==="neo-soul"?"modal interchange":"diatonic","surprise",voicing,
       preset.tension,themePitchClasses,
     ):themeChords.map((chord,index)=>({...chord,id:uid(),pitches:returnVoicings[index]}));
-    const rhythmStyle:ChordRhythm=relation==="theme"?(preset.id==="emotive"?"sustain":"adaptive")
+    const rhythmStyle:ChordRhythm=hard?"driving":mellow?(relation==="contrast"?"sparse":"sustain"):relation==="theme"?(preset.id==="emotive"?"sustain":"adaptive")
       :relation==="contrast"?"sparse":relation==="return"?(preset.id==="heavy"?"driving":"adaptive"):preset.id==="emotive"?"sparse":"syncopated";
     const chords=rhythmizeChords(sourceChords,relation==="return"?seed:sectionSeed,rhythmStyle,meter);
     const motifSource=relation==="contrast"
       ?alignPhrase(generateMelody({root,mode,notes:Math.max(8,Math.round(12*density)),density:Math.min(.65,density),mood:preset.mood,seed:seed+107,shape:"answer"}),themeCount*beatsPerBar)
       :coreMotif;
     const melody=fitMelodyToChords(motifSource,chords).map(note=>({...note,velocity:Math.max(.48,Math.min(.82,.5+density*.35))}));
-    const riffLeads=options.includePattern&&sectionIndex>0&&formSection.energy>=.45&&(relation!=="return"||preset.id==="heavy");
+    const riffLeads=options.includePattern&&sectionIndex>0&&(hard||(!mellow&&formSection.energy>=.45))&&(relation!=="return"||preset.id==="heavy");
     const riff=riffLeads?fitMelodyToChords(coreRiff,chords):[];
-    const sectionEnergy:GrooveEnergy=formSection.energy<.43?"mellow":formSection.energy>.72?"powerful":"balanced";
-    const groove:DrumStyle=relation==="contrast"?(preset.id==="heavy"?"linear":"steady"):relation==="theme"?"steady":preset.groove;
+    const sectionEnergy:GrooveEnergy=mellow?"mellow":hard?(density>.6?"powerful":"balanced"):formSection.energy<.43?"mellow":formSection.energy>.72?"powerful":"balanced";
+    const groove:DrumStyle=hard?(preset.id==="heavy"?"djent":"driving"):mellow?"steady":relation==="contrast"?(preset.id==="heavy"?"linear":"steady"):relation==="theme"?"steady":preset.groove;
     const drumSeed=relation==="return"?seed+13:relation==="contrast"?seed+113:seed+13+(relation==="develop"?17:0);
     let drums = generateDrumLoop({ beatsPerBar, density, style:groove, energy:sectionEnergy, seed:drumSeed, bars });
     drums = reinforceDrumAccents(drums,(riff.length ? riff : melody).filter((_,index)=>index%4===0).map(note=>note.start),beatsPerBar*bars*4);
@@ -712,8 +717,8 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions, seed 
     const bass = generateBassLine(
       sketchContext,
       section,
-      relation==="theme" ? "sustained" : preset.id==="prog" ? "progressive" : "groove",
-      riff.length||preset.id==="heavy" ? "rooted" : preset.id==="neo-soul" || preset.id==="prog" ? "melodic" : "supportive",
+      mellow||relation==="theme"&&!hard ? "sustained" : hard||preset.id==="prog" ? "progressive" : "groove",
+      hard||riff.length ? "rooted" : preset.id==="neo-soul" || preset.id==="prog" ? "melodic" : "supportive",
       true,
       sectionSeed+29,
       .35+density*.45,
@@ -751,21 +756,22 @@ function buildGuidedSection(
         root,mode,heavy||direction==="contrast"?5:4,heavy?"advanced":"medium",seed,beatsPerBar,
         direction==="contrast"?12:4,direction==="contrast"?"modal interchange":"diatonic",
         direction==="return"?"tonic":direction==="contrast"?"surprise":"away",
-        heavy?"open":"mixed",energy==="mellow"?"smooth":"balanced",sectionPitchContext(previous,"chords"),
-      ),seed,energy==="mellow"?"sparse":heavy?"driving":"adaptive",project.meter,previous);
+        heavy?"open":"mixed",energy==="mellow"||energy==="sparse"?"smooth":"balanced",sectionPitchContext(previous,"chords"),
+      ),seed,energy==="sparse"||energy==="mellow"?"sparse":energy==="driving"||heavy?"driving":"adaptive",project.meter,previous);
   const previousMelody=previous?.ideas.find(idea=>idea.type==="melody");
-  const mood:MelodyMood=energy==="mellow"?(mode==="major"?"calm":"melancholic"):energy==="powerful"?(heavy?"dark":"bright"):"calm";
+  const mood:MelodyMood=energy==="mellow"||energy==="sparse"?(mode==="major"?"calm":"melancholic"):energy==="powerful"?(heavy?"dark":"bright"):"calm";
   const melody=direction==="return" && previousMelody?.data?.length
     ? fitMelodyToChords(decodeMelodyIdea({...previousMelody,data:varyIdeaData("melody",previousMelody.data,seed+7)}),chords)
     : fitMelodyToChords(generateMelody({
-        root,mode,notes:energy==="mellow"?14:energy==="powerful"?28:20,
-        density:energy==="mellow"?.42:energy==="powerful"?.76:.58,mood,seed:seed+7,
+        root,mode,notes:energy==="sparse"?9:energy==="mellow"?14:energy==="powerful"?28:energy==="driving"?24:20,
+        density:energy==="sparse"?.29:energy==="mellow"?.42:energy==="powerful"?.76:energy==="driving"?.7:.58,mood,seed:seed+7,
         shape:direction==="return"?"hook":direction==="contrast"?"answer":"flow",
       }),chords);
-  const groove:DrumStyle=heavy?(direction==="contrast"?"linear":"djent"):(direction==="contrast"?"syncopated":"steady");
-  let drums=generateDrumLoop({beatsPerBar,density:energy==="mellow"?.4:energy==="powerful"?.78:.6,style:groove,energy,seed:seed+13,bars:Math.min(8,bars)});
+  const groove:DrumStyle=heavy?(direction==="contrast"?"linear":"djent"):energy==="driving"?"driving":(direction==="contrast"?"syncopated":"steady");
+  const grooveEnergy:GrooveEnergy=energy==="sparse"?"mellow":energy==="driving"?"powerful":energy;
+  let drums=generateDrumLoop({beatsPerBar,density:energy==="sparse"?.26:energy==="mellow"?.4:energy==="powerful"?.78:energy==="driving"?.72:.6,style:groove,energy:grooveEnergy,seed:seed+13,bars:Math.min(8,bars)});
   drums=reinforceDrumAccents(drums,melody.filter((_,index)=>index%4===0).map(note=>note.start),beatsPerBar*bars*4);
-  const chordVoice:SynthVoice=heavy?"distorted guitar":energy==="mellow"?"glass":"warm pad";
+  const chordVoice:SynthVoice=heavy?"distorted guitar":energy==="mellow"||energy==="sparse"?"glass":"warm pad";
   const ideas:Idea[]=[
     {id:uid(),type:"chords",name:`${name} harmony`,detail:chords.map(chord=>chord.name).join(" · "),data:chords.map(encodeChord),voice:chordVoice},
     {id:uid(),type:"melody",name:`${name} motif`,detail:melody.map(note=>note.note).join(" · "),data:melody.map(note=>`${note.note}|${note.start}|${note.duration}|${note.pitch}`),voice:heavy?"pluck":"air flute"},
@@ -776,9 +782,9 @@ function buildGuidedSection(
     meterMap:direction==="return"&&previous?.meterMap?[...previous.meterMap]:Array.from({length:bars},()=>project.meter),energy,
   };
   const context:Project={...project,sections:[...project.sections,section]};
-  const bass=generateBassLine(context,section,heavy?"progressive":energy==="mellow"?"sustained":"groove",heavy?"rooted":"supportive",true,seed+29);
+  const bass=generateBassLine(context,section,heavy?"progressive":energy==="mellow"||energy==="sparse"?"sustained":"groove",heavy?"rooted":"supportive",true,seed+29);
   ideas.push({id:uid(),type:"bass",name:`${name} bass`,detail:`${bass.length} notes · generated with the section`,data:bass.map(encodeBassEvent),voice:"deep bass"});
-  if(heavy||energy==="powerful") {
+  if(heavy||energy==="powerful"||energy==="driving") {
     const riff=fitMelodyToChords(generateProgRiff({root,mode,beats:beatsPerBar,cycle:beatsPerBar===7?7:5,grouping:beatsPerBar===7?"2+2+3":"3+3+2",density:energy==="powerful"?.72:.52,seed:seed+37,startOffset:.5,motion:direction==="contrast"?"rise":"orbit"}).map(note=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),chords);
     ideas.push({id:uid(),type:"riff",name:`${name} pattern`,detail:`${riff.length} notes · supports the generated harmony`,data:riff.map(note=>`${note.pitch}|${note.start}|${note.duration}|${note.accent?1:0}|${note.muted?1:0}`),voice:heavy?"distorted guitar":"analog pulse"});
   }
@@ -1323,10 +1329,10 @@ function useAudioEngine() {
           detune: 0,
         },
         "distorted guitar": { type: "sawtooth" as OscillatorType, attack: 0.004, cutoff: 3800, release: 0.11, detune: 3 },
-        "warm pad": { type: "sawtooth" as OscillatorType, attack: 0.12, cutoff: 1250, release: 0.42, detune: 7 },
-        glass: { type: "sine" as OscillatorType, attack: 0.03, cutoff: 2400, release: 0.38, detune: 0 },
-        pluck: { type: "triangle" as OscillatorType, attack: 0.004, cutoff: 2600, release: 0.12, detune: 0 },
-        "analog pulse": { type: "square" as OscillatorType, attack: 0.008, cutoff: 1500, release: 0.16, detune: 5 },
+        "warm pad": { type: "sawtooth" as OscillatorType, attack: 0.28, cutoff: 850, release: 0.85, detune: 11 },
+        glass: { type: "sine" as OscillatorType, attack: 0.002, cutoff: 6000, release: 0.75, detune: 0 },
+        pluck: { type: "triangle" as OscillatorType, attack: 0.002, cutoff: 4200, release: 0.08, detune: 0 },
+        "analog pulse": { type: "square" as OscillatorType, attack: 0.004, cutoff: 1850, release: 0.1, detune: 2 },
         "deep bass": { type: "sawtooth" as OscillatorType, attack: 0.012, cutoff: 520, release: 0.2, detune: 0 },
         "808 bass": { type: "sine" as OscillatorType, attack: 0.004, cutoff: 420, release: 0.7, detune: 0 },
         "sub bass": { type: "sine" as OscillatorType, attack: 0.025, cutoff: 360, release: 0.34, detune: 0 },
@@ -1348,13 +1354,13 @@ function useAudioEngine() {
         return oscillator;
       });
       filter.type = "lowpass";
-      filter.frequency.setValueAtTime(Math.max(220, profile.cutoff * 0.46), when);
+      filter.frequency.setValueAtTime(voice==="pluck"?profile.cutoff:Math.max(220, profile.cutoff * 0.46), when);
       filter.frequency.exponentialRampToValueAtTime(
         profile.cutoff,
         when + Math.max(0.02, profile.attack),
       );
       filter.frequency.exponentialRampToValueAtTime(
-        Math.max(180, profile.cutoff * 0.58),
+        Math.max(180, profile.cutoff * (voice==="pluck"?.12:voice==="analog pulse"?.25:.58)),
         when + duration + profile.release,
       );
       // The driven guitar has much more perceived loudness than the clean
@@ -1363,7 +1369,7 @@ function useAudioEngine() {
       const scaledGain = (gain * 1.35 * voiceLevel) / Math.sqrt(oscillators.length);
       volume.gain.setValueAtTime(0.0001, when);
       volume.gain.linearRampToValueAtTime(scaledGain, when + profile.attack);
-      volume.gain.linearRampToValueAtTime(voice === "glass" ? scaledGain * 0.5 : scaledGain, Math.max(when + profile.attack, when + duration * 0.7));
+      volume.gain.linearRampToValueAtTime(voice === "pluck" ? scaledGain * .12 : voice === "glass" ? scaledGain * .34 : scaledGain, Math.max(when + profile.attack, when + duration * (voice==="pluck"?.32:.7)));
       volume.gain.exponentialRampToValueAtTime(
         0.0001,
         when + duration + profile.release,
@@ -1381,6 +1387,20 @@ function useAudioEngine() {
         oscillator.start(when);
         oscillator.stop(when + duration + profile.release);
       });
+      if(voice==="glass"){
+        // Inharmonic, short-lived partials distinguish a struck bell from a sine lead.
+        for(const [ratio,level,decay] of [[2.71,.32,.42],[5.43,.14,.22]]){
+          const partial=ctx.createOscillator(),partialGain=ctx.createGain();
+          partial.type="sine";partial.frequency.value=440*Math.pow(2,(midi-69)/12)*ratio;
+          partialGain.gain.setValueAtTime(.0001,when);
+          partialGain.gain.linearRampToValueAtTime(scaledGain*level,when+.003);
+          partialGain.gain.exponentialRampToValueAtTime(.0001,when+decay);
+          partial.connect(partialGain).connect(getGraph().input);
+          sources.add(partial);
+          partial.onended=()=>{sources.delete(partial);partial.disconnect();partialGain.disconnect();};
+          partial.start(when);partial.stop(when+decay+.01);
+        }
+      }
       if (voice === "air flute") {
         const vibrato = ctx.createOscillator();
         const vibratoDepth = ctx.createGain();
@@ -1823,8 +1843,10 @@ export default function InspitivityApp({ account, signOutPath }: {
   useEffect(() => {
     const receive = (event: Event) => notify((event as CustomEvent<string>).detail || "New part generated");
     window.addEventListener("inspitivity-generation-complete", receive);
+    window.addEventListener("inspitivity-notice", receive);
     return () => {
       window.removeEventListener("inspitivity-generation-complete", receive);
+      window.removeEventListener("inspitivity-notice", receive);
       if (toastTimer.current) window.clearTimeout(toastTimer.current);
     };
   }, [notify]);
@@ -2339,6 +2361,7 @@ function Home({
   const [includeMelody,setIncludeMelody]=useState(true);
   const [includePattern,setIncludePattern]=useState(preset.id==="prog"||preset.id==="heavy");
   const [extendedForm,setExtendedForm]=useState(false);
+  const [sketchIntensity,setSketchIntensity]=useState<SketchOptions["intensity"]>("steady");
   const [draftChoices,setDraftChoices]=useState<{settings:string;projects:Project[]}|null>(null);
   const [previewIndex,setPreviewIndex]=useState(0);
   const [previewSectionId,setPreviewSectionId]=useState<string|null>(null);
@@ -2346,6 +2369,7 @@ function Home({
     setPresetId(candidate.id);setSketchRoot(candidate.root);setSketchMode(canonicalMode(candidate.mode) as Mode);setSketchBpm(String(candidate.bpm));
     setMeterTop(candidate.meter.split("/")[0]);setMeterBottom(Number(candidate.meter.split("/")[1]));
     setIncludeMelody(true);setIncludePattern(candidate.id==="prog"||candidate.id==="heavy");setExtendedForm(false);
+    setSketchIntensity(candidate.id==="emotive"?"mellow":candidate.id==="heavy"?"hard":"steady");
   };
   const randomizeSketchSettings=()=>{
     const random=seededRandom(freshSeed());
@@ -2357,7 +2381,7 @@ function Home({
   };
   const parsedSketchBpm=clampBpm(Number.parseInt(sketchBpm,10)||preset.bpm);
   const parsedMeterTop=Math.max(1,Math.min(16,Number.parseInt(meterTop,10)||Number(preset.meter.split("/")[0])||4));
-  const sketchOptions:SketchOptions={root:sketchRoot,mode:sketchMode,bpm:parsedSketchBpm,meter:`${parsedMeterTop}/${meterBottom===8?8:4}`,includeMelody,includePattern,extendedForm};
+  const sketchOptions:SketchOptions={root:sketchRoot,mode:sketchMode,bpm:parsedSketchBpm,meter:`${parsedMeterTop}/${meterBottom===8?8:4}`,includeMelody,includePattern,extendedForm,intensity:sketchIntensity};
   const settings=JSON.stringify([preset.id,sketchOptions]);
   const choices=draftChoices?.settings===settings?draftChoices.projects:null;
   const selectedDraft=choices?.[previewIndex];
@@ -2409,6 +2433,7 @@ function Home({
             </button>
             ))}
           </div>
+          <fieldset className="sketch-intensity"><legend>Intensity</legend><div>{(["mellow","steady","hard"] as const).map(level=><button key={level} type="button" aria-pressed={sketchIntensity===level} onClick={()=>{setSketchIntensity(level);if(level==="hard")setIncludePattern(true);}}>{level}</button>)}</div><small>{sketchIntensity==="hard"?"Driven guitar, heavier drums and an active bass line":sketchIntensity==="mellow"?"Acoustic chords, light drums and spacious phrases":"A balanced groove with room for contrast"}</small></fieldset>
           <details className="sketch-customize">
             <summary>Customize key, tempo and parts</summary>
           <div className="sketch-options" aria-label="Easy mode settings">
@@ -2429,6 +2454,7 @@ function Home({
               <span><small>Key</small>{formatProjectKey(sketchOptions.root, sketchOptions.mode)}</span>
               <span><small>Tempo</small>{sketchOptions.bpm} BPM</span>
               <span><small>Time signature</small>{sketchOptions.meter}</span>
+              <span><small>Intensity</small>{sketchIntensity}</span>
             </div>
             <button className="primary-button" onClick={generateChoices}>
               Hear two drafts <span>＋</span>
@@ -3124,7 +3150,7 @@ function ProjectView({
                 </select>
               </label>
               <label className="section-repeat"><span>Repeat</span><select aria-label={`${section.name} repeats`} value={section.repeats??1} onChange={(event)=>setSectionRepeats(section.id,Number(event.target.value))}>{[1,2,3,4].map(value=><option key={value} value={value}>×{value}</option>)}</select></label>
-              <label className="section-energy"><span>Feel</span><select aria-label={`${section.name} feel`} value={section.energy??sectionFeel(project,section).energy} onChange={(event)=>setSectionEnergy(section.id,event.target.value as SectionEnergy)}>{["mellow","balanced","powerful"].map(value=><option key={value}>{value}</option>)}</select></label>
+              <label className="section-energy"><span>Feel</span><select aria-label={`${section.name} feel`} value={section.energy??sectionFeel(project,section).energy} onChange={(event)=>setSectionEnergy(section.id,event.target.value as SectionEnergy)}>{SECTION_FEELS.map(value=><option key={value}>{value}</option>)}</select></label>
               <details className="section-meter-settings"><summary><span>Meter</span><b>{[...new Set(sectionMeterMap(section,project.meter))].join(" / ")}</b></summary>
                 <div className="meter-map">{sectionMeterMap(section,project.meter).map((meter,barIndex)=><label key={barIndex}><span>Bar {barIndex+1}</span><select aria-label={`Time signature for bar ${barIndex+1}`} value={meter} onChange={event=>setSectionMeter(section.id,barIndex,event.target.value)}>{[...new Set([meter,...COMMON_METERS])].map(option=><option key={option} value={option}>{option}</option>)}</select></label>)}</div>
               </details>
@@ -3241,7 +3267,7 @@ function ProjectView({
             </label>
             <div className="guided-section-controls">
               <Select label="Relationship" value={sectionDirection} options={["continue","contrast","return"]} set={(value)=>setSectionDirection(value as GuidedSectionDirection)} />
-              <Select label="Energy" value={sectionEnergy} options={["mellow","balanced","powerful"]} set={(value)=>setNewSectionEnergy(value as SectionEnergy)} />
+              <Select label="Energy" value={sectionEnergy} options={[...SECTION_FEELS]} set={(value)=>setNewSectionEnergy(value as SectionEnergy)} />
             </div>
             <p className="guided-section-copy">Generate creates harmony, melody, drums and bass together. Powerful or riff-led songs also receive a supporting pattern.</p>
             <button
@@ -3491,7 +3517,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
       <span className="transport-time" aria-label={`Playback time ${formatTime(elapsedSeconds)} of ${formatTime(plan.seconds)}`}>{formatTime(elapsedSeconds)} / {formatTime(plan.seconds)}</span>
     </div>
     <progress aria-label="Playback position" max={1} value={progress} />
-    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="transport-preferences"><summary aria-label="Playback options">•••</summary><div><b>{busy?"Preparing audio…":position}</b>{focusedLayer&&<label><input type="checkbox" checked={soloFocusedPart} onChange={e=>{stop();setSoloFocusedPart(e.target.checked);}}/> Solo {LAYER_LABELS.find(([layer])=>layer===focusedLayer)?.[1]}</label>}<label><input type="checkbox" checked={countIn} onChange={e=>setCountIn(e.target.checked)}/> Count-in</label><label><input type="checkbox" checked={click} onChange={e=>setClick(e.target.checked)}/> Metronome</label>{!previewOnly&&<><details className="mobile-transport-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details><button onClick={()=>{stop();go("metronome");}}>Open metronome</button><button onClick={()=>{stop();updateProject(p=>({...p,sections:p.sections.map(s=>({...s,mix:automaticSectionMix(s,p)}))}));}}>Auto balance all tracks</button></>}</div></details>
+    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="transport-preferences"><summary aria-label="Playback options">•••</summary><div><b>{busy?"Preparing audio…":position}</b>{focusedLayer&&<label><input type="checkbox" checked={soloFocusedPart} onChange={e=>{stop();setSoloFocusedPart(e.target.checked);}}/> Solo {LAYER_LABELS.find(([layer])=>layer===focusedLayer)?.[1]}</label>}<label><input type="checkbox" checked={countIn} onChange={e=>setCountIn(e.target.checked)}/> Count-in</label><label><input type="checkbox" checked={click} onChange={e=>setClick(e.target.checked)}/> Metronome</label>{!previewOnly&&<><details className="mobile-transport-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details><button onClick={()=>{stop();go("metronome");}}>Open metronome</button><button onClick={()=>{stop();updateProject(p=>({...p,sections:p.sections.map(s=>({...s,mix:automaticSectionMix(s,p)}))}));window.dispatchEvent(new CustomEvent("inspitivity-notice",{detail:"Track levels auto-balanced across the song"}));}}>Auto balance all tracks</button></>}</div></details>
     {!previewOnly&&<details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="section-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details>}
     {(busy||message)&&<p role="status">{busy?"Preparing audio…":message}</p>}
   </section>;

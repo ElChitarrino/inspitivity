@@ -434,6 +434,15 @@ html[data-theme] .section-player { grid-template-columns:minmax(0,1fr) auto auto
 .sketch-choice-actions .primary-button,.sketch-choice-actions .secondary-button { display:flex;align-items:center;justify-content:center;min-height:48px;margin:0; }
 .project-create-modal>.field { margin-bottom:14px; }
 .project-create-modal>.two-cols { margin-bottom:9px; }
+.record-visual { position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden; }
+.record-visual .wave-mark { position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:max-content;max-width:100%;justify-content:center; }
+.record-visual b { position:relative;z-index:1;padding:5px 10px;border-radius:6px;background:var(--surface);font-variant-numeric:tabular-nums; }
+.sketch-intensity { margin:18px 0 0;padding:0;border:0; }
+.sketch-intensity legend { padding:0 0 8px;font-size:14px;font-weight:700; }
+.sketch-intensity>div { display:flex;gap:8px; }
+.sketch-intensity button { min-height:44px;flex:1;border:1px solid var(--line);border-radius:9px;background:var(--surface2);text-transform:capitalize; }
+.sketch-intensity button[aria-pressed=true] { border-color:var(--mint);color:var(--mint); }
+.sketch-intensity small { display:block;margin-top:8px;color:var(--muted);font-size:13px; }
 .easy-mode-layer { align-items:start;overflow-y:auto;padding-block:max(16px,4vh); }
 .easy-mode-modal { width:min(900px,100%);max-height:none; }
 .easy-mode-modal .quick-sketch-heading h2 { margin:6px 0 0; }
