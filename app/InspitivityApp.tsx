@@ -2584,32 +2584,28 @@ function Home({
           </div>
         </div>}
       </section>
-      <SectionTitle
-        eyebrow="Pick up where you left off"
-        title="Recent projects"
-        action="View all"
-        onAction={() => go("projects")}
-      />
-      <div className="project-grid">
-        {projects.slice(0, 3).map((p, i) => (
-          <button
-            className={`project-card ${COLORS[i % COLORS.length]}`}
-            key={p.id}
-            onClick={() => openProject(p.id)}
-          >
-            <Wave tone={COLORS[i % COLORS.length]} />
-            <span>{p.sections.length} sections · Tempo {p.bpm} BPM</span>
-            <h4>{p.name}</h4>
-            <p>
-              Key {p.key} · Time {p.meter}
-            </p>
-          </button>
-        ))}
-        <button className="new-project-card" onClick={create}>
-          <b>+</b>
-          <span>New project</span>
-        </button>
-      </div>
+      <section className="recent-projects" aria-label="Recent projects">
+        <SectionTitle
+          eyebrow="Pick up where you left off"
+          title="Recent projects"
+          action="View all"
+          onAction={() => go("projects")}
+        />
+        {projects.length ? <div className="project-grid">
+          {projects.slice(0, 3).map((p, i) => (
+            <button
+              className={`project-card ${COLORS[i % COLORS.length]}`}
+              key={p.id}
+              onClick={() => openProject(p.id)}
+            >
+              <Wave tone={COLORS[i % COLORS.length]} />
+              <span>{p.sections.length} sections · Tempo {p.bpm} BPM</span>
+              <h4>{p.name}</h4>
+              <p>Key {p.key} · Time {p.meter}</p>
+            </button>
+          ))}
+        </div> : <p className="recent-projects-empty">Your saved projects will appear here.</p>}
+      </section>
     </>
   );
 }
