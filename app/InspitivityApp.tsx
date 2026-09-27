@@ -5151,6 +5151,7 @@ function DrumTool({
   );
   const energy =
     energyMode === "follow song" ? grooveContext.energy : energyMode;
+  const drumEnergy: GrooveEnergy = energy === "sparse" ? "mellow" : energy === "driving" ? "powerful" : energy;
   const [style, setStyle] = useDraftState<DrumStyle>("style", () =>
     grooveContext.energy === "powerful" ? "driving" : "steady",
   );
@@ -5181,8 +5182,8 @@ function DrumTool({
   );
   const engine = useAudioEngine();
   const generatedLoop = useMemo(
-    () => reinforceDrumAccents(generateDrumLoop({ beatsPerBar, density, style, energy, seed, bars, fill }),supportingAnchors,phraseBeats*4),
-    [beatsPerBar, density, style, energy, seed, bars, fill,supportingAnchors,phraseBeats],
+    () => reinforceDrumAccents(generateDrumLoop({ beatsPerBar, density, style, energy:drumEnergy, seed, bars, fill }),supportingAnchors,phraseBeats*4),
+    [beatsPerBar, density, style, drumEnergy, seed, bars, fill,supportingAnchors,phraseBeats],
   );
   const loop = savedLoop ?? generatedLoop;
   const beatSeconds = beatDurationSeconds(project.bpm);
