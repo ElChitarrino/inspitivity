@@ -43,6 +43,8 @@ const german: Record<string, string> = {
   "Select to hear":"Zum Anhören auswählen","Try two more":"Zwei weitere ausprobieren",
   "Keep this draft":"Diesen Entwurf behalten","Pick up where you left off":"Dort weitermachen, wo du aufgehört hast",
   "Recent projects":"Letzte Projekte","View all":"Alle anzeigen","New project":"Neues Projekt",
+  "Recently edited ↓":"Zuletzt bearbeitet ↓","Name A–Z ↓":"Name A–Z ↓",
+  "Sort projects by name":"Projekte nach Namen sortieren","Sort projects by recent edits":"Projekte nach letzter Bearbeitung sortieren",
   "Arrangement":"Arrangement","Song sections":"Songabschnitte","Add section":"Abschnitt hinzufügen",
   "Tracks":"Spuren","Drums":"Drums","Bass":"Bass","Chords":"Akkorde","Pattern":"Pattern",
   "SECTION":"ABSCHNITT","Bars":"Takte","Repeat":"Wiederholen","Feel":"Spielgefühl",
@@ -62,6 +64,13 @@ const german: Record<string, string> = {
   "Rename project":"Projekt umbenennen","Share project":"Projekt teilen",
   "Delete project":"Projekt löschen","Build the next section":"Nächsten Abschnitt gestalten",
   "Section name":"Abschnittsname","Relationship":"Beziehung","Energy":"Energie",
+  "Return to":"Zurück zu","Section to return to":"Abschnitt für die Wiederkehr",
+  "continue":"Fortsetzen","contrast":"Kontrast","return":"Wiederkehr",
+  "Draft history":"Entwurfsverlauf","Undo":"Rückgängig","Redo":"Wiederholen",
+  "Draft storage full · save to a section now":"Entwurfsspeicher voll · jetzt in einem Abschnitt speichern",
+  "Saved to your song · draft recovery is up to date":"Im Song gespeichert · Entwurf gesichert",
+  "Unsaved to song · draft kept on this device":"Nicht im Song gespeichert · Entwurf auf diesem Gerät",
+  "Part editor":"Spur bearbeiten",
   "Generate complete section":"Vollständigen Abschnitt erstellen",
   "Add empty section":"Leeren Abschnitt hinzufügen",
   "Song settings":"Songeinstellungen","Project settings":"Projekteinstellungen",
@@ -158,6 +167,8 @@ export function translateUi(source: string, language: UiLanguage): string {
     ?? (key.match(/^Draft (\d+)$/)?.[1] ? `Entwurf ${key.slice(6)}` : undefined)
     ?? (key.match(/^(\d+) bars$/)?.[1] ? `${key.split(" ")[0]} Takte` : undefined)
     ?? (key.match(/^(\d+) sections$/)?.[1] ? `${key.split(" ")[0]} Abschnitte` : undefined)
+    ?? (key.match(/^(\d+(?:\.\d+)?) beats · one bar$/)?.[1] ? `${key.split(" ")[0]} Schläge · ein Takt` : undefined)
+    ?? (key.match(/^(\d+(?:\.\d+)?) beats?$/)?.[1] ? `${key.split(" ")[0]} ${key.startsWith("1 ") ? "Schlag" : "Schläge"}` : undefined)
     ?? (key.match(/^(.+) · play once$/)?.[1] ? `${key.slice(0,-12)} · einmal abspielen` : undefined)
     ?? (key.match(/^(.+) · loop$/)?.[1] ? `${key.slice(0,-7)} · wiederholen` : undefined);
   return before + (translated ?? key) + after;

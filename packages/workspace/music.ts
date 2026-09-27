@@ -105,8 +105,39 @@ export function buildSongPlan(project: Project) {
         }).filter(n => [n.pitch,n.start,n.duration].every(Number.isFinite));
         // A saved phrase is its own loop. Repeat it intact until the section
         // ends instead of stretching it to the first bar or dropping it early.
-        const cycle = layer === "bass" ? length : Math.max(.125, ...notes.map(n => n.start + n.duration));
-        for (let offset = 0; offset < length; offset += cycle) for (const n of notes) add(layer,n.pitch,offset+n.start,n.duration,n.velocity);
+        const phraseEnd = Math.max(.125, ...notes.map(n => n.start + n.duration));
+        // Bass phrases repeat on a complete bar, retaining the rest after their
+        // last note. Mixed meter sections retain their full written bass line.
+        let barEnd = 0;
+        const barEnds = bars.map(bar => (barEnd += bar.units));
+        const cycle = layer === "bass" && bars.every(bar => bar.meter === bars[0].meter)
+          ? barEnds.find(end => end >= phraseEnd - .001) ?? length
+          : layer === "bass" ? length : phraseEnd;
+        const harmony = layer === "bass" ? section.ideas.find(idea => idea.type === "chords") : undefined;
+        const chords = (harmony?.data?.length ? harmony.data : harmony ? harmony.detail.split(" · ") : []).map(decodeRhythmicChord);
+        const harmonyCycle = chords.reduce((sum, chord) => sum + chord.beats, 0);
+        const rootAt = (beat: number) => {
+          if (!harmonyCycle) return null;
+          const position = beat % harmonyCycle;
+          let start = 0;
+          for (const chord of chords) {
+            if (position < start + chord.beats) return notePitchClass(chord.name);
+            start += chord.beats;
+          }
+          return null;
+        };
+        for (let offset = 0; offset < length; offset += cycle) for (const n of notes) {
+          let pitch = n.pitch;
+          if (layer === "bass" && offset > 0) {
+            const sourceRoot = rootAt(n.start), targetRoot = rootAt(offset + n.start);
+            if (sourceRoot !== null && targetRoot !== null) {
+              pitch += (targetRoot - sourceRoot + 12) % 12;
+              while (pitch > 55) pitch -= 12;
+              while (pitch < 23) pitch += 12;
+            }
+          }
+          add(layer,pitch,offset+n.start,n.duration,n.velocity);
+        }
       }
     }
     quarterOffset += toQuarter(length); secondOffset += length*unitSeconds;

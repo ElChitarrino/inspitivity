@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mergeProjects, migrateTransitionNotes, validProjects, type Project } from "../packages/workspace/index.js";
+import { mergeProjects, migrateTransitionNotes, sortProjects, validProjects, type Project } from "../packages/workspace/index.js";
 import { sectionFeel, buildSongPlan } from "../packages/workspace/music.js";
-import { analyzeArrangement } from "../packages/workspace/arrangement.js";
+import { analyzeArrangement, returnSources, preferredReturnSource } from "../packages/workspace/arrangement.js";
 import { varyIdeaData, varyNotes } from "../packages/workspace/variation.js";
 import { generateDrumLoop } from "../packages/sequencing/index.js";
 import { createMultitrackMidi } from "../packages/midi/index.js";
 
 const project = (): Project => ({ id:"p",name:"Idea",bpm:120,key:"C major",meter:"4/4",updated:1,sections:[{id:"s",name:"Verse",bars:2,color:"mint",ideas:[{id:"c",type:"chords",name:"Harmony",detail:"",data:["C|4","F|4"]}]}] });
+test("project lists show latest edits first and can sort names without mutating saved order",()=>{
+  const source=[{...project(),id:"z",name:"Zebra",updated:2},{...project(),id:"a",name:"Amber",updated:1}];
+  assert.deepEqual(sortProjects(source).map(p=>p.id),["z","a"]);
+  assert.deepEqual(sortProjects(source,"name").map(p=>p.id),["a","z"]);
+  assert.deepEqual(source.map(p=>p.id),["z","a"]);
+});
 test("old transition instructions become section notes without changing saved meter shifts",()=>{
   const song=project();
   song.sections[0].meterMap=["4/4","7/8"];
@@ -105,6 +111,16 @@ test("arrangement analysis detects missing returns, energy contrast, and foundat
   assert.deepEqual(check.insights.map(insight=>insight.id),["return","energy","foundation"]);
   assert.equal(check.insights.find(insight=>insight.id==="foundation")?.tool,"drums");
 });
+test("a guided return defaults to an earlier musical theme instead of the latest contrast",()=>{
+  const song=project();
+  song.sections=[
+    {id:"intro",name:"Intro",bars:2,color:"mint",ideas:[]},
+    {...song.sections[0],id:"verse",name:"Verse"},
+    {...song.sections[0],id:"bridge",name:"Bridge",ideas:[{id:"m",type:"melody",name:"Lead",detail:"",data:["E4|0|1|64"]}]},
+  ];
+  assert.deepEqual(returnSources(song).map(section=>section.id),["verse","bridge"]);
+  assert.equal(preferredReturnSource(song)?.id,"verse");
+});
 test("arrangement analysis clears when form, contrast, and core layers are present",()=>{
   const song=project();
   const ideas=[
@@ -142,6 +158,21 @@ test("song plan expands arrangement repeats and includes mono bass events",()=>{
   assert.equal(plan.quarters,16);
   assert.equal(plan.seconds,8);
   assert.deepEqual(plan.events.filter(event=>event.layer==="bass").map(event=>event.start),[0,4,8,12]);
+});
+test("short bass phrases repeat at bar boundaries without losing their final rest",()=>{
+  const p=project();p.sections[0].bars=4;
+  p.sections[0].ideas.push({id:"b",type:"bass",name:"Bass",detail:"",data:["36|0|0.45|1","43|2.5|0.4|0"]});
+  const bass=buildSongPlan(p).events.filter(event=>event.layer==="bass");
+  assert.deepEqual(bass.map(event=>event.start),[0,2.5,4,6.5,8,10.5,12,14.5]);
+  p.sections[0].meterMap=["4/4","7/8","4/4","7/8"];
+  assert.deepEqual(buildSongPlan(p).events.filter(event=>event.layer==="bass").map(event=>event.start),[0,2.5]);
+});
+test("repeated bass motifs follow later chord roots while retaining their rhythm",()=>{
+  const p=project();p.sections[0].bars=4;
+  p.sections[0].ideas[0].data=["C|4|48,52,55","F|4|53,57,60","G|4|55,59,62","C|4|48,52,55"];
+  p.sections[0].ideas.push({id:"b",type:"bass",name:"Bass",detail:"",data:["36|0|.5|1","43|2|.5|0"]});
+  const bass=buildSongPlan(p).events.filter(event=>event.layer==="bass");
+  assert.deepEqual(bass.map(event=>[event.start,event.pitch]),[[0,36],[2,43],[4,41],[6,48],[8,43],[10,50],[12,36],[14,43]]);
 });
 test("short saved phrases repeat at their own loop length until a longer section ends",()=>{
   const p=project(); p.sections[0].bars=4;

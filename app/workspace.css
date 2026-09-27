@@ -265,9 +265,20 @@ html[data-theme] .app-shell[data-density=compact] .section-player :is(button,sel
 .project-screen .sync-status { margin-bottom:8px; }
 .part-switcher { display:flex; align-items:center; gap:12px; margin:0 0 12px; color:var(--muted); font-size:13px; }
 .draft-toolbar { display:grid; grid-template-columns:minmax(0,1fr) auto auto; }
-.draft-toolbar span { min-width:0; }
+.draft-toolbar>span { min-width:0; }
+.draft-history { display:flex; gap:8px; }
+.draft-history button { display:flex; align-items:center; justify-content:center; gap:6px; }
+.draft-history button>span { flex:none; min-width:0; }
+.draft-history button>span:first-child { font-size:20px; line-height:1; }
+@media(max-width:700px) {
+  .draft-toolbar { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+  .draft-toolbar>span { min-width:0; }
+  .draft-history button { width:44px; height:44px; padding:0; }
+  .draft-history .history-label { display:none; }
+}
 .part-switcher select { min-height:44px; min-width:160px; max-width:100%; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 12px; }
 .project-settings-disclosure { margin:0 0 18px; }
+.modal .field select { width:100%; min-height:44px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--surface2); color:var(--ink); }
 :is(.project-settings-disclosure,.section-settings,.tension-details,.variation-controls)>summary { min-height:44px; display:flex; align-items:center; gap:12px; cursor:pointer; color:var(--muted); font-size:13px; list-style:none; }
 :is(.project-settings-disclosure,.section-settings,.tension-details,.variation-controls)>summary::after { content:"＋"; margin-left:auto; }
 :is(.project-settings-disclosure,.section-settings,.tension-details,.variation-controls)[open]>summary::after { content:"−"; }

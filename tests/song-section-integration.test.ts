@@ -40,6 +40,23 @@ for(const [meter,beats,root,mode] of [["4/4",4,"C","major"],["7/8",7,"E","dorian
   });
 }
 
+for(const beats of [9,12]){
+  test(`${beats}/8 harmony stays aligned to every bar and the bass`,()=>{
+    const symbols=["Cmaj7","Am7","Fmaj7","G7"];
+    const chords=symbols.map((name,index)=>({symbol:name,beats}));
+    const bass=generateBassPhrase({length:beats*4,meter:`${beats}/8`,root:"C",mode:"major",harmony:chords,direction:"sustained",movement:"rooted",lockToKick:false,seed:33});
+    const project:Project={id:"compound",name:"Compound",key:"C major",bpm:110,meter:`${beats}/8`,updated:0,sections:[{id:"verse",name:"Verse",bars:4,color:"mint",ideas:[
+      {id:"h",type:"chords",name:"Harmony",detail:"",data:chords.map(chord=>`${chord.symbol}|${chord.beats}`)},
+      {id:"b",type:"bass",name:"Bass",detail:"",data:bass.map(note=>`${note.pitch}|${note.start}|${note.duration}|${note.accent?1:0}`)},
+    ]}]};
+    const events=buildSongPlan(project).events;
+    const downbeats=[0,1,2,3].map(bar=>bar*beats/2); // 8th-note beats become quarter-note positions.
+    assert.deepEqual([...new Set(events.filter(event=>event.layer==="chords").map(event=>event.start))],downbeats);
+    assert.ok(downbeats.every(start=>events.some(event=>event.layer==="bass"&&event.start===start)));
+    assert.equal(buildSongPlan(project).markers.length,4);
+  });
+}
+
 test("five section feels retain saved notes and shape playback intensity",()=>{
   const values=["sparse","mellow","balanced","driving","powerful"] as const;
   const velocities=values.map(energy=>feelVelocity("drums",energy,.6));

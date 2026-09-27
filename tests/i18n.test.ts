@@ -11,6 +11,9 @@ test("English remains the default source and German labels are reversible", () =
   assert.equal(translateUi("A user-written song title", "de"), "A user-written song title");
   assert.equal(translateUi("Intro · loop", "de"), "Intro · wiederholen");
   assert.equal(translateUi("Intro · play once", "de"), "Intro · einmal abspielen");
+  assert.equal(translateUi("Return to", "de"), "Zurück zu");
+  assert.equal(translateUi("9 beats · one bar", "de"), "9 Schläge · ein Takt");
+  assert.equal(translateUi("Draft history", "de"), "Entwurfsverlauf");
   assert.equal(isUiLanguage("en"), true);
   assert.equal(isUiLanguage("de"), true);
   assert.equal(isUiLanguage("fr"), false);

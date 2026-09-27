@@ -6,6 +6,8 @@ export function alignPhrase<T extends { start:number; duration:number }>(notes:T
   const snap=(value:number)=>Math.round(value*4)/4;
   return notes.map(note=>{
     const start=Math.min(beats-.25,Math.max(0,snap(note.start*ratio)));
-    return {...note,start,duration:Math.max(.25,Math.min(beats-start,snap(note.duration*ratio)))};
+    const finalNote=Math.abs(note.start+note.duration-end)<.001;
+    const duration=finalNote ? beats-start : Math.max(.25,Math.min(beats-start,snap(note.duration*ratio)));
+    return {...note,start,duration};
   });
 }

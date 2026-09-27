@@ -13,6 +13,16 @@ export type ArrangementInsight = {
 const musicalLayers = (section: SongSection) =>
   new Set(section.ideas.filter((idea) => ["chords","drums","bass","melody","riff"].includes(idea.type)).map((idea) => idea.type));
 
+export function returnSources(project: Project): SongSection[] {
+  const musical=project.sections.filter(section=>section.ideas.some(idea=>["chords","melody","riff"].includes(idea.type)));
+  return musical.length?musical:project.sections;
+}
+
+export function preferredReturnSource(project: Project): SongSection | undefined {
+  const sources=returnSources(project);
+  return sources.find(section=>/verse|theme|riff|chorus|hook/i.test(section.name))??sources[0];
+}
+
 const sectionStem = (name: string) =>
   name.toLowerCase().replace(/\b(return(?: of)?|variation|copy|reprise|[a-d]|\d+)\b/g, "").replace(/[^a-z]+/g, " ").trim();
 const sectionSignature = (section: SongSection) => {

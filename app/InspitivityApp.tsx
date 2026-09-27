@@ -82,8 +82,8 @@ import { useCloudProjects, saveRecording, getRecording, downloadBackup, restoreB
 import { DraftSession, DraftToolbar, useDraftState, useDraftPreview, type DraftPreview } from "./draft-session";
 import { sectionFeel, buildSongPlan, type SongLayer } from "../packages/workspace/music";
 import { exportSongMidi } from "../packages/workspace/song-export";
-import { analyzeArrangement, type ArrangementInsight } from "../packages/workspace/arrangement";
-import type { Idea, SongSection, Project, TrackMix, SectionEnergy } from "../packages/workspace";
+import { analyzeArrangement, returnSources, preferredReturnSource, type ArrangementInsight } from "../packages/workspace/arrangement";
+import { sortProjects, type Idea, type SongSection, type Project, type TrackMix, type SectionEnergy } from "../packages/workspace";
 import { varyIdeaData, varyNotes } from "../packages/workspace/variation";
 import {
   generateBassPhrase,
@@ -430,7 +430,7 @@ const makeChordDrafts = (
       return {
         id: uid(),
         name: symbols[index],
-        beats: Math.max(1, Math.min(8, defaultBeats + offset)),
+        beats: Math.max(1, Math.min(16, defaultBeats + offset)),
         pitches: voicings[index],
       };
     },
@@ -665,10 +665,10 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions, seed 
     mood:preset.mood,seed:seed+7,shape:preset.id==="heavy"?"hook":preset.id==="emotive"?"floating":"answer",
   }),themeCount*beatsPerBar),themeChords);
   const coreRiff=options.includePattern?fitMelodyToChords(alignPhrase(generateProgRiff({
-    root,mode,beats:beatsPerBar*2,cycle:preset.id==="heavy"?7:5,
+    root,mode,beats:beatsPerBar*themeCount,cycle:preset.id==="heavy"?7:5,
     grouping:preset.id==="heavy"?"3+2+2":"3+3+2",density:preset.id==="heavy"?.72:.48,
     seed:seed+23,startOffset:preset.id==="heavy"?.25:.5,motion:preset.id==="heavy"?"anchor":"orbit",
-  }).map(note=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),beatsPerBar*2),themeChords):[];
+  }).map(note=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),beatsPerBar*themeCount),themeChords):[];
   const hard=options.intensity==="hard",mellow=options.intensity==="mellow";
   const chordVoice:SynthVoice=hard?"distorted guitar":mellow?"acoustic guitar":preset.id==="emotive"?"acoustic guitar":preset.id==="neo-soul"?"warm pad":"glass";
   const melodyVoice:SynthVoice=hard?"pluck":mellow?"air flute":preset.id==="neo-soul"?"glass":"analog pulse";
@@ -741,48 +741,55 @@ function buildGuidedSection(
   name: string,
   energy: SectionEnergy,
   direction: GuidedSectionDirection,
+  returnSourceId?: string,
 ): SongSection {
   const seed=freshSeed(), random=seededRandom(seed), previous=project.sections.at(-1);
+  const source=direction==="return" ? project.sections.find(section=>section.id===returnSourceId) ?? previous : previous;
   const {root,mode}=projectHarmony(project), beatsPerBar=meterBeats(project.meter);
-  const heavy=previous?.ideas.some(idea=>idea.type==="riff"||idea.voice==="distorted guitar") ?? false;
-  const bars=direction==="return" && previous ? previous.bars : [4,8,8][Math.floor(random()*3)];
-  const previousHarmony=previous?.ideas.find(idea=>idea.type==="chords");
-  const chords=direction==="return" && previousHarmony
-    ? decodeChordDrafts(previousHarmony).map((chord,index)=>({...chord,id:uid(),pitches:voiceChord(chord.name,seed+index*41,index%2?"open":"mixed")}))
+  const heavy=source?.ideas.some(idea=>idea.type==="riff"||idea.voice==="distorted guitar") ?? false;
+  const bars=direction==="return" && source ? source.bars : [4,8,8][Math.floor(random()*3)];
+  const sourceHarmony=source?.ideas.find(idea=>idea.type==="chords");
+  const chords=direction==="return" && sourceHarmony
+    ? decodeChordDrafts(sourceHarmony).map((chord,index)=>({...chord,id:uid(),pitches:voiceChord(chord.name,seed+index*41,index%2?"open":"mixed")}))
     : rhythmizeChords(makeChordDrafts(
-        root,mode,heavy||direction==="contrast"?5:4,heavy?"advanced":"medium",seed,beatsPerBar,
-        direction==="contrast"?12:4,direction==="contrast"?"modal interchange":"diatonic",
+        root,mode,4,heavy?"advanced":"medium",seed,beatsPerBar,
+        0,direction==="contrast"?"modal interchange":"diatonic",
         direction==="return"?"tonic":direction==="contrast"?"surprise":"away",
         heavy?"open":"mixed",energy==="mellow"||energy==="sparse"?"smooth":"balanced",sectionPitchContext(previous,"chords"),
       ),seed,energy==="sparse"||energy==="mellow"?"sparse":energy==="driving"||heavy?"driving":"adaptive",project.meter,previous);
-  const previousMelody=previous?.ideas.find(idea=>idea.type==="melody");
+  const previousMelody=source?.ideas.find(idea=>idea.type==="melody");
   const mood:MelodyMood=energy==="mellow"||energy==="sparse"?(mode==="major"?"calm":"melancholic"):energy==="powerful"?(heavy?"dark":"bright"):"calm";
   const melody=direction==="return" && previousMelody?.data?.length
     ? fitMelodyToChords(decodeMelodyIdea({...previousMelody,data:varyIdeaData("melody",previousMelody.data,seed+7)}),chords)
-    : fitMelodyToChords(generateMelody({
+    : fitMelodyToChords(alignPhrase(generateMelody({
         root,mode,notes:energy==="sparse"?9:energy==="mellow"?14:energy==="powerful"?28:energy==="driving"?24:20,
         density:energy==="sparse"?.29:energy==="mellow"?.42:energy==="powerful"?.76:energy==="driving"?.7:.58,mood,seed:seed+7,
         shape:direction==="return"?"hook":direction==="contrast"?"answer":"flow",
-      }),chords);
+      }),beatsPerBar*4),chords);
   const groove:DrumStyle=heavy?(direction==="contrast"?"linear":"djent"):energy==="driving"?"driving":(direction==="contrast"?"syncopated":"steady");
   const grooveEnergy:GrooveEnergy=energy==="sparse"?"mellow":energy==="driving"?"powerful":energy;
   let drums=generateDrumLoop({beatsPerBar,density:energy==="sparse"?.26:energy==="mellow"?.4:energy==="powerful"?.78:energy==="driving"?.72:.6,style:groove,energy:grooveEnergy,seed:seed+13,bars:Math.min(8,bars)});
   drums=reinforceDrumAccents(drums,melody.filter((_,index)=>index%4===0).map(note=>note.start),beatsPerBar*bars*4);
+  const returnDrums=direction==="return"?source?.ideas.find(idea=>idea.type==="drums"&&idea.data?.length):undefined;
   const chordVoice:SynthVoice=heavy?"distorted guitar":energy==="mellow"||energy==="sparse"?"glass":"warm pad";
   const ideas:Idea[]=[
     {id:uid(),type:"chords",name:`${name} harmony`,detail:chords.map(chord=>chord.name).join(" · "),data:chords.map(encodeChord),voice:chordVoice},
     {id:uid(),type:"melody",name:`${name} motif`,detail:melody.map(note=>note.note).join(" · "),data:melody.map(note=>`${note.note}|${note.start}|${note.duration}|${note.pitch}`),voice:heavy?"pluck":"air flute"},
-    {id:uid(),type:"drums",name:`${name} pocket`,detail:`${drums.length} hits · ${project.meter}`,data:drums.map(hit=>`${hit.instrument}|${hit.step}|${hit.velocity}|${beatsPerBar*Math.min(8,bars)}`),voice:heavy?"prog metal":"rock"},
+    {id:uid(),type:"drums",name:`${name} pocket`,detail:returnDrums?.detail??`${drums.length} hits · ${project.meter}`,data:returnDrums?.data?[...returnDrums.data]:drums.map(hit=>`${hit.instrument}|${hit.step}|${hit.velocity}|${beatsPerBar*Math.min(8,bars)}`),voice:returnDrums?.voice??(heavy?"prog metal":"rock")},
   ];
   const section:SongSection={
     id:uid(),name,bars,color:COLORS[project.sections.length%COLORS.length],ideas,
-    meterMap:direction==="return"&&previous?.meterMap?[...previous.meterMap]:Array.from({length:bars},()=>project.meter),energy,
+    meterMap:direction==="return"&&source?.meterMap?[...source.meterMap]:Array.from({length:bars},()=>project.meter),energy,
   };
   const context:Project={...project,sections:[...project.sections,section]};
   const bass=generateBassLine(context,section,heavy?"progressive":energy==="mellow"||energy==="sparse"?"sustained":"groove",heavy?"rooted":"supportive",true,seed+29);
   ideas.push({id:uid(),type:"bass",name:`${name} bass`,detail:`${bass.length} notes · generated with the section`,data:bass.map(encodeBassEvent),voice:"deep bass"});
-  if(heavy||energy==="powerful"||energy==="driving") {
-    const riff=fitMelodyToChords(generateProgRiff({root,mode,beats:beatsPerBar,cycle:beatsPerBar===7?7:5,grouping:beatsPerBar===7?"2+2+3":"3+3+2",density:energy==="powerful"?.72:.52,seed:seed+37,startOffset:.5,motion:direction==="contrast"?"rise":"orbit"}).map(note=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),chords);
+  const returnRiff=direction==="return"?source?.ideas.find(idea=>idea.type==="riff"&&idea.data?.length):undefined;
+  if(returnRiff?.data) {
+    const data=varyIdeaData("riff",returnRiff.data,seed+37);
+    ideas.push({id:uid(),type:"riff",name:`${name} pattern`,detail:`${data.length} notes · returns to ${source?.name} motif`,data,voice:returnRiff.voice});
+  } else if(heavy||energy==="powerful"||energy==="driving") {
+    const riff=fitMelodyToChords(alignPhrase(generateProgRiff({root,mode,beats:beatsPerBar*4,cycle:beatsPerBar===7?7:5,grouping:beatsPerBar===7?"2+2+3":"3+3+2",density:energy==="powerful"?.72:.52,seed:seed+37,startOffset:.5,motion:direction==="contrast"?"rise":"orbit"}).map(note=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),beatsPerBar*4),chords);
     ideas.push({id:uid(),type:"riff",name:`${name} pattern`,detail:`${riff.length} notes · supports the generated harmony`,data:riff.map(note=>`${note.pitch}|${note.start}|${note.duration}|${note.accent?1:0}|${note.muted?1:0}`),voice:heavy?"distorted guitar":"analog pulse"});
   }
   section.mix=automaticSectionMix(section,context);
@@ -2592,7 +2599,7 @@ function Home({
           onAction={() => go("projects")}
         />
         {projects.length ? <div className="project-grid">
-          {projects.slice(0, 3).map((p, i) => (
+          {sortProjects(projects).slice(0, 3).map((p, i) => (
             <button
               className={`project-card ${COLORS[i % COLORS.length]}`}
               key={p.id}
@@ -2667,15 +2674,16 @@ function Projects({
   create: () => void;
   deleteProject: (project: Project) => void;
 }) {
+  const [sortOrder, setSortOrder] = useState<"recent" | "name">("recent");
   return (
     <>
       <Topbar title="Projects" subtitle="Your songbook" onCreate={create} />
       <div className="projects-toolbar">
         <p>{projects.length} works in progress</p>
-        <button>Recently edited ↓</button>
+        <button onClick={() => setSortOrder(order => order === "recent" ? "name" : "recent")} aria-label={sortOrder === "recent" ? "Sort projects by name" : "Sort projects by recent edits"}>{sortOrder === "recent" ? "Recently edited ↓" : "Name A–Z ↓"}</button>
       </div>
       <div className="projects-list">
-        {projects.map((p, index) => (
+        {sortProjects(projects, sortOrder).map((p, index) => (
           <article className="project-row" key={p.id}>
             <button className="project-open" onClick={() => openProject(p.id)}>
               <span className={`project-avatar ${COLORS[index % COLORS.length]}`}>
@@ -2773,6 +2781,7 @@ function ProjectView({
   const [note, setNote] = useState("");
   const [sectionName, setSectionName] = useState("");
   const [sectionDirection,setSectionDirection]=useState<GuidedSectionDirection>("continue");
+  const [returnSourceId,setReturnSourceId]=useState<string|null>(null);
   const [sectionEnergy,setNewSectionEnergy]=useState<SectionEnergy>("balanced");
   const [renamingSectionId,setRenamingSectionId]=useState<string|null>(null);
   const [sectionRename,setSectionRename]=useState("");
@@ -2971,7 +2980,9 @@ function ProjectView({
       ])) as Record<SongLayer,TrackMix>};
     }) }));
   };
-  const finishAddingSection=()=>{setSectionName("");setSectionDirection("continue");setNewSectionEnergy("balanced");setAdding(false);};
+  const availableReturnSources=returnSources(project);
+  const selectedReturnSource=availableReturnSources.find(section=>section.id===returnSourceId)??preferredReturnSource(project);
+  const finishAddingSection=()=>{setSectionName("");setSectionDirection("continue");setReturnSourceId(null);setNewSectionEnergy("balanced");setAdding(false);};
   const addEmptySection=()=>{
     const name=sectionName.trim();if(!name)return;
     const id=uid();
@@ -2983,7 +2994,7 @@ function ProjectView({
     const name=sectionName.trim();if(!name)return;
     stopArrangement();stopIdea();
     const id=uid();
-    update((p)=>{const generated=buildGuidedSection(p,name,sectionEnergy,sectionDirection);return {...p,sections:[...p.sections,{...generated,id}]};});
+    update((p)=>{const generated=buildGuidedSection(p,name,sectionEnergy,sectionDirection,selectedReturnSource?.id);return {...p,sections:[...p.sections,{...generated,id}]};});
     setSelectedSectionId(id);setSectionPanel("parts");
     announceGenerated("Complete section");
     finishAddingSection();
@@ -3369,6 +3380,7 @@ function ProjectView({
               <Select label="Relationship" value={sectionDirection} options={["continue","contrast","return"]} set={(value)=>setSectionDirection(value as GuidedSectionDirection)} />
               <Select label="Energy" value={sectionEnergy} options={[...SECTION_FEELS]} set={(value)=>setNewSectionEnergy(value as SectionEnergy)} />
             </div>
+            {sectionDirection==="return"&&selectedReturnSource&&<label className="field"><span>Return to</span><select aria-label="Section to return to" value={selectedReturnSource.id} onChange={event=>setReturnSourceId(event.target.value)}>{availableReturnSources.map(section=><option key={section.id} value={section.id} data-no-translate>{section.name}</option>)}</select></label>}
             <p className="guided-section-copy">Generate creates harmony, melody, drums and bass together. Powerful or riff-led songs also receive a supporting pattern.</p>
             <button
               className="primary-button wide"
@@ -4063,7 +4075,7 @@ function ChordTool({
               aria-label="Default chord length"
               type="range"
               min="1"
-              max="8"
+              max={Math.max(8,meterBeats(project.meter))}
               step="1"
               value={defaultBeats}
               onChange={(event) => setDefaultBeats(Number(event.target.value))}
@@ -4139,7 +4151,7 @@ function ChordTool({
             const varied = chords.map((chord,index)=>({...chord,
               name:!locks.notes && index>=chords.length-changeCount && candidate[index].name!==chord.name ? candidate[index].name : chord.name,
               pitches:!locks.notes && index>=chords.length-changeCount ? candidate[index].pitches : chord.pitches,
-              beats:locks.rhythm ? chord.beats : kind==="space" ? Math.min(8,chord.beats*2) : kind==="energy" ? Math.max(1,chord.beats/2) : chord.beats
+              beats:locks.rhythm ? chord.beats : kind==="space" ? Math.min(16,chord.beats*2) : kind==="energy" ? Math.max(1,chord.beats/2) : chord.beats
             }));
             return locks.rhythm ? varied : rhythmizeChords(varied,seed+1,kind==="space"?"sparse":kind==="energy"?"driving":chordRhythm,project.meter,section);
           }} />}
@@ -4203,10 +4215,7 @@ function ChordTool({
                       })
                     }
                   >
-                    <option value="1">1 beat</option>
-                    <option value="2">2 beats</option>
-                    <option value="4">4 beats · whole</option>
-                    <option value="8">8 beats</option>
+                    {[...new Set([...Array.from({length:16},(_,beat)=>beat+1),chord.beats])].sort((a,b)=>a-b).map(beats=><option key={beats} value={beats}>{beats} {beats===1?"beat":`beats${beats===meterBeats(project.meter)?" · one bar":""}`}</option>)}
                   </select>
                 </label>
                 <button

@@ -13,6 +13,12 @@ export type SectionEnergy = "sparse" | "mellow" | "balanced" | "driving" | "powe
 export type SongSection = { id: string; name: string; bars: number; color: string; ideas: Idea[]; meterMap?: string[]; mix?: SectionMix; repeats?: number; energy?: SectionEnergy };
 export type Project = { id: string; name: string; bpm: number; meter: string; key: string; updated: number; sections: SongSection[] };
 
+export function sortProjects(projects: Project[], order: "recent" | "name" = "recent"): Project[] {
+  return [...projects].sort((a, b) => order === "recent"
+    ? b.updated - a.updated || a.name.localeCompare(b.name)
+    : a.name.localeCompare(b.name) || b.updated - a.updated);
+}
+
 /** Retire the text-only transition tool without losing anyone's saved instructions. */
 export function migrateTransitionNotes(projects: Project[]): Project[] {
   return projects.map(project => {
