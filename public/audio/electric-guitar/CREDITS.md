@@ -1,0 +1,1 @@
+Recorded Fender electric guitar: FreePats Electric Guitar FSBS bridge pickup, distortion variant 1 (2022-09-11). Source: https://github.com/freepats/electric-guitar-FSBS-dist1 . CC0 1.0. Notes are converted from the source FLAC files to mono MP3 with FFmpeg and trimmed to 3.2 seconds. The app gates shorter notes for tight riff playback.

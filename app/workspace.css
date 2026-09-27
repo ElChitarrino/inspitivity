@@ -465,6 +465,9 @@ html[data-theme] .easy-mode-modal .section-player { position:relative;z-index:au
 @media(max-width:700px) {
   .section-player .section-player-heading>.transport-destination { grid-column:1; grid-row:1; }
   .project-screen .topbar,.inside-project .topbar { padding-top:max(12px,env(safe-area-inset-top)); padding-bottom:12px; }
+  .app-shell:has(.instrument-workspace) .topbar { min-height:70px; padding-top:max(12px,env(safe-area-inset-top)); padding-bottom:12px; padding-left:calc(72px - var(--studio-gutter)); }
+  .topbar:has(.back-button) .center-title { position:static;left:auto;transform:none;flex:1;min-width:0;text-align:left; }
+  .topbar:has(.back-button) .center-title :is(h1,p) { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
   .topbar :is(.back-button,.round-button) { align-self:center; }
   .sketch-choice-grid { grid-template-columns:minmax(0,1fr); }
   .sketch-choice-actions button { flex:1 1 140px; }

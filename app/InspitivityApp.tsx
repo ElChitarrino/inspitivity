@@ -44,8 +44,9 @@ import { activityGain } from "../packages/workspace/mix-activity";
 import { alignPhrase } from "../packages/workspace/sketch";
 import { chooseSketch, scoreSketch } from "../packages/workspace/sketch-quality";
 import { adaptAccompaniment, harmonyChanged } from "../packages/workspace/harmony-adapt";
-import {DRUM_KITS,DRUM_KIT_LABELS,loadDrumSamples,drumSample,drumKitProfile,type AcousticDrumKit,type DrumKit} from '../packages/sequencing/drum-samples';
+import {DRUM_KITS,DRUM_KIT_LABELS,loadDrumSamples,loadMetalDrumSamples,drumSample,metalDrumSample,drumKitProfile,type AcousticDrumKit,type DrumKit} from '../packages/sequencing/drum-samples';
 import {loadGuitarSamples,guitarSample} from '../packages/sequencing/guitar-samples';
+import {loadElectricGuitarSamples,electricGuitarSample} from '../packages/sequencing/electric-guitar-samples';
 import { CHORD_RHYTHMS, CHORD_RHYTHM_LABELS, chordNoteEvents, decodeRhythmicChord, encodeChordAttacks, generateChordRhythm, type ChordRhythm, type ChordAttack } from "../packages/music-theory/chord-rhythm";
 import {
   beatDurationSeconds,
@@ -1061,6 +1062,7 @@ function useAudioEngine() {
     let bassWave: PeriodicWave | null=null;
     let pulseWave: PeriodicWave | null=null;
     const drumTakes=new Map<DrumInstrument,number>();
+    const guitarTakes=new Map<number,number>();
     const openHats=new Set<{source:AudioBufferSourceNode;gain:GainNode;when:number}>();
     const driveCurve = (amount: number) => {
       let curve = driveCurves.get(amount);
@@ -1135,7 +1137,7 @@ function useAudioEngine() {
       if (context.state === "suspended") void context.resume();
       return context;
     };
-    const unlock = async (kit?:DrumKit, guitar=false) => {
+    const unlock = async (kit?:DrumKit|"all", guitar=false, electric=false) => {
       const { context, input } = getGraph();
       if (!sharedNativeAudioUnlock) {
         sharedNativeAudioUnlock = new Audio(silentWavUrl());
@@ -1149,8 +1151,12 @@ function useAudioEngine() {
       await Promise.allSettled([nativeUnlock, contextUnlock]);
       if(kit&&kit!=="current"){
         try{await loadDrumSamples(context);}catch{return false;}
+        if(kit==="rock"||kit==="prog metal"||kit==="all"){
+          try{await loadMetalDrumSamples(context);}catch{return false;}
+        }
       }
       if(guitar){try{await loadGuitarSamples(context);}catch{return false;}}
+      if(electric){try{await loadElectricGuitarSamples(context);}catch{return false;}}
       const silence = context.createBufferSource();
       silence.buffer = context.createBuffer(1, 1, context.sampleRate);
       silence.connect(input);
@@ -1163,9 +1169,33 @@ function useAudioEngine() {
       duration = 0.22,
       gain = 0.07,
       voice: SynthVoice | "click" = "pluck",
+      palmMuted = false,
     ) => {
       const ctx = get();
       const when = ctx.currentTime + start;
+      if (voice === "distorted guitar") {
+        const take=guitarTakes.get(midi)??0;
+        const recorded=electricGuitarSample(ctx,midi,gain<.033,take);
+        if(recorded){
+          guitarTakes.set(midi,take+1);
+          const source=ctx.createBufferSource(),volume=ctx.createGain(),palm=ctx.createBiquadFilter();
+          source.buffer=recorded.buffer;source.playbackRate.value=recorded.rate;
+          const muted=palmMuted||duration<.32;
+          const release=muted?.045:.105;
+          const end=Math.min(recorded.buffer.duration/recorded.rate,Math.max(.09,muted?Math.min(duration,.22):duration)+release);
+          palm.type="lowpass";palm.frequency.value=muted?2600:5600;
+          volume.gain.setValueAtTime(.0001,when);
+          volume.gain.linearRampToValueAtTime(gain*2.25,when+.004);
+          volume.gain.setValueAtTime(gain*2.25,Math.max(when+.004,when+end-release));
+          volume.gain.exponentialRampToValueAtTime(.0001,when+end);
+          source.connect(palm).connect(volume).connect(getGraph().dryInput);
+          sources.add(source);
+          source.onended=()=>{sources.delete(source);source.disconnect();palm.disconnect();volume.disconnect();};
+          source.start(when);source.stop(when+end);
+          return;
+        }
+        void loadElectricGuitarSamples(ctx).catch(()=>undefined);
+      }
       if (voice === "acoustic guitar") {
         const recorded=guitarSample(ctx,midi);
         if(recorded){
@@ -1501,14 +1531,16 @@ function useAudioEngine() {
     const drum = (instrument: DrumInstrument, start = 0, velocity = 1, kit: DrumKit = "current", level = 1) => {
       if(kit!=="current"){
         const ctx=get(),when=ctx.currentTime+start;
-        const take=drumTakes.get(instrument)??0,buffer=drumSample(ctx,instrument,velocity,take);
+        const take=drumTakes.get(instrument)??0;
+        const metalBank=(kit==="rock"||kit==="prog metal")&&instrument!=="crash";
+        const buffer=metalBank?metalDrumSample(ctx,instrument,velocity,take):drumSample(ctx,instrument,velocity,take);
         if(!buffer)return; // Startup awaits samples; never substitute a synthetic kit silently.
         drumTakes.set(instrument,take+1);
         const source=ctx.createBufferSource(),volume=ctx.createGain(),eq=ctx.createBiquadFilter();
         source.buffer=buffer;
         const profile=drumKitProfile(kit as AcousticDrumKit,instrument,buffer.duration);
         const gains:Record<DrumInstrument,number>={kick:.64,snare:.45,hihat:.2,openhat:.22,crash:.27,ride:.22,tomhigh:.48,tomlow:.5};
-        const peak=gains[instrument]*Math.pow(Math.max(0,velocity),1.15)*level;
+        const peak=gains[instrument]*Math.pow(Math.max(0,velocity),1.15)*level*profile.level;
         const end=when+profile.tailSeconds;
         source.playbackRate.setValueAtTime(profile.playbackRate,when);
         eq.type=profile.filter;eq.frequency.value=profile.frequency;
@@ -1516,10 +1548,27 @@ function useAudioEngine() {
         volume.gain.setValueAtTime(peak,when);
         volume.gain.setValueAtTime(peak,Math.max(when,end-.06));
         volume.gain.linearRampToValueAtTime(0,end);
-        source.connect(eq).connect(volume).connect(profile.route==="room"?getGraph().input:getGraph().dryInput);
+        const saturation=profile.drive?ctx.createWaveShaper():null;
+        source.connect(eq);
+        if(saturation){saturation.curve=driveCurve(profile.drive);saturation.oversample="2x";eq.connect(saturation).connect(volume);}
+        else eq.connect(volume);
+        volume.connect(profile.route==="room"?getGraph().input:getGraph().dryInput);
+        if(profile.click)cymbalNoise(start,.025,peak*profile.click,1800,.006);
+        if(profile.body){
+          const sub=ctx.createOscillator(),subGain=ctx.createGain();
+          sub.type="sine";
+          sub.frequency.setValueAtTime(105,when);
+          sub.frequency.exponentialRampToValueAtTime(52,when+.08);
+          subGain.gain.setValueAtTime(peak*profile.body,when);
+          subGain.gain.exponentialRampToValueAtTime(.0001,when+.19);
+          sub.connect(subGain).connect(getGraph().dryInput);
+          sources.add(sub);
+          sub.onended=()=>{sources.delete(sub);sub.disconnect();subGain.disconnect();};
+          sub.start(when);sub.stop(when+.2);
+        }
         if(instrument==="hihat")for(const hat of openHats)if(hat.when<=when){hat.gain.gain.cancelScheduledValues(when);hat.gain.gain.setTargetAtTime(0,when,.008);try{hat.source.stop(when+.04);}catch{}}
         const hat={source,gain:volume,when};if(instrument==="openhat")openHats.add(hat);
-        sources.add(source);source.onended=()=>{sources.delete(source);openHats.delete(hat);source.disconnect();eq.disconnect();volume.disconnect();};
+        sources.add(source);source.onended=()=>{sources.delete(source);openHats.delete(hat);source.disconnect();eq.disconnect();saturation?.disconnect();volume.disconnect();};
         source.start(when);source.stop(end);return;
       }
       velocity*=level;
@@ -1730,6 +1779,7 @@ function playRiff(
       note.duration * beatSeconds,
       note.muted ? 0.027 : note.accent ? 0.065 : 0.04,
       voice,
+      note.muted,
     ),
   );
 }
@@ -3019,7 +3069,7 @@ function ProjectView({
     }
     stopArrangement();
     stopIdea();
-    if (!(await engine.unlock(idea.type==="drums"?(idea.voice as DrumKit)||"current":undefined,idea.voice==="acoustic guitar"))) {setAudioStatus("Instrument samples or audio unavailable. Try Play again.");return;}
+    if (!(await engine.unlock(idea.type==="drums"?(idea.voice as DrumKit)||"current":undefined,idea.voice==="acoustic guitar",idea.voice==="distorted guitar"))) {setAudioStatus("Instrument samples or audio unavailable. Try Play again.");return;}
     const beat = beatDurationSeconds(project.bpm);
     const beatsPerBar = Number(project.meter.split("/")[0]) || 4;
     setPlayingIdeaId(idea.id);
@@ -3485,7 +3535,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
     const token = generation.current;
     try {
       setBusy(true);
-      if (!(await engine.unlock(latest.current.plan.events.some(e=>e.layer==="drums"&&e.voice&&e.voice!=="current")?"acoustic studio":undefined,latest.current.plan.events.some(e=>e.voice==="acoustic guitar"))) || token !== generation.current) {setMessage("Audio or instrument samples unavailable. Try Play again.");return;}
+      if (!(await engine.unlock(latest.current.plan.events.some(e=>e.layer==="drums"&&(e.voice==="rock"||e.voice==="prog metal"))?"all":latest.current.plan.events.some(e=>e.layer==="drums"&&e.voice&&e.voice!=="current")?"acoustic studio":undefined,latest.current.plan.events.some(e=>e.voice==="acoustic guitar"),latest.current.plan.events.some(e=>e.voice==="distorted guitar"))) || token !== generation.current) {setMessage("Audio or instrument samples unavailable. Try Play again.");return;}
       if (!latest.current.plan.events.length) { setMessage("Add or generate a part to hear this section."); return; }
       window.dispatchEvent(new Event("inspitivity-context-play"));
       setMessage(""); setPlaying(true);
@@ -3906,11 +3956,12 @@ function ChordTool({
     if (metronomeEnabled)
       scheduleClickTrack(engine, totalBeats, beatSeconds, project.meter);
   }, [chords, totalBeats, beatSeconds, engine, metronomeEnabled, project.meter, voice]);
+  const unlockVoice=useCallback(()=>engine.unlock(undefined,voice==="acoustic guitar",voice==="distorted guitar"),[engine,voice]);
   const transport = useLoopTransport(
     play,
     progressionLoopDurationMs(totalBeats, project.bpm),
     engine.stopAll,
-    engine.unlock,
+    unlockVoice,
   );
   const auditionTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
   const auditionGeneration=useRef(0);
@@ -3935,7 +3986,7 @@ function ChordTool({
     stopAudition();
     window.dispatchEvent(new Event("inspitivity-solo-preview"));
     const token=auditionGeneration.current;
-    if(!await engine.unlock(undefined,voice==="acoustic guitar")||token!==auditionGeneration.current)return;
+    if(!await unlockVoice()||token!==auditionGeneration.current)return;
     chordNoteEvents([chord]).forEach(note=>engine.tone(note.pitch,note.start*beatSeconds,note.duration*beatSeconds,.045*note.velocity,voice));
     auditionTimer.current=setTimeout(()=>{if(token===auditionGeneration.current)stopAudition();},chord.beats*beatSeconds*1000);
   };
@@ -4346,11 +4397,12 @@ function MelodyTool({
         project.meter,
       );
   }, [melody, beatSeconds, engine, metronomeEnabled, project.meter, voice]);
+  const unlockVoice=useCallback(()=>engine.unlock(undefined,voice==="acoustic guitar",voice==="distorted guitar"),[engine,voice]);
   const transport = useLoopTransport(
     play,
     melodyLoopDurationMs(melody, bpm),
     engine.stopAll,
-    engine.unlock,
+    unlockVoice,
   );
   useEffect(()=>{void transport.refresh();},[voice,transport.refresh]);
   const melodyBeats = Math.max(
@@ -4441,7 +4493,7 @@ function MelodyTool({
       setSavedMelody(next);
       setSelectedNoteIndex(next.length - 1);
     } else updateNote(selectedNoteIndex, { pitch });
-    void engine.unlock().then((ready) => { if (ready) engine.tone(pitch, 0, .32, .065, voice); });
+    void unlockVoice().then((ready) => { if (ready) engine.tone(pitch, 0, .32, .065, voice); });
   };
   const addMelodyNote = () => {
     transport.stop();
@@ -4898,11 +4950,12 @@ function RiffTool({
     if (metronomeEnabled)
       scheduleClickTrack(engine, beats, beatSeconds, project.meter);
   }, [engine, riff, beatSeconds, metronomeEnabled, beats, project.meter, voice]);
+  const unlockVoice=useCallback(()=>engine.unlock(undefined,voice==="acoustic guitar",voice==="distorted guitar"),[engine,voice]);
   const transport = useLoopTransport(
     play,
     progressionLoopDurationMs(beats, project.bpm),
     engine.stopAll,
-    engine.unlock,
+    unlockVoice,
   );
   useEffect(()=>{void transport.refresh();},[voice,transport.refresh]);
   useDraftPreview({ type: "riff", data: riff.map(n => `${n.pitch}|${n.start}|${n.duration}|${n.accent ? 1 : 0}|${n.muted ? 1 : 0}`), voice });
@@ -5279,6 +5332,20 @@ function DrumTool({
     unlockDrums,
   );
   useEffect(()=>{void transport.refresh();},[voice,transport.refresh]);
+  const kitPreviewGeneration=useRef(0);
+  const chooseKit=(value:string)=>{
+    const next=value as DrumKit;
+    setVoice(next);
+    setSampleStatus(next==="current"?"":"Preparing acoustic samples…");
+    const generation=++kitPreviewGeneration.current;
+    if(transport.mode!=="stopped")return; // Active playback restarts with the selected kit.
+    engine.stopAll();
+    void engine.unlock(next).then(ready=>{
+      if(generation!==kitPreviewGeneration.current)return;
+      setSampleStatus(ready?"":"Audio or samples unavailable. Check your connection and try Play again.");
+      if(ready){engine.drum("kick",0,.8,next);engine.drum("snare",.24,.75,next);}
+    });
+  };
   const toggleHit = (instrument: DrumInstrument, step: number) => {
       const next = [...loop];
       const index = next.findIndex(
@@ -5339,7 +5406,7 @@ function DrumTool({
         </p>
       )}
       <EditorModeTabs label="Drum workspace" value={workspaceMode} set={setWorkspaceMode} />
-      {workspaceMode==="sound"&&<SoundEditor label="Drum" voice={voice} options={DRUM_KITS} change={value=>{setSampleStatus("");setVoice(value as DrumKit);}}/>}
+      {workspaceMode==="sound"&&<SoundEditor label="Drum" voice={voice} options={DRUM_KITS} change={chooseKit}/>}
       <DraftToolbar />
       {!section && <SoloPreview transport={transport} click={metronomeEnabled} toggleClick={toggleMetronome} />}
       <div className={`tool-layout instrument-workspace is-${workspaceMode}`}>
@@ -5857,7 +5924,8 @@ function Settings({
       </div>
       <div className="settings-card compact">
         <h3>Sound credits</h3>
-        <p>Acoustic drum recordings by Alexander Holm, from Salamander Drumkit. Six processing presets share this sampled kit; the electronic kit uses synthesis. <a href="/audio/salamander/CREDITS.md" target="_blank" rel="noreferrer">Credits and modifications</a> · <a href="/audio/salamander/LICENSE.txt" target="_blank" rel="noreferrer">Sample license</a></p>
+        <p>Acoustic drums use Salamander and Virtuosity recordings. Rock and Progressive metal use a second sampled kit; the electronic kit uses synthesis. <a href="/audio/salamander/CREDITS.md" target="_blank" rel="noreferrer">Salamander credits</a> · <a href="/audio/virtuosity/CREDITS.md" target="_blank" rel="noreferrer">Virtuosity credits</a> · <a href="/audio/virtuosity/LICENSE.txt" target="_blank" rel="noreferrer">Sample license</a></p>
+        <p>Distorted electric guitar notes from FreePats, converted and trimmed for fast playback. <a href="/audio/electric-guitar/CREDITS.md" target="_blank" rel="noreferrer">Credits and modifications</a> · <a href="/audio/electric-guitar/LICENSE.txt" target="_blank" rel="noreferrer">Sample license</a></p>
       </div>
       <div className="settings-card compact">
         <h3>Account and storage</h3>

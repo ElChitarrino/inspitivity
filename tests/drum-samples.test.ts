@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
-import {DRUM_KITS,DRUM_SAMPLE_KEYS,loadDrumSamples,drumSample,drumKitProfile,type AcousticDrumKit} from '../packages/sequencing/drum-samples.js';
+import {DRUM_KITS,DRUM_SAMPLE_KEYS,VIRTUOSITY_KEYS,loadDrumSamples,loadMetalDrumSamples,drumSample,metalDrumSample,drumKitProfile,type AcousticDrumKit} from '../packages/sequencing/drum-samples.js';
 import {SELECTABLE_MODES,canonicalMode} from '../packages/music-theory/index.js';
 import {validProjects} from '../packages/workspace/index.js';
 
@@ -38,6 +38,10 @@ test('every acoustic drum kit has a distinct audible playback profile',()=>{
   assert.equal(drumKitProfile('roomy rock','snare',2).route,'room');
   assert.equal(drumKitProfile('dark acoustic','hihat',2).filter,'lowpass');
   assert.ok(drumKitProfile('dry studio','snare',2).tailSeconds<drumKitProfile('acoustic studio','snare',2).tailSeconds);
+  assert.ok(drumKitProfile('prog metal','kick',2).click>0);
+  assert.ok(drumKitProfile('prog metal','kick',2).body>0);
+  assert.ok(drumKitProfile('rock','snare',2).drive>0);
+  assert.equal(drumKitProfile('dark acoustic','kick',2).drive,0);
 });
 test('acoustic samples load once per audio context and alternate strength and take',async()=>{
   const originalFetch=globalThis.fetch;
@@ -51,5 +55,20 @@ test('acoustic samples load once per audio context and alternate strength and ta
     const soft=drumSample(context,'kick',.3,0),alternate=drumSample(context,'kick',.3,1),hard=drumSample(context,'kick',.8,0);
     assert.ok(soft&&alternate&&hard);assert.notEqual(soft,alternate);assert.notEqual(soft,hard);
     assert.equal(drumSample(context,'kick',.3,2),soft);
+  }finally{globalThis.fetch=originalFetch;}
+});
+test('rock and metal load an independent recorded kit with velocity layers',async()=>{
+  assert.equal(VIRTUOSITY_KEYS.length,28);
+  for(const key of VIRTUOSITY_KEYS)assert.ok(readFileSync(`public/audio/virtuosity/${key}.mp3`).length>5000,key);
+  const originalFetch=globalThis.fetch;
+  let decodes=0;
+  const context={decodeAudioData:async()=>({id:++decodes})} as unknown as AudioContext;
+  globalThis.fetch=(async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(2)} as Response)) as typeof fetch;
+  try{
+    await Promise.all([loadDrumSamples(context),loadMetalDrumSamples(context),loadMetalDrumSamples(context)]);
+    assert.equal(decodes,60);
+    assert.notEqual(drumSample(context,'kick',.9,0),metalDrumSample(context,'kick',.9,0));
+    assert.notEqual(metalDrumSample(context,'kick',.3,0),metalDrumSample(context,'kick',.9,0));
+    assert.notEqual(metalDrumSample(context,'kick',.9,0),metalDrumSample(context,'kick',.9,1));
   }finally{globalThis.fetch=originalFetch;}
 });
