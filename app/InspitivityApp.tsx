@@ -2562,7 +2562,13 @@ function Home({
     const best=chooseSketch(candidates);
     const identity=(project:Project,type:"chords"|"drums")=>project.sections[0]?.ideas.find(idea=>idea.type===type)?.name.split(" · ")[1];
     const ranked=candidates.filter(candidate=>candidate!==best).sort((a,b)=>scoreSketch(b)-scoreSketch(a));
-    const alternative=ranked.find(candidate=>identity(candidate,"chords")!==identity(best,"chords") && identity(candidate,"drums")!==identity(best,"drums"))
+    const differentBoth=(candidate:Project)=>identity(candidate,"chords")!==identity(best,"chords") && identity(candidate,"drums")!==identity(best,"drums");
+    let different=ranked.filter(differentBoth);
+    for(let index=4;!different.length&&index<12;index++){
+      const candidate=buildPlayableSketch(preset,options,seed+index*7919);
+      if(differentBoth(candidate))different=[candidate];
+    }
+    const alternative=different.sort((a,b)=>scoreSketch(b)-scoreSketch(a))[0]
       ?? ranked.find(candidate=>identity(candidate,"chords")!==identity(best,"chords"))
       ?? ranked[0];
     setDraftChoices({settings:draftSettings,projects:[best,alternative]});
