@@ -43,6 +43,7 @@ import { bassHarmonics } from "../packages/sequencing/bass-timbre";
 import { activityGain } from "../packages/workspace/mix-activity";
 import { alignPhrase } from "../packages/workspace/sketch";
 import { chooseSketch, scoreSketch } from "../packages/workspace/sketch-quality";
+import { inferThemeFeel, parseModelFeel, THEME_RECIPES, type ThemeFeel } from "../packages/workspace/theme-explorer";
 import { adaptAccompaniment, harmonyChanged } from "../packages/workspace/harmony-adapt";
 import {DRUM_KITS,DRUM_KIT_LABELS,loadDrumSamples,loadMetalDrumSamples,drumSample,metalDrumSample,drumKitProfile,type AcousticDrumKit,type DrumKit} from '../packages/sequencing/drum-samples';
 import {loadGuitarSamples,guitarSample} from '../packages/sequencing/guitar-samples';
@@ -3978,6 +3979,49 @@ function ChordTool({
       : rhythmizeChords(makeChordDrafts(root, mode, initialCount, "medium", initialSeed,meterBeats(project.meter),0,"diatonic","away","mixed","balanced",supportPitchClasses),initialSeed,"adaptive",project.meter,section),
   );
   const [previousChords, setPreviousChords] = useDraftState<ChordDraft[] | null>("previousChords", null);
+  const [themePrompt, setThemePrompt] = useState("");
+  const [themeFeel, setThemeFeel] = useState<ThemeFeel | null>(null);
+  const [themeModelStatus, setThemeModelStatus] = useState("Optional local AI · about 181 MB download");
+  const [themeModelReady, setThemeModelReady] = useState(false);
+  const [themeModelBusy, setThemeModelBusy] = useState(false);
+  const themeWorker = useRef<Worker | null>(null);
+  const themePromptRef = useRef("");
+  const themeOpenRef = useRef<(feel: ThemeFeel) => void>(() => {});
+  useEffect(() => () => { themeWorker.current?.terminate(); themeWorker.current = null; }, []);
+  const openTheme = (feel: ThemeFeel) => {
+    transport.stop();
+    const recipe = THEME_RECIPES[feel];
+    const nextSeed = seed + 1;
+    setPreviousChords(chords);
+    setThemeFeel(feel);
+    setSeed(nextSeed);
+    setComplexity(recipe.complexity);
+    setTension(recipe.tension);
+    setOpening(recipe.opening);
+    setVoicing(recipe.voicing);
+    setCount(4);
+    setChords(rhythmizeChords(makeChordDrafts(root, mode, 4, recipe.complexity, nextSeed, defaultBeats, 0, "diatonic", recipe.opening, recipe.voicing, recipe.tension, supportPitchClasses, recipe.degrees), nextSeed, chordRhythm, project.meter, section));
+  };
+  themeOpenRef.current = openTheme;
+  const loadThemeModel = () => {
+    if (themeWorker.current) return;
+    setThemeModelBusy(true);
+    setThemeModelStatus("Starting local model…");
+    try {
+      const worker = new Worker(new URL("./theme-model.worker.ts", import.meta.url), { type: "module" });
+      themeWorker.current = worker;
+      worker.onmessage = (event: MessageEvent<{type: string; text?: string; percent?: number; answer?: string}>) => {
+        const message = event.data;
+        if (message.type === "progress") setThemeModelStatus(`Downloading model · ${message.percent}%`);
+        if (message.type === "status") setThemeModelStatus(message.text ?? "Loading…");
+        if (message.type === "ready") { setThemeModelReady(true); setThemeModelBusy(false); setThemeModelStatus("Local AI ready · prompts stay on this device"); }
+        if (message.type === "result") { themeOpenRef.current(parseModelFeel(message.answer ?? "") ?? inferThemeFeel(themePromptRef.current)); setThemeModelBusy(false); setThemeModelStatus("Local AI ready · prompts stay on this device"); }
+        if (message.type === "error") { if (themePromptRef.current) themeOpenRef.current(inferThemeFeel(themePromptRef.current)); setThemeModelBusy(false); setThemeModelReady(false); setThemeModelStatus("Local AI unavailable here · theme explorer still works"); worker.terminate(); themeWorker.current = null; }
+      };
+      worker.onerror = () => { if (themePromptRef.current) themeOpenRef.current(inferThemeFeel(themePromptRef.current)); setThemeModelBusy(false); setThemeModelReady(false); setThemeModelStatus("Local AI unavailable here · theme explorer still works"); worker.terminate(); themeWorker.current = null; };
+      worker.postMessage({ type: "load" });
+    } catch { setThemeModelBusy(false); setThemeModelStatus("Local AI unavailable here · theme explorer still works"); }
+  };
   const engine = useAudioEngine();
   const regenerate = (nextRoot = root, nextMode = mode, showFeedback = true) => {
     setPreviousChords(chords);
@@ -4096,6 +4140,15 @@ function ChordTool({
         </p>
       )}
       <EditorModeTabs label="Chord workspace" value={workspaceMode} set={setWorkspaceMode} />
+      {workspaceMode === "generate" && <section className="theme-explorer" aria-label="Chord and theme explorer">
+        <div className="theme-explorer-head"><div><p className="eyebrow">Chord / theme explorer</p><h2>What should it feel like?</h2><p>Describe a scene, a memory, or an energy. Explore its harmony in {formatProjectKey(root,mode)}.</p></div><span className="theme-explorer-mark" aria-hidden="true">♫</span></div>
+        <form className="theme-explorer-form" onSubmit={event=>{event.preventDefault();if(!themePrompt.trim())return;themePromptRef.current=themePrompt.trim();if(themeModelReady&&themeWorker.current){setThemeModelBusy(true);setThemeModelStatus("Finding the feel on this device…");themeWorker.current.postMessage({type:"analyze",prompt:themePromptRef.current});}else openTheme(inferThemeFeel(themePromptRef.current));}}>
+          <label htmlFor="theme-idea">Your theme</label><div><input id="theme-idea" value={themePrompt} maxLength={400} onChange={event=>setThemePrompt(event.target.value)} placeholder="A warm, nostalgic night drive…" /><button type="submit" disabled={!themePrompt.trim()||themeModelBusy}>Explore →</button></div>
+        </form>
+        <div className="theme-feel-chips" aria-label="Quick themes">{(["warm","wistful","bright","restless","soulful","dark"] as const).map(feel=><button key={feel} type="button" aria-pressed={themeFeel===feel} onClick={()=>openTheme(feel)}>{feel}</button>)}</div>
+        {themeFeel&&<div className={`theme-recommendation is-${THEME_RECIPES[themeFeel].color}`} role="status"><span>Suggested harmonic arc</span><strong>{THEME_RECIPES[themeFeel].title}</strong><p>{THEME_RECIPES[themeFeel].description} Tap the chords below to hear individual voicings, or play the progression.</p><small>{THEME_RECIPES[themeFeel].voicing} voicing · {THEME_RECIPES[themeFeel].tension} tension · editable below</small></div>}
+        <div className="theme-local-ai"><span>{themeModelStatus}</span>{!themeModelReady&&<button type="button" disabled={themeModelBusy} onClick={loadThemeModel}>{themeModelBusy?"Loading…":"Enable local AI"}</button>}</div>
+      </section>}
       {workspaceMode==="sound"&&<SoundEditor label="Chord" voice={voice} options={SYNTH_VOICES} change={value=>setVoice(value as SynthVoice)}/>}
       <DraftToolbar />
       {!section && <SoloPreview transport={transport} click={metronomeEnabled} toggleClick={toggleMetronome} />}
