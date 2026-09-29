@@ -4,6 +4,7 @@
 @import "./palette.css";
 @import "./theme.css";
 @import "./workspace.css";
+@import "./studio-design.css";
 @layer legacy, studio;
 @layer legacy {
 

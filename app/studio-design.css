@@ -1,0 +1,49 @@
+/* A consistent instrument workspace: sans for the UI, mono for musical data. */
+.app-shell :is(h1,h2,h3,h4){font-family:var(--font-geist-sans),Arial,sans-serif;font-weight:650;letter-spacing:-.025em;line-height:1.2}
+.app-shell .section-heading h3{font-size:22px}
+.studio-launchpad.spark-studio{padding:0;border:0;background:none;box-shadow:none;margin:18px 0 28px;overflow:visible}
+.studio-launchpad.spark-studio:after{display:none}
+.studio-launch-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.studio-launch-card{min-width:0;border:1px solid var(--line);border-radius:18px;padding:26px;text-align:left;display:flex;flex-direction:column;align-items:flex-start;gap:12px;transition:transform .15s,border-color .15s}
+.studio-launch-card:hover{transform:translateY(-2px);border-color:var(--control-line)}
+.studio-launch-card.launch-sketch{background:var(--mint);border-color:var(--mint);color:var(--on-accent)}
+.studio-launch-card.launch-harmony{background:linear-gradient(125deg,color-mix(in srgb,var(--violet) 18%,var(--surface)),var(--surface2));color:var(--ink)}
+.launch-kicker{font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.12em}
+.launch-harmony .launch-kicker{color:var(--violet)}
+.studio-launch-card>b{font-size:clamp(26px,2.5vw,34px);line-height:1.15;letter-spacing:-.035em;font-weight:750}
+.studio-launch-card>small{font-size:15px;line-height:1.5;max-width:390px}.launch-harmony>small{color:var(--muted)}
+.launch-action{font-size:14px;font-weight:750;margin-top:auto;padding:9px 14px;border:1px solid currentColor;border-radius:8px}
+.launch-track-stack{display:grid;gap:5px;width:100%;margin:4px 0 6px;max-width:440px}
+.launch-track-stack i{font-style:normal;display:grid;grid-template-columns:65px 1fr;align-items:center;gap:10px;font-size:12px;font-weight:650}
+.launch-track-stack em{height:10px;border-radius:3px;background:var(--on-accent);opacity:.6;width:96%}.launch-track-stack i:nth-child(2) em{width:84%;opacity:.45}.launch-track-stack i:nth-child(3) em{width:90%;opacity:.5}.launch-track-stack i:nth-child(4) em{width:68%;opacity:.4}
+.launch-chord-path{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;gap:7px;margin:14px 0 22px}
+.launch-chord-path i{font:650 clamp(13px,1.5vw,21px) var(--font-geist-mono),monospace;font-style:normal;color:var(--violet);padding:15px 4px;border:1px solid color-mix(in srgb,var(--violet) 42%,var(--line));border-radius:10px;text-align:center;background:var(--surface)}
+.studio-utility-actions{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+.studio-utility-actions button{display:grid;grid-template-columns:36px 1fr;gap:3px 12px;align-items:center;text-align:left;border:1px solid var(--line);border-radius:12px;padding:15px 18px;background:var(--surface);font-size:14px}
+.studio-utility-actions button>span{grid-row:1/3;color:var(--mint);font-size:24px;text-align:center}.studio-utility-actions svg{display:block;margin:auto}
+.studio-utility-actions small{color:var(--muted);font-size:13px;line-height:1.4}
+.home-screen .recent-projects{background:none;border:0;padding:0;box-shadow:none;margin-top:32px}.home-screen .recent-projects .eyebrow{display:none}
+.home-screen .recent-projects .project-card{background:var(--surface);border-radius:12px;min-height:125px}
+.home-screen .recent-projects .project-card h4{font-weight:650;font-size:18px}
+.home-screen .recent-projects .project-card .wave-mark{height:24px;margin-bottom:8px}
+.explorer-entry{display:flex;gap:12px;align-items:center;border:1px solid var(--line);background:var(--surface2);border-radius:12px;padding:15px 18px;margin:12px 0 18px;text-align:left}.explorer-entry b{color:var(--violet)}.explorer-entry span{color:var(--muted);font-size:14px}
+.explorer-screen .tool-layout.explorer-workspace.is-generate{display:grid;grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr);gap:20px;align-items:start}
+.explorer-composer{min-width:0;display:grid;gap:14px}
+.explorer-composer .theme-explorer{margin:0;border-radius:16px;padding:24px;box-shadow:none;border-top:3px solid var(--violet)}
+.explorer-composer .theme-explorer-head h2{font-size:28px;margin-bottom:10px}.explorer-composer .theme-explorer-head p:last-child{font-size:15px}
+.explorer-composer .theme-explorer-form>div{display:grid;grid-template-columns:1fr}.explorer-composer .theme-explorer-form button{min-height:46px}
+.theme-explorer-form label{font-size:12px}.theme-feel-chips button{min-height:38px;font-size:14px}
+.theme-recommendation p{font-size:14px}.theme-recommendation strong{font-size:20px}.theme-recommendation small{font-family:inherit;line-height:1.5}
+.theme-local-ai{flex-wrap:wrap;font-size:13px;line-height:1.4}.theme-local-ai button{font-size:13px;min-height:40px}
+.explorer-voicing-controls{display:grid;grid-template-columns:1fr 1fr;gap:10px}.explorer-voicing-controls .select-control{margin:0}.explorer-voicing-controls button{min-height:44px;font-size:14px}
+.explorer-screen .result-panel{min-width:0;min-height:0;border-radius:16px;padding:24px;border-top:3px solid var(--mint)}
+.explorer-workspace .chord-overview{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;border:0;background:none;margin-top:20px}
+.explorer-workspace .chord-overview>button{min-width:0;min-height:150px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface2);gap:8px;align-content:start;position:relative}
+.explorer-workspace .chord-overview>button>b{font-size:26px;color:var(--ink)}.explorer-workspace .chord-overview>button>small{font-size:13px}
+.explorer-pitches{display:flex;flex-wrap:wrap;gap:4px!important;width:100%;font-family:var(--font-geist-mono),monospace!important;font-size:12px!important;line-height:1.4!important}
+.explorer-pitches em{font-style:normal;color:var(--violet);padding:3px 5px;border:1px solid var(--line);border-radius:4px;background:var(--surface)}
+.explorer-screen .result-heading h2{font-size:26px}.explorer-screen .save-actions button{font-size:14px}
+.explorer-screen .topbar{padding-left:0}.explorer-screen .center-title{min-width:0}
+@media(min-width:900px){.home-screen .studio-workspace{max-width:1500px}}
+@media(max-width:1050px){.studio-launch-card{padding:22px}.explorer-screen .tool-layout.explorer-workspace.is-generate{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:700px){.studio-launch-grid{grid-template-columns:1fr;gap:14px}.studio-launch-card{padding:22px;gap:9px}.studio-launch-card>b{font-size:28px}.launch-track-stack{display:none}.launch-action{margin-top:10px}.launch-chord-path{margin:5px 0 8px}.launch-chord-path i{padding:10px 3px;font-size:16px}.studio-utility-actions{grid-template-columns:1fr;gap:8px;margin-top:14px}.studio-utility-actions button{padding:12px 16px}.studio-utility-actions small{display:none}.studio-utility-actions button>span{grid-row:auto}.studio-launchpad.spark-studio{margin:10px 0 22px}.home-screen .recent-projects{margin-top:26px}.explorer-composer .theme-explorer,.explorer-screen .result-panel{padding:18px}.explorer-entry{flex-direction:column;align-items:flex-start}.explorer-screen .topbar{padding-left:60px}.explorer-screen .topbar .back-button{align-self:flex-start}.explorer-screen .chord-overview>button{min-height:145px}}

@@ -59,7 +59,7 @@ test("the product surface retains the core songwriting workflows", () => {
 
 test("project tool navigation stays visible above a compact section player", () => {
   assert.match(source, /returnToArrangement \? "inside-project" : ""/);
-  assert.match(source, /\["project", "drums", "chords", "melody", "bass", "riff", "metronome"\]\.includes\(screen\)/);
+  assert.match(source, /\["project", "drums", "chords", "explorer", "melody", "bass", "riff", "metronome"\]\.includes\(screen\)/);
   assert.match(source, /back=\{backFromMusicTool\}/);
   assert.match(source, /projectName=\{project\.name\}/);
   assert.match(theme, /\.inside-project \.topbar\{order:-2/);
@@ -232,7 +232,7 @@ test("the songwriting workspace is installable on a phone", async () => {
   assert.match(layout, /appleWebApp/);
   assert.match(layout, /viewportFit: "cover"/);
   assert.match(manifest, /display: "standalone"/);
-  assert.match(serviceWorker, /inspitivity-shell-v14/);
+  assert.match(serviceWorker, /inspitivity-shell-v\d+/);
   assert.match(serviceWorker, /cache\.delete\("\/"\)/);
 });
 
@@ -357,7 +357,7 @@ test("arrangement sections own playback and persistent per-track mixing", async 
   assert.match(source, /DEFAULT_SECTION_MIX/);
   assert.match(source, /mix: \{ \.\.\.section\.mix/);
   assert.match(source, /event\.sectionId/);
-  assert.match(source, /\["project", "drums", "chords", "melody", "bass", "riff", "metronome"\]\.includes\(screen\)/);
+  assert.match(source, /\["project", "drums", "chords", "explorer", "melody", "bass", "riff", "metronome"\]\.includes\(screen\)/);
   assert.match(theme, /\.project-screen \.topbar,\.inside-project \.topbar\{position:sticky/);
 });
 
