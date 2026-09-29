@@ -473,6 +473,7 @@ html[data-theme] .section-player { grid-template-columns:minmax(0,1fr) auto auto
 .sketch-intensity small { display:block;margin-top:8px;color:var(--muted);font-size:13px; }
 .easy-mode-layer { align-items:start;overflow-y:auto;padding-block:max(16px,4vh); }
 .easy-mode-modal { width:min(900px,100%);max-height:none; }
+.easy-mode-modal .preset-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .easy-mode-modal .quick-sketch-heading h2 { margin:6px 0 0; }
 .randomize-sketch { min-height:44px;margin:12px 14px 0;padding:9px 13px;border:1px solid var(--line);border-radius:9px;background:var(--surface2);color:var(--ink);font-weight:650; }
 html[data-theme] .easy-mode-modal .section-player { position:relative;z-index:auto;left:auto;right:auto;bottom:auto;margin:18px 0 0; }

@@ -36,6 +36,8 @@ export type BassGenerationOptions = {
   kickCycle?: number;
   otherActivity?: number;
   density?: number;
+  /** Retain the same rhythmic vocabulary across bars while pitches follow the chords. */
+  repeatRhythm?: boolean;
   seed: number;
 };
 
@@ -215,6 +217,8 @@ export function generateBassPhrase(options: BassGenerationOptions): BassEvent[] 
   const random = seededRandom(options.seed);
   const harmony = buildHarmonyTimeline(options.harmony, length, options.root);
   const bars = buildBars(length, options.meter, options.meterMap);
+  const rhythmMotifs=new Map<number,number[]>();
+  const motifRandom=seededRandom(options.seed+301);
   const scale = getScale(options.root, options.mode)
     .map(notePitchClass)
     .filter((pitch): pitch is number => pitch !== null);
@@ -233,7 +237,8 @@ export function generateBassPhrase(options: BassGenerationOptions): BassEvent[] 
   ])];
   const starts: number[] = [...mandatory];
   for (const bar of bars) {
-    const base = rhythmCandidates(options.direction, bar.length, random);
+    if(options.repeatRhythm&&!rhythmMotifs.has(bar.length))rhythmMotifs.set(bar.length,rhythmCandidates(options.direction,bar.length,motifRandom));
+    const base = options.repeatRhythm?rhythmMotifs.get(bar.length)!:rhythmCandidates(options.direction, bar.length, random);
     const keepChance = {
       sustained: 0,
       "eighth notes": 0.8,

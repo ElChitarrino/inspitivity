@@ -257,9 +257,9 @@ test("easy mode creates one coordinated song draft with optional customization",
   assert.doesNotMatch(source, /Turn the next spark into music/);
   assert.match(source, /Easy mode/);
   assert.match(source, /role="dialog" aria-modal="true" aria-labelledby="easy-mode-title"/);
-  assert.match(source, /Randomize key, tempo &amp; scale/);
-  assert.match(source, /setSketchRoot\(pick\(ROOTS\)\)/);
-  assert.match(source, /setSketchMode\(pick\(MODES\)\)/);
+  assert.match(source, /Surprise me within this feel/);
+  assert.match(source, /root=pick\(ROOTS\),mode=pick\(relatedModes\[preset\.id\]\)/);
+  assert.match(source, /selectDrafts\(nextOptions,JSON\.stringify/);
   assert.match(source, /Empty project/);
   assert.match(source, /Record idea/);
   assert.match(source, /Hear two drafts/);
@@ -268,6 +268,8 @@ test("easy mode creates one coordinated song draft with optional customization",
   assert.match(source, /function buildPlayableSketch/);
   assert.match(source, /Mellow acoustic/);
   assert.match(source, /Soulful groove/);
+  assert.match(source, /Straight rock/);
+  assert.match(source, /Funk pocket/);
   assert.match(source, /Progressive motion/);
   assert.match(source, /Heavy riffs/);
   assert.match(source, /fitMelodyToChords/);
