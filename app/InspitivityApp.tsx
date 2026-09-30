@@ -3968,7 +3968,7 @@ function ChordExplorer({back}:{back:()=>void}) {
             <label className="select-control"><span>Tempo</span><input aria-label="Explorer tempo" type="number" min={40} max={240} value={bpm} onChange={event=>{stop();setBpm(Math.max(40,Math.min(240,Number(event.target.value)||90)));}}/></label>
           </div>
           <p className="explorer-hint">Auto chooses a key and mode for the feeling. Select either to keep it fixed.</p>
-          <div className="theme-local-ai"><span role="status" aria-live="polite">{ai.state.message}</span>{["off","error"].includes(ai.state.phase)?<button type="button" onClick={()=>{ai.enable();if(prompt.trim())ai.analyze(prompt);}}>{ai.state.phase==="error"?"Retry local AI":"Enable local AI"}</button>:<button type="button" onClick={ai.cancel}>Stop local AI</button>}</div>
+          <div className="theme-local-ai"><span role="status" aria-live="polite">{ai.state.message}</span>{ai.available && (["off","error"].includes(ai.state.phase)?<button type="button" onClick={()=>{ai.enable();if(prompt.trim())ai.analyze(prompt);}}>{ai.state.phase==="error"?"Retry local AI":"Enable local AI"}</button>:<button type="button" onClick={ai.cancel}>Stop local AI</button>)}</div>
           {ai.state.answer&&<details className="explorer-hint"><summary>AI interpretation</summary><p>{ai.state.answer}</p></details>}
         </section>
         <div className="explorer-voicing-controls">

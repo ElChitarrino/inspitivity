@@ -24,6 +24,8 @@ test("worker build is isolated from DOM transforms and shipped by production bui
   assert.match(script,/configFile:false/);
   assert.match(script,/app\/theme-model.worker.ts/);
   assert.match(hook,/new Worker\("\/local-ai\/theme-model.js"/);
+  assert.ok(hook.indexOf("if(reason)")<hook.indexOf("new ThemeAIClient"),"blocked devices cannot create the model client");
+  assert.match(await readFile("app/InspitivityApp.tsx","utf8"),/ai.available &&/);
   assert.match(pkg.scripts.build,/build-theme-worker/);
   assert.match(pkg.scripts.predev,/build-theme-worker/);
 });
