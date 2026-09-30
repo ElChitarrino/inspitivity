@@ -1,35 +1,73 @@
-import { pipeline } from "@huggingface/transformers";
+import { env, pipeline, LogitsProcessor, LogitsProcessorList, type Tensor } from "@huggingface/transformers";
+import { nextLabelTokens } from "../packages/workspace/theme-token-grammar";
+
+env.allowLocalModels = false;
+// A dedicated worker already keeps inference off the UI thread. One WASM
+// thread also works without cross-origin isolation (including mobile Safari).
+env.backends.onnx.wasm!.numThreads = 1;
+env.backends.onnx.wasm!.proxy = false;
 
 // Loaded only after the user opts in. All inference runs in this browser worker.
-type LocalGenerator = (messages: Array<{ role: string; content: string }>, options: { max_new_tokens: number; do_sample: boolean }) => Promise<unknown>;
+type LocalGenerator = {
+  (prompt: Array<{role:string;content:string}>, options: { max_new_tokens: number; do_sample: boolean; logits_processor: LogitsProcessorList }): Promise<unknown>;
+  tokenizer: {encode: (text:string,options:{add_special_tokens:boolean})=>number[];eos_token_id:number};
+};
+class MoodGrammar extends LogitsProcessor {
+  private start: number|null = null;
+  constructor(private sequences:number[][],private eos:number){super();}
+  _call(inputIds:bigint[][],logits:Tensor){
+    this.start ??= inputIds[0].length;
+    const width=logits.dims.at(-1)!;
+    const data=logits.data as Float32Array;
+    inputIds.forEach((ids,row)=>{
+      const allowed=nextLabelTokens(this.sequences,ids.slice(this.start!).map(Number),this.eos);
+      for(let token=0;token<width;token++) if(!allowed.has(token))data[row*width+token]=-Infinity;
+    });
+    return logits;
+  }
+}
 let model: LocalGenerator | null = null;
 
-self.onmessage = async (event: MessageEvent<{ type: "load" | "analyze"; prompt?: string }>) => {
+let loading: Promise<LocalGenerator> | null = null;
+let queue = Promise.resolve();
+self.onmessage = (event: MessageEvent<{ type: "load" | "analyze"; prompt?: string; id?: number }>) => {
+  queue = queue.then(async () => {
   try {
     if (!model) {
       self.postMessage({ type: "status", text: "Downloading local model…" });
       const load = pipeline as unknown as (task: "text-generation", name: string, options: Record<string, unknown>) => Promise<LocalGenerator>;
-      model = await load("text-generation", "onnx-community/SmolLM2-135M-Instruct-ONNX", {
-        device: "wasm", dtype: "q4",
+      loading ??= load("text-generation", "onnx-community/Qwen2.5-0.5B-Instruct", {
+        device: "wasm", dtype: "q8",
         progress_callback: (progress: { status?: string; progress?: number }) => {
           if (progress.status === "progress" && typeof progress.progress === "number")
             self.postMessage({ type: "progress", percent: Math.round(progress.progress) });
         },
       });
+      model = await loading;
       self.postMessage({ type: "ready" });
     }
     if (event.data.type === "analyze") {
       const prompt = (event.data.prompt ?? "").slice(0, 400);
+      const processors=new LogitsProcessorList();
+      processors.push(new MoodGrammar(["wistful","warm","bright","restless","soulful","dark"].map(label=>model!.tokenizer.encode(label,{add_special_tokens:false})),model.tokenizer.eos_token_id));
       const result = await model([
-        { role: "system", content: "Choose exactly one emotional category for the user's musical scene. Output only one word: wistful, warm, bright, restless, soulful, or dark. Prefer dark for metal or heavy music, soulful for neo-soul or jazz, wistful for nostalgia." },
-        { role: "user", content: prompt },
-      ], { max_new_tokens: 12, do_sample: false });
+        {role:"system",content:"Label the mood of the scene. Reply with one word only: wistful, warm, bright, restless, soulful, dark."},
+        {role:"user",content:"Missing an old friend"},{role:"assistant",content:"wistful"},
+        {role:"user",content:"Cozy evening by a fireplace"},{role:"assistant",content:"warm"},
+        {role:"user",content:"Celebrating a victory in the sunshine"},{role:"assistant",content:"bright"},
+        {role:"user",content:"An anxious rush before a deadline"},{role:"assistant",content:"restless"},
+        {role:"user",content:"Intimate late-night jazz and neo-soul"},{role:"assistant",content:"soulful"},
+        {role:"user",content:"Angry heavy metal in a threatening storm"},{role:"assistant",content:"dark"},
+        {role:"user",content:prompt},
+      ], { max_new_tokens: 12, do_sample: false, logits_processor:processors });
       const generated = result as Array<{ generated_text?: string | Array<{ content?: string }> }>;
       const text = generated?.[0]?.generated_text;
       const answer = typeof text === "string" ? text : Array.isArray(text) ? String(text.at(-1)?.content ?? "") : "";
-      self.postMessage({ type: "result", answer });
+      self.postMessage({ type: "result", id:event.data.id, answer });
     }
   } catch (error) {
+    loading = null;
     self.postMessage({ type: "error", text: error instanceof Error ? error.message : "Local model could not start." });
   }
+  });
 };

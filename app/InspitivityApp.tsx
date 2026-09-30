@@ -43,7 +43,8 @@ import { bassHarmonics } from "../packages/sequencing/bass-timbre";
 import { activityGain } from "../packages/workspace/mix-activity";
 import { alignPhrase } from "../packages/workspace/sketch";
 import { chooseSketch, scoreSketch } from "../packages/workspace/sketch-quality";
-import { inferThemeFeel, parseModelFeel, THEME_RECIPES, type ThemeFeel } from "../packages/workspace/theme-explorer";
+import { generateThemeDraft, THEME_FEELS, type ThemeFeel, type ExplorerOptions } from "../packages/workspace/theme-explorer";
+import { useThemeAI } from "./use-theme-ai";
 import { adaptAccompaniment, harmonyChanged } from "../packages/workspace/harmony-adapt";
 import {DRUM_KITS,DRUM_KIT_LABELS,loadDrumSamples,loadMetalDrumSamples,drumSample,metalDrumSample,drumKitProfile,type AcousticDrumKit,type DrumKit} from '../packages/sequencing/drum-samples';
 import {loadGuitarSamples,guitarSample} from '../packages/sequencing/guitar-samples';
@@ -1032,12 +1033,10 @@ function BottomNav({
   screen,
   go,
   create,
-  record,
 }: {
   screen: Screen;
   go: (s: Screen) => void;
   create: () => void;
-  record: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
@@ -1058,7 +1057,6 @@ function BottomNav({
     <button className="studio-brand" aria-label="Inspitivity studio" onClick={() => navigateFromMenu("home")}><span className="brand-mark"><img src="/icon-192.png" alt="" /></span><span>inspitivity<small>SONGWRITING STUDIO</small></span></button>
     <button className="studio-create" aria-label="Create new" onClick={() => { setOpen(false); create(); }}><b>＋</b><span>Create new</span></button>
     <div className="studio-destinations">
-      <button aria-label="Capture" onClick={()=>{setOpen(false);record();}}><b aria-hidden="true"><RecordIcon /></b><span>Capture</span></button>
       <button className="studio-mobile-create" aria-label="Create" aria-current={creating ? "page" : undefined} onClick={create}><b aria-hidden="true">＋</b><span>Create</span></button>
       {groups.map(group => <div className="nav-group" key={group.label}>
         <span className="nav-group-label">{group.label}</span>
@@ -2031,9 +2029,14 @@ export default function InspitivityApp({ account, signOutPath }: {
     return () => document.removeEventListener("pointerdown", dismissOnOutsidePointer);
   }, []);
   const navigate = (next: Screen) => {
+    if(next === "explorer") {
+      window.dispatchEvent(new Event("inspitivity-solo-preview"));
+      window.dispatchEvent(new Event("inspitivity-context-play"));
+      setReturnToArrangement(false); setDraftSectionId(null); setEditingIdea(null); setScreen(next); return;
+    }
     if(screen==="project"&&["chords","explorer","melody","drums","bass","riff","metronome"].includes(next))setReturnToArrangement(true);
     if (next !== screen) {
-      setEditingIdea(selected?.sections.find(s => s.id === draftSectionId)?.ideas.find(i => i.type === (next === "explorer" ? "chords" : next)) ?? null);
+      setEditingIdea(selected?.sections.find(s => s.id === draftSectionId)?.ideas.find(i => i.type === next) ?? null);
       savedDraftId.current = null;
     }
     if (!["chords", "explorer", "melody", "drums", "bass", "riff", "metronome"].includes(next))
@@ -2279,7 +2282,7 @@ export default function InspitivityApp({ account, signOutPath }: {
         <Home
           projects={projects}
           openProject={openProject}
-          go={next=>next === "explorer" ? createStandalone(next) : navigate(next)}
+          go={navigate}
           create={() => setModal("project")}
           record={() => setModal("record")}
           launchSketch={launchSketch}
@@ -2314,9 +2317,9 @@ export default function InspitivityApp({ account, signOutPath }: {
           }}
         />
       )}
-      {(screen === "chords" || screen === "explorer") && (
+      {screen === "explorer" && <ChordExplorer back={()=>navigate("home")} />}
+      {screen === "chords" && (
         <ChordTool
-          explorer={screen === "explorer"}
           key={`${editingIdea?.id ?? "new-chords"}-${draftSectionId ?? "default"}`}
           idea={editingIdea?.type === "chords" ? editingIdea : undefined}
           project={editorProject}
@@ -2424,9 +2427,8 @@ export default function InspitivityApp({ account, signOutPath }: {
       </div>
       <BottomNav
         screen={screen}
-        go={next=>next === "explorer" ? createStandalone(next) : navigate(next)}
+        go={navigate}
         create={() => setModal("create")}
-        record={() => setModal("record")}
       />
       {modal === "project" && (
         <ProjectModal close={() => setModal(null)} submit={createProject} />
@@ -2592,11 +2594,6 @@ function Home({
             <span className="launch-kicker">Easy mode</span><b>Build a song sketch</b><small>Choose a feel. Hear chords, drums, bass and melody working together.</small>
             <span className="launch-track-stack" aria-hidden="true"><i>Chords <em /></i><i>Drums <em /></i><i>Bass <em /></i><i>Melody <em /></i></span>
             <span className="launch-action">Create a sketch</span>
-          </button>
-          <button className="studio-launch-card launch-harmony" onClick={() => go("explorer")}>
-            <span className="launch-kicker">Chord explorer</span><b>Find the feeling</b><small>Turn a scene or an emotion into playable chord voicings.</small>
-            <span className="launch-chord-path" aria-hidden="true"><i>Cmaj7</i><i>Am9</i><i>Dm7</i><i>G7</i></span>
-            <span className="launch-action">Explore harmony</span>
           </button>
         </div>
         <div className="studio-utility-actions">
@@ -3900,6 +3897,98 @@ function EditorModeTabs({label,value,set}:{label:string;value:EditorMode;set:(va
 function SoundEditor({label,voice,options,change}:{label:string;voice:string;options:readonly string[];change:(value:string)=>void}) {
   return <section className="sound-editor" aria-label={`Edit ${label} sound`}><h2>Edit Sound</h2><Select label={label==="Drum"?"Drum kit":`${label} instrument`} value={voice} options={options} set={change}/><p>Choose a sound while listening. The saved part keeps this instrument.</p></section>;
 }
+function ChordExplorer({back}:{back:()=>void}) {
+  const [prompt,setPrompt]=useState("");
+  const [root,setRoot]=useState<Root|"auto">("auto");
+  const [mode,setMode]=useState<Mode|"auto">("auto");
+  const [bpm,setBpm]=useState(90);
+  const [voice,setVoice]=useState<SynthVoice>("warm pad");
+  const [rhythm,setRhythm]=useState<ChordRhythm|"auto">("auto");
+  const [voicing,setVoicing]=useState<VoicingStyle|"auto">("auto");
+  const [click,setClick]=useState(false);
+  const [draft,setDraft]=useState(()=>generateThemeDraft({prompt:"warm",seed:17}));
+  const [previous,setPrevious]=useState<typeof draft|null>(null);
+  const [notice,setNotice]=useState("Choose a theme or describe a feeling to begin.");
+  const seed=useRef(17);
+  const promptTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const request=useRef<ExplorerOptions|null>(null);
+  const engine=useAudioEngine();
+  const seconds=beatDurationSeconds(bpm);
+  const play=useCallback(()=>{
+    chordNoteEvents(draft.chords).forEach(note=>engine.tone(note.pitch,note.start*seconds,note.duration*seconds,.045*note.velocity,voice));
+    if(click) scheduleClickTrack(engine,16,seconds,"4/4");
+  },[draft,seconds,voice,engine,click]);
+  const unlock=useCallback(()=>engine.unlock(undefined,voice==="acoustic guitar",voice==="distorted guitar"),[engine,voice]);
+  const transport=useLoopTransport(play,progressionLoopDurationMs(16,bpm),engine.stopAll,unlock);
+  const auditionToken=useRef(0);
+  const stop=()=>{auditionToken.current++;transport.stop();engine.stopAll();};
+  useEffect(()=>()=>{auditionToken.current++;engine.stopAll();},[engine]);
+  const commit=(next:typeof draft,source:string)=>{
+    stop();setPrevious(draft);setDraft(next);setNotice(source);
+  };
+  const ai=useThemeAI(feel=>{
+    if(request.current) commit(generateThemeDraft({...request.current,feel}),"Local AI interpretation applied. Play the progression or try another variation.");
+  });
+  const generate=(feel?:ThemeFeel,settings?:Partial<ExplorerOptions>)=>{
+    if(promptTimer.current)clearTimeout(promptTimer.current);
+    ai.invalidate();
+    const options:ExplorerOptions={prompt,seed:++seed.current,feel,root:root==="auto"?undefined:root,mode:mode==="auto"?undefined:mode,rhythm:rhythm==="auto"?undefined:rhythm,voicing:voicing==="auto"?undefined:voicing,...settings};
+    request.current=options;
+    commit(generateThemeDraft(options),"New progression ready · tap a chord to hear its voicing.");
+    if(!feel && prompt.trim()) ai.analyze(prompt);
+  };
+  const generateRef=useRef(generate);generateRef.current=generate;
+  // Typing produces a visible result without requiring a model download.
+  useEffect(()=>{
+    if(!prompt.trim()) return;
+    promptTimer.current=setTimeout(()=>generateRef.current(),700);
+    return ()=>{if(promptTimer.current)clearTimeout(promptTimer.current);};
+  },[prompt]);
+  const position=usePlaybackPosition(bpm,16,.25);
+  const sounding=position===null?-1:activeChordIndex(draft.chords.map(chord=>chord.beats),position);
+  const audition=async(chord:typeof draft.chords[number])=>{
+    stop();const token=auditionToken.current;
+    window.dispatchEvent(new Event("inspitivity-solo-preview"));
+    if(!await unlock()||token!==auditionToken.current)return;
+    chordNoteEvents([chord]).forEach(note=>engine.tone(note.pitch,note.start*seconds,note.duration*seconds,.045*note.velocity,voice));
+  };
+  return <>
+    <Topbar title="Chord explorer" subtitle="Independent harmony playground · no project needed" onBack={back}/>
+    <div className="tool-layout explorer-workspace is-generate independent-explorer">
+      <div className="explorer-composer">
+        <section className="theme-explorer" aria-label="Chord and theme explorer">
+          <div className="theme-explorer-head"><div><p className="eyebrow">Theme to harmony</p><h2>What should it feel like?</h2><p>Describe a scene or choose a feeling. Chords update as you type.</p></div></div>
+          <form className="theme-explorer-form" onSubmit={event=>{event.preventDefault();generate();}}>
+            <label htmlFor="explorer-theme">Your theme</label><div><input id="explorer-theme" value={prompt} maxLength={400} onChange={event=>{ai.invalidate();setPrompt(event.target.value);}} placeholder="A warm, nostalgic night drive…"/><button type="submit">Find chords</button></div>
+          </form>
+          <div className="theme-feel-chips" aria-label="Quick themes">{THEME_FEELS.map(feel=><button type="button" key={feel} aria-pressed={draft.feel===feel} onClick={()=>generate(feel)}>{feel}</button>)}</div>
+          <div className="explorer-harmony-controls">
+            <Select label="Key" value={root} options={["auto",...ROOTS]} set={value=>{setRoot(value as Root|"auto");generate(draft.feel,{root:value==="auto"?undefined:value as Root});}}/>
+            <Select label="Mode" value={mode} options={["auto",...MODES]} set={value=>{setMode(value as Mode|"auto");generate(draft.feel,{mode:value==="auto"?undefined:value as Mode});}}/>
+            <label className="select-control"><span>Tempo</span><input aria-label="Explorer tempo" type="number" min={40} max={240} value={bpm} onChange={event=>{stop();setBpm(Math.max(40,Math.min(240,Number(event.target.value)||90)));}}/></label>
+          </div>
+          <p className="explorer-hint">Auto chooses a key and mode for the feeling. Select either to keep it fixed.</p>
+          <div className="theme-local-ai"><span role="status" aria-live="polite">{ai.state.message}</span>{["off","error"].includes(ai.state.phase)?<button type="button" onClick={()=>{ai.enable();if(prompt.trim())ai.analyze(prompt);}}>{ai.state.phase==="error"?"Retry local AI":"Enable local AI"}</button>:<button type="button" onClick={ai.cancel}>Stop local AI</button>}</div>
+          {ai.state.answer&&<details className="explorer-hint"><summary>AI interpretation</summary><p>{ai.state.answer}</p></details>}
+        </section>
+        <div className="explorer-voicing-controls">
+          <Select label="Sound" value={voice} options={SYNTH_VOICES} set={value=>{stop();setVoice(value as SynthVoice);}}/>
+          <Select label="Chord voicing" value={voicing} options={["auto","open","close","drop 2","mixed"]} set={value=>{setVoicing(value as VoicingStyle|"auto");generate(draft.feel,{seed:draft.seed,root:draft.root,mode:draft.mode,rhythm:draft.rhythm,voicing:value==="auto"?undefined:value as VoicingStyle});}}/>
+          <Select label="Strum rhythm" value={rhythm} options={["auto",...CHORD_RHYTHMS.filter(value=>value!=="adaptive")]} set={value=>{setRhythm(value as ChordRhythm|"auto");generate(draft.feel,{seed:draft.seed,root:draft.root,mode:draft.mode,voicing:draft.voicing,rhythm:value==="auto"?undefined:value as ChordRhythm});}}/>
+        </div>
+      </div>
+      <section className="result-panel" aria-label="Explorer result">
+        <div className="result-heading"><div><p className="eyebrow">{draft.feel} · variation {draft.arcIndex+1}</p><h2>{formatProjectKey(draft.root,draft.mode)}</h2></div></div>
+        <p className="explorer-hint">{draft.voicing} voicing · {CHORD_RHYTHM_LABELS[draft.rhythm]} · 4 bars</p>
+        <SoloPreview transport={transport} click={click} toggleClick={()=>{stop();setClick(!click);}}/>
+        <p className="explorer-status" role="status" aria-live="polite">{notice}</p>
+        <div className="chord-overview" aria-label="Generated chord progression">{draft.chords.map((chord,index)=><button key={chord.id} data-playing={sounding===index} onClick={()=>void audition(chord)} aria-label={`Play chord ${index+1}: ${chord.name}`}><span>{index+1}</span><b data-no-translate>{chord.name}</b><small>{chordRole(chord.name,draft.root,draft.mode)}</small><span className="explorer-pitches" data-no-translate>{chord.pitches.map(pitch=><em key={pitch}>{midiNoteName(pitch)}</em>)}</span></button>)}</div>
+        <div className="explorer-actions"><button className="primary-button" onClick={()=>generate(draft.feel)}>Another variation</button><button className="secondary-button" disabled={!previous} onClick={()=>{if(previous){ai.invalidate();request.current=null;stop();setDraft(previous);setPrevious(draft);setNotice("Previous idea restored.");}}}>Previous idea</button></div>
+      </section>
+    </div>
+  </>;
+}
+
 function SoloPreview({transport,click,toggleClick}:{transport:ReturnType<typeof useLoopTransport>;click:boolean;toggleClick:()=>void}) {
   const [loop,setLoop]=useState(true);
   return <div className="solo-preview" role="group" aria-label="Standalone playback">
@@ -3947,7 +4036,6 @@ function SaveActions({ section, editing, submit }: {
 }
 
 function ChordTool({
-  explorer = false,
   idea,
   project,
   section,
@@ -3959,7 +4047,6 @@ function ChordTool({
   metronomeEnabled,
   toggleMetronome,
 }: {
-  explorer?: boolean;
   idea?: Idea;
   project: Project;
   section?: SongSection;
@@ -3972,7 +4059,7 @@ function ChordTool({
   toggleMetronome: () => void;
 }) {
   const { root, mode } = projectHarmony(project);
-  const [workspaceMode,setWorkspaceMode]=useState<EditorMode>(explorer?"generate":idea?"edit":"generate");
+  const [workspaceMode,setWorkspaceMode]=useState<EditorMode>(idea?"edit":"generate");
   const initialCount = idea?.data?.length || 4;
   const [initialSeed] = useState(() => freshSeed() + Math.max(0, sectionIndex));
   const supportPitchClasses = useMemo(() => sectionPitchContext(section,"chords"),[section]);
@@ -3981,61 +4068,18 @@ function ChordTool({
   const [lengthVariation, setLengthVariation] = useDraftState("lengthVariation", 0);
   const [complexity, setComplexity] = useDraftState<Complexity>("complexity", "medium");
   const [harmonyColour, setHarmonyColour] = useDraftState<HarmonyColour>("harmonyColour", "diatonic");
-  const [opening, setOpening] = useDraftState<ProgressionOpening>("opening", explorer ? "tonic" : "away");
-  const [tension, setTension] = useDraftState<HarmonicTension>("harmonicTension", explorer ? "smooth" : "balanced");
-  const [voice, setVoice] = useDraftState<SynthVoice>("voice", (idea?.voice as SynthVoice) || (explorer ? "warm pad" : "distorted guitar"));
-  const [voicing, setVoicing] = useDraftState<VoicingStyle>("voicing", explorer ? "open" : "mixed");
-  const [chordRhythm,setChordRhythm] = useDraftState<ChordRhythm>("chordRhythm",explorer || idea && !idea.data?.some(value=>value.split("|")[3]) ? "sustain" : "adaptive");
+  const [opening, setOpening] = useDraftState<ProgressionOpening>("opening", "away");
+  const [tension, setTension] = useDraftState<HarmonicTension>("harmonicTension", "balanced");
+  const [voice, setVoice] = useDraftState<SynthVoice>("voice", (idea?.voice as SynthVoice) || "distorted guitar");
+  const [voicing, setVoicing] = useDraftState<VoicingStyle>("voicing", "mixed");
+  const [chordRhythm,setChordRhythm] = useDraftState<ChordRhythm>("chordRhythm",idea && !idea.data?.some(value=>value.split("|")[3]) ? "sustain" : "adaptive");
   const [seed, setSeed] = useDraftState("seed", initialSeed);
   const [chords, setChords] = useDraftState<ChordDraft[]>("chords", () =>
     idea
       ? decodeChordDrafts(idea)
-      : rhythmizeChords(makeChordDrafts(root, mode, initialCount, "medium", initialSeed,meterBeats(project.meter),0,"diatonic",explorer?"tonic":"away",explorer?"open":"mixed",explorer?"smooth":"balanced",supportPitchClasses,explorer?THEME_RECIPES.warm.degrees:undefined),initialSeed,explorer?"sustain":"adaptive",project.meter,section),
+      : rhythmizeChords(makeChordDrafts(root, mode, initialCount, "medium", initialSeed,meterBeats(project.meter),0,"diatonic","away","mixed","balanced",supportPitchClasses),initialSeed,"adaptive",project.meter,section),
   );
   const [previousChords, setPreviousChords] = useDraftState<ChordDraft[] | null>("previousChords", null);
-  const [themePrompt, setThemePrompt] = useState("");
-  const [themeFeel, setThemeFeel] = useState<ThemeFeel | null>(explorer && !idea ? "warm" : null);
-  const [themeModelStatus, setThemeModelStatus] = useState("Optional local AI · about 181 MB download");
-  const [themeModelReady, setThemeModelReady] = useState(false);
-  const [themeModelBusy, setThemeModelBusy] = useState(false);
-  const themeWorker = useRef<Worker | null>(null);
-  const themePromptRef = useRef("");
-  const themeOpenRef = useRef<(feel: ThemeFeel) => void>(() => {});
-  useEffect(() => () => { themeWorker.current?.terminate(); themeWorker.current = null; }, []);
-  const openTheme = (feel: ThemeFeel) => {
-    transport.stop();
-    const recipe = THEME_RECIPES[feel];
-    const nextSeed = seed + 1;
-    setPreviousChords(chords);
-    setThemeFeel(feel);
-    setSeed(nextSeed);
-    setComplexity(recipe.complexity);
-    setTension(recipe.tension);
-    setOpening(recipe.opening);
-    setVoicing(recipe.voicing);
-    setCount(4);
-    setChords(rhythmizeChords(makeChordDrafts(root, mode, 4, recipe.complexity, nextSeed, defaultBeats, 0, "diatonic", recipe.opening, recipe.voicing, recipe.tension, supportPitchClasses, recipe.degrees), nextSeed, chordRhythm, project.meter, section));
-  };
-  themeOpenRef.current = openTheme;
-  const loadThemeModel = () => {
-    if (themeWorker.current) return;
-    setThemeModelBusy(true);
-    setThemeModelStatus("Starting local model…");
-    try {
-      const worker = new Worker(new URL("./theme-model.worker.ts", import.meta.url), { type: "module" });
-      themeWorker.current = worker;
-      worker.onmessage = (event: MessageEvent<{type: string; text?: string; percent?: number; answer?: string}>) => {
-        const message = event.data;
-        if (message.type === "progress") setThemeModelStatus(`Downloading model · ${message.percent}%`);
-        if (message.type === "status") setThemeModelStatus(message.text ?? "Loading…");
-        if (message.type === "ready") { setThemeModelReady(true); setThemeModelBusy(false); setThemeModelStatus("Local AI ready · prompts stay on this device"); }
-        if (message.type === "result") { themeOpenRef.current(parseModelFeel(message.answer ?? "") ?? inferThemeFeel(themePromptRef.current)); setThemeModelBusy(false); setThemeModelStatus("Local AI ready · prompts stay on this device"); }
-        if (message.type === "error") { if (themePromptRef.current) themeOpenRef.current(inferThemeFeel(themePromptRef.current)); setThemeModelBusy(false); setThemeModelReady(false); setThemeModelStatus("Local AI unavailable here · theme explorer still works"); worker.terminate(); themeWorker.current = null; }
-      };
-      worker.onerror = () => { if (themePromptRef.current) themeOpenRef.current(inferThemeFeel(themePromptRef.current)); setThemeModelBusy(false); setThemeModelReady(false); setThemeModelStatus("Local AI unavailable here · theme explorer still works"); worker.terminate(); themeWorker.current = null; };
-      worker.postMessage({ type: "load" });
-    } catch { setThemeModelBusy(false); setThemeModelStatus("Local AI unavailable here · theme explorer still works"); }
-  };
   const engine = useAudioEngine();
   const regenerate = (nextRoot = root, nextMode = mode, showFeedback = true) => {
     setPreviousChords(chords);
@@ -4130,21 +4174,10 @@ function ChordTool({
       const pitches = [...(chord.pitches ?? decodeVoicing(chord.name))];
       return { ...chord, pitches:[...pitches, Math.min(96, (pitches.at(-1) ?? 60) + 3)] };
     }));
-  const explorerPanel = (
-<section className="theme-explorer" aria-label="Chord and theme explorer">
-        <div className="theme-explorer-head"><div><p className="eyebrow">Theme to harmony</p><h2>What should it feel like?</h2><p>Describe a scene, a memory, or an energy. Explore its harmony in {formatProjectKey(root,mode)}.</p></div></div>
-        <form className="theme-explorer-form" onSubmit={event=>{event.preventDefault();if(!themePrompt.trim())return;themePromptRef.current=themePrompt.trim();if(themeModelReady&&themeWorker.current){setThemeModelBusy(true);setThemeModelStatus("Finding the feel on this device…");themeWorker.current.postMessage({type:"analyze",prompt:themePromptRef.current});}else openTheme(inferThemeFeel(themePromptRef.current));}}>
-          <label htmlFor="theme-idea">Your theme</label><div><input id="theme-idea" value={themePrompt} maxLength={400} onChange={event=>setThemePrompt(event.target.value)} placeholder="A warm, nostalgic night drive…" /><button type="submit" disabled={!themePrompt.trim()||themeModelBusy}>Find chords</button></div>
-        </form>
-        <div className="theme-feel-chips" aria-label="Quick themes">{(["warm","wistful","bright","restless","soulful","dark"] as const).map(feel=><button key={feel} type="button" aria-pressed={themeFeel===feel} onClick={()=>openTheme(feel)}>{feel}</button>)}</div>
-        {themeFeel&&<div className={`theme-recommendation is-${THEME_RECIPES[themeFeel].color}`} role="status"><span>Suggested harmonic arc</span><strong>{THEME_RECIPES[themeFeel].title}</strong><p>{THEME_RECIPES[themeFeel].description} Tap the chords below to hear individual voicings, or play the progression.</p><small>{THEME_RECIPES[themeFeel].voicing} voicing · {THEME_RECIPES[themeFeel].tension} tension · editable below</small></div>}
-        <div className="theme-local-ai"><span>{themeModelStatus}</span>{!themeModelReady&&<button type="button" disabled={themeModelBusy} onClick={loadThemeModel}>{themeModelBusy?"Loading…":"Enable local AI"}</button>}</div>
-      </section>
-  );
   useDraftPreview({ type: "chords", data: chords.map(encodeChord), voice });
   return (
     <>
-      {explorer ? <Topbar title="Chord explorer" subtitle={section ? project.name : "Explore a feeling through harmony"} onBack={back} /> : <ToolHeader
+      {<ToolHeader
         title="Chord Progression"
         subtitle="Shape coherent harmonic arcs, then make them yours"
         projectName={project.name}
@@ -4165,14 +4198,13 @@ function ChordTool({
         </p>
       )}
       <EditorModeTabs label="Chord workspace" value={workspaceMode} set={setWorkspaceMode} />
-      {!explorer && workspaceMode === "generate" && <button className="explorer-entry" onClick={()=>go("explorer")}><b>Chord explorer</b><span>Find voicings for a scene or a feeling</span></button>}
+      {workspaceMode === "generate" && <button className="explorer-entry" onClick={()=>go("explorer")}><b>Chord explorer</b><span>Find voicings for a scene or a feeling</span></button>}
 
       {workspaceMode==="sound"&&<SoundEditor label="Chord" voice={voice} options={SYNTH_VOICES} change={value=>setVoice(value as SynthVoice)}/>}
       <DraftToolbar />
       {!section && <SoloPreview transport={transport} click={metronomeEnabled} toggleClick={toggleMetronome} />}
-      <div className={`tool-layout instrument-workspace ${explorer ? "explorer-workspace" : ""} is-${workspaceMode}`}>
-        {explorer && workspaceMode==="generate" && <div className="explorer-composer">{explorerPanel}<div className="explorer-voicing-controls"><Select label="Sound" value={voice} options={SYNTH_VOICES} set={value=>setVoice(value as SynthVoice)} /><Select label="Chord voicing" value={voicing} options={["mixed","close","open","drop 2"]} set={value=>{transport.stop();setVoicing(value as VoicingStyle);setPreviousChords(chords);const pitches=voiceProgression(chords.map(chord=>chord.name),seed+1,value as VoicingStyle);setChords(chords.map((chord,index)=>({...chord,pitches:pitches[index]})));setSeed(seed+1);}} /><button className="secondary-button" onClick={()=>{transport.stop();setPreviousChords(chords);const pitches=voiceProgression(chords.map(chord=>chord.name),seed+1,voicing);setChords(chords.map((chord,index)=>({...chord,pitches:pitches[index]})));setSeed(seed+1);}}>Revoice</button>{previousChords&&<button className="secondary-button" onClick={()=>{transport.stop();setChords(previousChords);setPreviousChords(chords);}}>Previous idea</button>}</div></div>}
-        {!explorer&&workspaceMode==="generate"&&<GeneratorSettings className="">
+      <div className={`tool-layout instrument-workspace is-${workspaceMode}`}>
+        {workspaceMode==="generate"&&<GeneratorSettings className="">
           <div className="idea-starts" aria-label="Harmony starting points">
             <p>Start with a feel</p>
             {([
@@ -4284,7 +4316,7 @@ function ChordTool({
           </button>
         </GeneratorSettings>}
         <section className="result-panel">
-          {!explorer&&workspaceMode==="generate"&&<VariationControls value={chords} apply={value=>{transport.stop();setChords(value);}} vary={(kind,locks)=>{
+          {workspaceMode==="generate"&&<VariationControls value={chords} apply={value=>{transport.stop();setChords(value);}} vary={(kind,locks)=>{
             setSeed(seed+1);
             const candidate=makeChordDrafts(root,mode,chords.length,complexity,seed+97,defaultBeats,lengthVariation,harmonyColour,opening,voicing,tension,supportPitchClasses);
             const changeCount=kind==="subtle"?1:Math.max(2,Math.ceil(chords.length/3));
@@ -4312,9 +4344,8 @@ function ChordTool({
           {workspaceMode==="edit"&&<button className="danger-outline" disabled={!chords.length} onClick={()=>{transport.stop();setPreviousChords(chords);setChords([]);setSelectedChordId(null);}}>Clear all chords</button>}
           {!chords.length&&<div className="empty-sequence"><b>No chords yet</b><span>Add a chord below or generate a new progression.</span></div>}
           <div className="chord-overview" aria-label="Generated chord progression">
-            {chords.map((chord,index)=><button key={chord.id} aria-pressed={(workspaceMode==="edit"||explorer)&&selectedChord?.id===chord.id} data-playing={soundingChord===index} onClick={()=>{setSelectedChordId(chord.id);if(!explorer)setWorkspaceMode("edit");void auditionChord(chord);}} aria-label={`${explorer?"Play chord":"Play and edit chord"} ${index+1}: ${chord.name}`}>
+            {chords.map((chord,index)=><button key={chord.id} aria-pressed={(workspaceMode==="edit")&&selectedChord?.id===chord.id} data-playing={soundingChord===index} onClick={()=>{setSelectedChordId(chord.id);setWorkspaceMode("edit");void auditionChord(chord);}} aria-label={`Play and edit chord ${index+1}: ${chord.name}`}>
               <span>{index+1}</span><b>{chord.name}</b><small>{chordRole(chord.name,root,mode)} · {chord.beats} beats</small>
-              {explorer && <span className="explorer-pitches" data-no-translate>{(chord.pitches??decodeVoicing(chord.name)).map((pitch,i)=><em key={`${pitch}-${i}`}>{midiNoteName(pitch)}</em>)}</span>}
               <span className="chord-rhythm-strip" aria-label={`${chord.attacks?.length??1} attacks; ${(chord.attacks?.[0]?.start??0)<0?"anticipated entry":(chord.attacks?.[0]?.start??0)>0?"offbeat entry":"on beat"}`}>{(chord.attacks??[{start:0}]).map((attack,i)=><i key={i} style={{left:`${Math.max(0,attack.start/chord.beats)*94}%`}} />)}</span>
             </button>)}
           </div>
@@ -5766,7 +5797,7 @@ function Select({
       <span>{label}</span>
       <select value={options.includes("ionian")?canonicalMode(value):value} onChange={(e) => set(e.target.value)}>
         {options.map((o) => (
-          <option key={o} value={o}>{label==="Drum kit"?DRUM_KIT_LABELS[o as DrumKit]:label==="Strum rhythm"?CHORD_RHYTHM_LABELS[o as ChordRhythm]:o==="acoustic guitar"?"Classical guitar · recorded":MODE_LABELS[o as Mode] ?? o}</option>
+          <option key={o} value={o}>{o==="auto"?"Auto":label==="Drum kit"?DRUM_KIT_LABELS[o as DrumKit]:label==="Strum rhythm"?CHORD_RHYTHM_LABELS[o as ChordRhythm]:o==="acoustic guitar"?"Classical guitar · recorded":MODE_LABELS[o as Mode] ?? o}</option>
         ))}
       </select>
     </label>
@@ -6140,7 +6171,7 @@ function CreateModal({
 }: {
   close: () => void;
   choose: (
-    a: "project" | "record" | "chords" | "explorer" | "bass" | "melody" | "drums" | "riff",
+    a: "project" | "record" | "chords" | "bass" | "melody" | "drums" | "riff",
   ) => void;
 }) {
   return (
@@ -6173,7 +6204,6 @@ function CreateModal({
             copy="Find the harmony"
             onClick={() => choose("chords")}
           />
-          <ToolButton tone="violet" icon="♯" title="Chord explorer" copy="Find voicings for a scene or a feeling" onClick={() => choose("explorer")} />
           <ToolButton
             tone="violet"
             icon="♭"

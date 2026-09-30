@@ -6,8 +6,9 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "predev": "node scripts/build-theme-worker.mjs",
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite",
-    "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build && node scripts/prune-browser-runtime.mjs",
+    "build": "node scripts/build-theme-worker.mjs && WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build && node scripts/prune-browser-runtime.mjs",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run test:unit && npm run build",
     "test:unit": "tsc -p tsconfig.tests.json && node --test .test-dist/tests/*.test.js",

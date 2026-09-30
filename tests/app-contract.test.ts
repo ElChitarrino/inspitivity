@@ -33,7 +33,7 @@ test("instrument simplification preserves accessible generation, editing and com
   assert.match(css, /prefers-reduced-motion:reduce/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /data-density=compact/);
-  assert.equal((source.match(/<SoloPreview transport=/g) ?? []).length, 5);
+  assert.equal((source.match(/<SoloPreview transport=/g) ?? []).length, 6);
 });
 
 test("recording cleanup and save recovery remain wired", () => {
@@ -166,7 +166,7 @@ test("home omits the duplicate creative-tools directory", () => {
 test("navigation groups related work and becomes an expandable mobile drawer", () => {
   assert.match(source, /label: "Workspace"/);
   assert.match(source, /label: "Preferences"/);
-  assert.match(source, /aria-label="Capture"/);
+  assert.doesNotMatch(source, /aria-label="Capture"/);
   assert.doesNotMatch(source, /label: "Create parts"/);
   assert.match(source, /className="studio-nav-toggle"/);
   assert.match(source, /studio-nav-backdrop/);

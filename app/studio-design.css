@@ -1,9 +1,32 @@
 /* A consistent instrument workspace: sans for the UI, mono for musical data. */
+.app-shell{--tool-color:var(--muted)}
+.explorer-screen,.chords-screen{--tool-color:var(--violet)}
+.drums-screen,.metronome-screen{--tool-color:var(--amber)}
+.bass-screen{--tool-color:var(--blue)}
+.melody-screen{--tool-color:var(--coral)}
+.riff-screen{--tool-color:var(--amber)}
+.app-shell:is(.explorer-screen,.chords-screen,.drums-screen,.metronome-screen,.bass-screen,.melody-screen,.riff-screen) .topbar{border-bottom:2px solid var(--tool-color);padding-bottom:16px}
+.app-shell:is(.chords-screen,.drums-screen,.bass-screen,.melody-screen,.riff-screen) .result-panel{border-top:3px solid var(--tool-color);background:linear-gradient(145deg,color-mix(in srgb,var(--tool-color) 5%,var(--surface)),var(--surface) 45%)}
+.studio-destinations .nav-explorer{--nav-color:var(--violet)}
+.studio-destinations .nav-metronome{--nav-color:var(--amber)}
+.studio-destinations :is(.nav-explorer,.nav-metronome)>b{color:var(--nav-color)}
+html[data-theme] .studio-destinations :is(.nav-explorer,.nav-metronome)[aria-current]{border-left:3px solid var(--nav-color);background:color-mix(in srgb,var(--nav-color) 10%,var(--surface));color:var(--ink)}
+.explorer-harmony-controls{display:grid;grid-template-columns:1fr 1.6fr .8fr;gap:10px;margin-top:20px}
+.explorer-harmony-controls .select-control{margin:0;min-width:0}
+.explorer-harmony-controls input{width:100%;min-width:0;height:44px;padding:8px 12px;background:var(--black);color:var(--ink);border:1px solid var(--control-line);border-radius:9px}
+.explorer-hint,.explorer-status{font-size:14px;line-height:1.5;color:var(--muted)}
+.explorer-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
+.explorer-actions .primary-button{margin:0}
+.independent-explorer .theme-local-ai span{overflow-wrap:anywhere;max-width:100%}
+.explorer-screen .independent-explorer .result-panel{border-top-color:var(--violet)}
+.independent-explorer .select-control>span,.independent-explorer .theme-explorer-form label{font-size:14px}
+.independent-explorer :is(button,input,select):focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+@media(max-width:620px){.explorer-harmony-controls{grid-template-columns:1fr 1fr}.explorer-harmony-controls>label:last-child{grid-column:1/-1}.explorer-harmony-controls input{max-width:130px}.explorer-actions>*{flex:1}.independent-explorer .theme-explorer-head h2{font-size:25px}}
 .app-shell :is(h1,h2,h3,h4){font-family:var(--font-geist-sans),Arial,sans-serif;font-weight:650;letter-spacing:-.025em;line-height:1.2}
 .app-shell .section-heading h3{font-size:22px}
 .studio-launchpad.spark-studio{padding:0;border:0;background:none;box-shadow:none;margin:18px 0 28px;overflow:visible}
 .studio-launchpad.spark-studio:after{display:none}
-.studio-launch-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.studio-launch-grid{display:grid;grid-template-columns:1fr;gap:18px}
 .studio-launch-card{min-width:0;border:1px solid var(--line);border-radius:18px;padding:26px;text-align:left;display:flex;flex-direction:column;align-items:flex-start;gap:12px;transition:transform .15s,border-color .15s}
 .studio-launch-card:hover{transform:translateY(-2px);border-color:var(--control-line)}
 .studio-launch-card.launch-sketch{background:var(--mint);border-color:var(--mint);color:var(--on-accent)}
