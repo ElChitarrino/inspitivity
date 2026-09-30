@@ -4,6 +4,10 @@ export const isUiLanguage = (value: unknown): value is UiLanguage => value === "
 
 // English is the source language. Keys are interface copy, never saved project data.
 const german: Record<string, string> = {
+  "Compact local AI · multilingual theme matching · about 140 MB model download":"Kompakte lokale KI · mehrsprachige Themenzuordnung · etwa 140 MB Modelldownload",
+  "Downloading compact local AI · model files about 140 MB":"Kompakte lokale KI wird geladen · Modelldateien etwa 140 MB",
+  "Preparing compact multilingual theme matching…":"Kompakte mehrsprachige Themenzuordnung wird vorbereitet…",
+  "Local AI paused to release memory · enable it again when needed":"Lokale KI pausiert, um Speicher freizugeben · bei Bedarf erneut aktivieren",
   "Instant chord generation works without a model.":"Die direkte Akkorderzeugung funktioniert ohne Modell.",
   "Local AI is disabled on phones and tablets to avoid memory crashes. Instant chord generation works without a model.":"Lokale KI ist auf Smartphones und Tablets deaktiviert, um Speicherabstürze zu vermeiden. Die direkte Akkorderzeugung funktioniert ohne Modell.",
   "Local AI is disabled on devices reporting less than 8 GB of memory. Instant chord generation works without a model.":"Lokale KI ist auf Geräten deaktiviert, die weniger als 8 GB Speicher melden. Die direkte Akkorderzeugung funktioniert ohne Modell.",

@@ -1,4 +1,4 @@
-const CACHE = "inspitivity-shell-v17";
+const CACHE = "inspitivity-shell-v18";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
@@ -23,7 +23,7 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== CACHE)
+            .filter((key) => key.startsWith("inspitivity-shell-") && key !== CACHE)
             .map((key) => caches.delete(key)),
         ),
       )
