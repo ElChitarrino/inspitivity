@@ -37,6 +37,7 @@ import { voiceProgression } from "../packages/music-theory/voicing";
 import { playbackBeat, activeChordIndex } from "../packages/sequencing/playhead";
 import { scheduleWindow } from "../packages/sequencing/schedule-window";
 import { AudioQueue } from "../packages/sequencing/audio-queue";
+import { QuarterClickScheduler } from "../packages/sequencing/live-click";
 import { reorderSection, timelineDuration } from "../packages/workspace/arrangement-order";
 import { playbackProject } from "../packages/workspace/playback";
 import { bassHarmonics } from "../packages/sequencing/bass-timbre";
@@ -1719,26 +1720,6 @@ function useAudioEngine() {
   }, []);
 }
 
-function scheduleClickTrack(
-  engine: ReturnType<typeof useAudioEngine>,
-  beats: number,
-  beatSeconds: number,
-  meter: string,
-  startSeconds = 0,
-) {
-  const beatsPerBar = Number(meter.split("/")[0]) || 4;
-  for (let beat = 0; beat < beats; beat++) {
-    const accented = beat % beatsPerBar === 0;
-    engine.tone(
-      accented ? 88 : 80,
-      startSeconds + beat * beatSeconds,
-      0.04,
-      accented ? 0.11 : 0.055,
-      "click",
-    );
-  }
-}
-
 function playChord(
   engine: ReturnType<typeof useAudioEngine>, symbol: string, start: number,
   duration: number, gain = .045, voice: SynthVoice = "warm pad", pitches?: number[],
@@ -1865,7 +1846,11 @@ function useLoopTransport(
   durationMs: number,
   stopAudio: () => void,
   unlockAudio: () => Promise<boolean>,
+  clickOptions?: {enabled:boolean;beatSeconds:number;meter:string},
 ) {
+  const clickEngine=useAudioEngine();
+  const clickRef=useRef(clickOptions);clickRef.current=clickOptions;
+  const clickTick=useRef<(()=>void)|null>(null);
   const [mode, setMode] = useState<"stopped" | "once" | "loop">("stopped");
   const modeRef = useRef<"stopped" | "once" | "loop">("stopped");
   const timer = useRef<number | null>(null);
@@ -1884,9 +1869,30 @@ function useLoopTransport(
     timer.current = null;
     if(visualTimer.current)clearInterval(visualTimer.current);
     visualTimer.current=null;
+    clickTick.current=null;clickEngine.stopAll();
     if(ownedPlayhead)publishPlayhead(null);
     stopAudio();
-  }, [stopAudio]);
+  }, [stopAudio,clickEngine]);
+  const beginCycle=useCallback(()=>{
+    const origin=sharedAudioGraph?.context.currentTime??0;
+    const cursor=new QuarterClickScheduler(clickRef.current?.enabled??false);
+    clickEngine.stopAll();
+    const tick=()=>{
+      const now=sharedAudioGraph?.context.currentTime??origin;
+      const options=clickRef.current;
+      if(options)for(const beat of cursor.collect(options.enabled,now-origin,options.beatSeconds,durationRef.current/1000)){
+        const accent=beat%(Number(options.meter.split("/")[0])||4)===0;
+        clickEngine.tone(accent?88:80,Math.max(0,origin+beat*options.beatSeconds-clickEngine.get().currentTime),.04,accent?.11:.055,"click");
+      }
+    };
+    clickTick.current=tick;tick();playRef.current();
+    if(visualTimer.current)clearInterval(visualTimer.current);
+    visualTimer.current=setInterval(()=>{tick();publishPlayhead(Math.max(0,(sharedAudioGraph?.context.currentTime??origin)-origin));},25);
+  },[clickEngine]);
+  useEffect(()=>{
+    if(!clickOptions?.enabled)clickEngine.stopAll();
+    clickTick.current?.();
+  },[clickOptions?.enabled,clickEngine]);
   const stop = useCallback(() => {
     clear();
     modeRef.current = "stopped";
@@ -1908,10 +1914,7 @@ function useLoopTransport(
       modeRef.current = loop ? "loop" : "once";
       setMode(modeRef.current);
       const run = () => {
-        const origin=sharedAudioGraph?.context.currentTime??0;
-        playRef.current();
-        if(visualTimer.current)clearInterval(visualTimer.current);
-        visualTimer.current=setInterval(()=>publishPlayhead(Math.max(0,(sharedAudioGraph?.context.currentTime??origin)-origin)),25);
+        beginCycle();
         timer.current = window.setTimeout(
           () => {if(loop)run();else {clear();modeRef.current="stopped";setMode("stopped");}},
           Math.max(120, durationRef.current),
@@ -1919,7 +1922,7 @@ function useLoopTransport(
       };
       run();
     },
-    [clear, unlockAudio],
+    [clear, unlockAudio,beginCycle],
   );
   const refresh = useCallback(async () => {
     if(modeRef.current==="stopped")return;
@@ -1931,14 +1934,11 @@ function useLoopTransport(
     modeRef.current=activeMode;
     const loop=activeMode==="loop";
     const run=()=>{
-      const origin=sharedAudioGraph?.context.currentTime??0;
-      playRef.current();
-      if(visualTimer.current)clearInterval(visualTimer.current);
-      visualTimer.current=setInterval(()=>publishPlayhead(Math.max(0,(sharedAudioGraph?.context.currentTime??origin)-origin)),25);
+      beginCycle();
       timer.current=window.setTimeout(()=>{if(loop)run();else {clear();modeRef.current="stopped";setMode("stopped");}},Math.max(120,durationRef.current));
     };
     run();
-  },[clear,unlockAudio]);
+  },[clear,unlockAudio,beginCycle]);
   useEffect(() => { window.addEventListener("inspitivity-context-play",stop); return () => { window.removeEventListener("inspitivity-context-play",stop); clear(); }; }, [clear,stop]);
   return { mode, start, stop, refresh };
 }
@@ -3541,6 +3541,8 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
   previewOnly?: boolean;
 }) {
   const engine = useAudioEngine();
+  const clickEngine=useAudioEngine();
+  const clickTick=useRef<(()=>void)|null>(null);
   const [playing, setPlaying] = useState(false);
   const [paused,setPaused]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -3580,10 +3582,15 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
   const stop = useCallback(() => {
     generation.current++;
     if (timer.current) clearInterval(timer.current);
-    timer.current=null; engine.stopAll(); setPlaying(false); setProgress(0);
+    timer.current=null; engine.stopAll();clickEngine.stopAll();clickTick.current=null; setPlaying(false); setProgress(0);
     pausedRef.current=false;setPaused(false);publishPlayhead(null);
     setPosition("Ready");window.dispatchEvent(new CustomEvent("inspitivity-song-position",{detail:null}));
-  }, [engine]);
+  }, [engine,clickEngine]);
+  const toggleClick=(enabled:boolean)=>{
+    latest.current.click=enabled;setClick(enabled);
+    if(!enabled)clickEngine.stopAll();
+    clickTick.current?.();
+  };
   useEffect(() => {
     window.addEventListener("inspitivity-solo-preview",stop);
     return () => { window.removeEventListener("inspitivity-solo-preview",stop); stop(); };
@@ -3608,6 +3615,18 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
       const beatSeconds=60/project.bpm,countBeats=countIn?meterBeats(selectedSection?.meterMap?.[0]??project.meter):0;
       const countOrigin=engine.get().currentTime+.08;
       let cyclePlan=latest.current.plan, origin=countOrigin+countBeats*beatSeconds, index=0,clickIndex=0;
+      let clickCursor=new QuarterClickScheduler(latest.current.click);
+      const scheduleMetronome=()=>{
+        const now=engine.get().currentTime;
+        if(pausedRef.current){clickCursor.collect(false,now-origin,beatSeconds,cyclePlan.seconds);return;}
+        for(const beat of clickCursor.collect(latest.current.click,now-origin,beatSeconds,cyclePlan.seconds)){
+          const at=beat*beatSeconds;
+          const marker=cyclePlan.markers.findLast(marker=>marker.seconds<=at);
+          const accent=marker?Math.abs(at-marker.seconds)<.001:false;
+          clickEngine.tone(accent?88:80,Math.max(0,origin+at-clickEngine.get().currentTime),.04,accent?.09:.045,"click");
+        }
+      };
+      clickTick.current=scheduleMetronome;
       let visualPlan=cyclePlan,visualOrigin=origin;
       const schedule = () => {
         if(pausedRef.current)return;
@@ -3616,23 +3635,20 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
           if(!latest.current.loop){stop();return;}
           origin += Math.max(1,Math.floor((now-origin)/Math.max(.1,cyclePlan.seconds)))*cyclePlan.seconds;
           cyclePlan=latest.current.plan; index=0;clickIndex=countBeats;
+          clickCursor=new QuarterClickScheduler(latest.current.click);
         }
         while(clickIndex<countBeats&&countOrigin+clickIndex*beatSeconds<=now+.2){
           const at=countOrigin+clickIndex*beatSeconds;const accent=clickIndex++===0;
           if(at>=now-.02)engine.tone(accent?88:80,Math.max(0,at-now),.04,accent?.09:.045,"click");
         }
-        while(clickIndex>=countBeats&&origin+(clickIndex-countBeats)*beatSeconds<origin+cyclePlan.seconds&&origin+(clickIndex-countBeats)*beatSeconds<=now+.2){
-          const at=(clickIndex++-countBeats)*beatSeconds;
-          const marker=cyclePlan.markers.findLast(marker=>marker.seconds<=at);
-          const accent=marker?Math.abs(at-marker.seconds)<.001:false;
-          if(latest.current.click&&origin+at>=now-.02)engine.tone(accent?88:80,Math.max(0,origin+at-now),.04,accent?.09:.045,"click");
-        }
+        scheduleMetronome();
         let guard=0;
         while (guard++ < 5000) {
           if (index >= cyclePlan.events.length) {
             if(!latest.current.loop)break;
             if (origin+cyclePlan.seconds > now+.2 || cyclePlan.seconds <= 0) break;
             origin+=cyclePlan.seconds; cyclePlan=latest.current.plan; index=0;clickIndex=countBeats;
+            clickCursor=new QuarterClickScheduler(latest.current.click);
             if (!cyclePlan.events.length) break;
           }
           const event=cyclePlan.events[index];
@@ -3707,7 +3723,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
       <span className="transport-time" aria-label={`Playback time ${formatTime(elapsedSeconds)} of ${formatTime(plan.seconds)}`}>{formatTime(elapsedSeconds)} / {formatTime(plan.seconds)}</span>
     </div>
     <progress aria-label="Playback position" max={1} value={progress} />
-    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="transport-preferences"><summary aria-label="Playback options">•••</summary><div><b>{busy?"Preparing audio…":position}</b>{focusedLayer&&<label><input type="checkbox" checked={soloFocusedPart} onChange={e=>{stop();setSoloFocusedPart(e.target.checked);}}/> Solo {LAYER_LABELS.find(([layer])=>layer===focusedLayer)?.[1]}</label>}<label><input type="checkbox" checked={countIn} onChange={e=>setCountIn(e.target.checked)}/> Count-in</label><label><input type="checkbox" checked={click} onChange={e=>setClick(e.target.checked)}/> Metronome</label>{!previewOnly&&<><details className="mobile-transport-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details><button onClick={()=>{stop();go("metronome");}}>Open metronome</button><button onClick={()=>{stop();updateProject(p=>({...p,sections:p.sections.map(s=>({...s,mix:automaticSectionMix(s,p)}))}));window.dispatchEvent(new CustomEvent("inspitivity-notice",{detail:"Track levels auto-balanced across the song"}));}}>Auto balance all tracks</button></>}</div></details>
+    <details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="transport-preferences"><summary aria-label="Playback options">•••</summary><div><b>{busy?"Preparing audio…":position}</b>{focusedLayer&&<label><input type="checkbox" checked={soloFocusedPart} onChange={e=>{stop();setSoloFocusedPart(e.target.checked);}}/> Solo {LAYER_LABELS.find(([layer])=>layer===focusedLayer)?.[1]}</label>}<label><input type="checkbox" checked={countIn} onChange={e=>setCountIn(e.target.checked)}/> Count-in</label><label><input type="checkbox" checked={click} onChange={e=>toggleClick(e.target.checked)}/> Metronome</label>{!previewOnly&&<><details className="mobile-transport-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details><button onClick={()=>{stop();go("metronome");}}>Open metronome</button><button onClick={()=>{stop();updateProject(p=>({...p,sections:p.sections.map(s=>({...s,mix:automaticSectionMix(s,p)}))}));window.dispatchEvent(new CustomEvent("inspitivity-notice",{detail:"Track levels auto-balanced across the song"}));}}>Auto balance all tracks</button></>}</div></details>
     {!previewOnly&&<details name="transport-panel" onKeyDown={e=>{if(e.key==="Escape")e.currentTarget.open=false;}} className="section-mixer"><summary>Mixer</summary><div className="mixer-grid">{mixerChannels}</div></details>}
     {(busy||message)&&<p role="status">{busy?"Preparing audio…":message}</p>}
   </section>;
@@ -3916,10 +3932,9 @@ function ChordExplorer({back}:{back:()=>void}) {
   const seconds=beatDurationSeconds(bpm);
   const play=useCallback(()=>{
     chordNoteEvents(draft.chords).forEach(note=>engine.tone(note.pitch,note.start*seconds,note.duration*seconds,.045*note.velocity,voice));
-    if(click) scheduleClickTrack(engine,16,seconds,"4/4");
   },[draft,seconds,voice,engine,click]);
   const unlock=useCallback(()=>engine.unlock(undefined,voice==="acoustic guitar",voice==="distorted guitar"),[engine,voice]);
-  const transport=useLoopTransport(play,progressionLoopDurationMs(16,bpm),engine.stopAll,unlock);
+  const transport=useLoopTransport(play,progressionLoopDurationMs(16,bpm),engine.stopAll,unlock,{enabled:click,beatSeconds:seconds,meter:"4/4"});
   const auditionToken=useRef(0);
   const stop=()=>{auditionToken.current++;transport.stop();engine.stopAll();};
   useEffect(()=>()=>{auditionToken.current++;engine.stopAll();},[engine]);
@@ -3980,7 +3995,7 @@ function ChordExplorer({back}:{back:()=>void}) {
       <section className="result-panel" aria-label="Explorer result">
         <div className="result-heading"><div><p className="eyebrow">{draft.feel} · variation {draft.arcIndex+1}</p><h2>{formatProjectKey(draft.root,draft.mode)}</h2></div></div>
         <p className="explorer-hint">{draft.voicing} voicing · {CHORD_RHYTHM_LABELS[draft.rhythm]} · 4 bars</p>
-        <SoloPreview transport={transport} click={click} toggleClick={()=>{stop();setClick(!click);}}/>
+        <SoloPreview transport={transport} click={click} toggleClick={()=>setClick(value=>!value)}/>
         <p className="explorer-status" role="status" aria-live="polite">{notice}</p>
         <div className="chord-overview" aria-label="Generated chord progression">{draft.chords.map((chord,index)=><button key={chord.id} data-playing={sounding===index} onClick={()=>void audition(chord)} aria-label={`Play chord ${index+1}: ${chord.name}`}><span>{index+1}</span><b data-no-translate>{chord.name}</b><small>{chordRole(chord.name,draft.root,draft.mode)}</small><span className="explorer-pitches" data-no-translate>{chord.pitches.map(pitch=><em key={pitch}>{midiNoteName(pitch)}</em>)}</span></button>)}</div>
         <div className="explorer-actions"><button className="primary-button" onClick={()=>generate(draft.feel)}>Another variation</button><button className="secondary-button" disabled={!previous} onClick={()=>{if(previous){ai.invalidate();request.current=null;stop();setDraft(previous);setPrevious(draft);setNotice("Previous idea restored.");}}}>Previous idea</button></div>
@@ -4111,8 +4126,6 @@ function ChordTool({
   const soundingChord=chordPosition===null?-1:activeChordIndex(chords.map(c=>c.beats),chordPosition);
   const play = useCallback(() => {
     chordNoteEvents(chords).forEach(note => engine.tone(note.pitch,note.start*beatSeconds,note.duration*beatSeconds,.045*note.velocity,voice));
-    if (metronomeEnabled)
-      scheduleClickTrack(engine, totalBeats, beatSeconds, project.meter);
   }, [chords, totalBeats, beatSeconds, engine, metronomeEnabled, project.meter, voice]);
   const unlockVoice=useCallback(()=>engine.unlock(undefined,voice==="acoustic guitar",voice==="distorted guitar"),[engine,voice]);
   const transport = useLoopTransport(
@@ -4120,6 +4133,7 @@ function ChordTool({
     progressionLoopDurationMs(totalBeats, project.bpm),
     engine.stopAll,
     unlockVoice,
+    {enabled:metronomeEnabled,beatSeconds,meter:project.meter},
   );
   const auditionTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
   const auditionGeneration=useRef(0);
@@ -4541,18 +4555,6 @@ function MelodyTool({
         voice,
       ),
     );
-    if (metronomeEnabled)
-      scheduleClickTrack(
-        engine,
-        Math.max(
-          1,
-          Math.ceil(
-            Math.max(...melody.map((note) => note.start + note.duration)),
-          ),
-        ),
-        beatSeconds,
-        project.meter,
-      );
   }, [melody, beatSeconds, engine, metronomeEnabled, project.meter, voice]);
   const unlockVoice=useCallback(()=>engine.unlock(undefined,voice==="acoustic guitar",voice==="distorted guitar"),[engine,voice]);
   const transport = useLoopTransport(
@@ -4560,6 +4562,7 @@ function MelodyTool({
     melodyLoopDurationMs(melody, bpm),
     engine.stopAll,
     unlockVoice,
+    {enabled:metronomeEnabled,beatSeconds,meter:project.meter},
   );
   useEffect(()=>{void transport.refresh();},[voice,transport.refresh]);
   const melodyBeats = Math.max(
@@ -4973,9 +4976,8 @@ function BassTool({
   const engine = useAudioEngine();
   const play = useCallback(() => {
     bass.forEach((event) => engine.tone(event.pitch, event.start * beatSeconds, event.duration * beatSeconds, event.accent ? .065 : .05, voice));
-    if (metronomeEnabled) scheduleClickTrack(engine, Math.ceil(length), beatSeconds, project.meter);
   }, [bass, beatSeconds, engine, length, metronomeEnabled, project.meter, voice]);
-  const transport = useLoopTransport(play, length * beatSeconds * 1000, engine.stopAll, engine.unlock);
+  const transport = useLoopTransport(play, length * beatSeconds * 1000, engine.stopAll, engine.unlock,{enabled:metronomeEnabled,beatSeconds,meter:project.meter});
   useEffect(()=>{void transport.refresh();},[voice,transport.refresh]);
   useDraftPreview({ type:"bass", data:bass.map(encodeBassEvent), voice });
   const regenerate = () => { transport.stop(); setSavedBass(null); setSeed((value) => value + 1); announceGenerated("Bass line"); };
@@ -5104,8 +5106,6 @@ function RiffTool({
   const beatSeconds = beatDurationSeconds(project.bpm);
   const play = useCallback(() => {
     playRiff(engine, riff, 0, beatSeconds, voice);
-    if (metronomeEnabled)
-      scheduleClickTrack(engine, beats, beatSeconds, project.meter);
   }, [engine, riff, beatSeconds, metronomeEnabled, beats, project.meter, voice]);
   const unlockVoice=useCallback(()=>engine.unlock(undefined,voice==="acoustic guitar",voice==="distorted guitar"),[engine,voice]);
   const transport = useLoopTransport(
@@ -5113,6 +5113,7 @@ function RiffTool({
     progressionLoopDurationMs(beats, project.bpm),
     engine.stopAll,
     unlockVoice,
+    {enabled:metronomeEnabled,beatSeconds,meter:project.meter},
   );
   useEffect(()=>{void transport.refresh();},[voice,transport.refresh]);
   useDraftPreview({ type: "riff", data: riff.map(n => `${n.pitch}|${n.start}|${n.duration}|${n.accent ? 1 : 0}|${n.muted ? 1 : 0}`), voice });
@@ -5361,8 +5362,6 @@ function DrumTool({
   const beatSeconds = beatDurationSeconds(project.bpm);
   const play = useCallback(() => {
     playDrumLoop(engine, loop, 0, 1, phraseBeats, beatSeconds, voice);
-    if (metronomeEnabled)
-      scheduleClickTrack(engine, phraseBeats, beatSeconds, drumMeter);
   }, [engine, loop, phraseBeats, beatSeconds, voice, metronomeEnabled, drumMeter]);
   const unlockDrums=useCallback(async()=>{
     setSampleStatus(voice==="current"?"":"Preparing acoustic samples…");
@@ -5375,6 +5374,7 @@ function DrumTool({
     progressionLoopDurationMs(phraseBeats, project.bpm),
     engine.stopAll,
     unlockDrums,
+    {enabled:metronomeEnabled,beatSeconds,meter:drumMeter},
   );
   useEffect(()=>{void transport.refresh();},[voice,transport.refresh]);
   const kitPreviewGeneration=useRef(0);
