@@ -2730,7 +2730,7 @@ function ToolButton({
   onClick: () => void;
 }) {
   return (
-    <button onClick={onClick}>
+    <button className={`tool-choice ${tone}`} onClick={onClick}>
       <span className={`tool-icon ${tone}`}>{icon}</span>
       <div>
         <b>{title}</b>
@@ -3352,7 +3352,7 @@ function ProjectView({
               {([...SECTION_ASSETS,...(section.ideas.some(i=>i.type==="audio") ? [["audio","Recording","●"] as const] : [])]).map(([type,label,icon])=>{
                 const assets=section.ideas.filter(i=>i.type===type),idea=assets[0];
                 const playable=!!idea;
-                return <div key={type} className={`asset-tile ${idea ? "is-created" : "is-empty"}`}>
+                return <div key={type} data-tool={type} className={`asset-tile ${idea ? "is-created" : "is-empty"}`}>
                   <button className="asset-open" aria-label={`${idea ? "Edit" : "Create"} ${label} in ${section.name}`} onClick={()=>idea ? openIdea(section.id,idea) : type!=="audio" && openSectionTool(section.id,type)}>
                     <span aria-hidden="true">{icon}</span><span>{label}<small>{idea ? partPreviewLabel(idea) : `+ Add ${label.toLowerCase()}`}</small></span>
                   </button>
@@ -6191,28 +6191,28 @@ function CreateModal({
             onClick={() => choose("record")}
           />
           <ToolButton
-            tone="coral"
+            tone="amber"
             icon="●"
             title="Drum loop"
             copy="Build a pocket"
             onClick={() => choose("drums")}
           />
          <ToolButton
-            tone="blue"
+            tone="violet"
             icon="♯"
             title="New progression"
             copy="Find the harmony"
             onClick={() => choose("chords")}
           />
           <ToolButton
-            tone="violet"
+            tone="blue"
             icon="♭"
             title="Bass line"
             copy="Connect harmony and drums"
             onClick={() => choose("bass")}
           />
           <ToolButton
-            tone="violet"
+            tone="coral"
             icon="♥"
             title="New melody"
             copy="Shape a motif"

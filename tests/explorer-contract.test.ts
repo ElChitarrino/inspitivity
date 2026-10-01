@@ -30,3 +30,18 @@ test("worker build is isolated from DOM transforms and shipped by production bui
   assert.match(pkg.scripts.build,/build-theme-worker/);
   assert.match(pkg.scripts.predev,/build-theme-worker/);
 });
+
+test("sidebar visual order follows DOM order at every breakpoint",async()=>{
+  const source=await readFile("app/InspitivityApp.tsx","utf8");
+  const nav=source.slice(source.indexOf("function BottomNav("),source.indexOf("type SharedAudioGraph"));
+  const labels=["Studio","Projects","Chord explorer","Metronome"];
+  const positions=labels.map(label=>nav.indexOf(`"${label}"`));
+  assert.ok(positions.every((position,index)=>position>=0 && (!index || position>positions[index-1])));
+  for(const file of ["globals.css","studio.css","theme.css","workspace.css","studio-design.css"]){
+    const css=(await readFile(`app/${file}`,"utf8")).replace(/\/\*[\s\S]*?\*\//g,"");
+    for(const [,selector,declarations] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)){
+      if(/\.nav-(home|projects|explorer|metronome|settings)\b/.test(selector))
+        assert.doesNotMatch(declarations,/(?:^|;)\s*order\s*:/,`${file}: ${selector}`);
+    }
+  }
+});

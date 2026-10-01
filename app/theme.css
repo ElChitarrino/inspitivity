@@ -135,7 +135,7 @@ html[data-theme="crimson"] .piano-note{background:var(--mint)}
   .studio-workspace{width:100%;margin-left:0;padding:14px var(--studio-gutter) calc(104px + env(safe-area-inset-bottom))}
   .studio-nav{height:auto;padding:7px 8px calc(7px + env(safe-area-inset-bottom))}
   .studio-destinations{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;overflow:visible}
-  .nav-group{display:contents}.nav-group-label,.nav-mobile-hidden{display:none!important}.studio-mobile-create{display:flex!important;order:3}.nav-home{order:1}.nav-projects{order:2}.nav-metronome{order:4}.nav-settings{order:5}
+  .nav-group{display:contents}.nav-group-label,.nav-mobile-hidden{display:none!important}.studio-mobile-create{display:flex!important}
   .studio-destinations button{min-width:0;min-height:54px;display:flex;justify-content:center;gap:3px;padding:6px 2px;border-radius:9px}.studio-destinations button span{display:block;font-size:11px}.studio-destinations button b{width:auto;font-size:18px}.studio-mobile-create b{display:grid;width:30px;height:30px;place-items:center;border-radius:9px;background:var(--mint);color:var(--on-accent);font-size:20px}.studio-mobile-create[aria-current]{background:transparent}.studio-mobile-create[aria-current] span{color:var(--ink)}
   .project-screen .topbar,.inside-project .topbar{margin-inline:calc(var(--studio-gutter) * -1);padding:10px var(--studio-gutter)}
   .topbar{min-height:64px}.topbar h1,.center-title h1{font-size:26px}.center-title p{font-size:12px;margin-top:5px}.back-button{width:42px;height:42px}
