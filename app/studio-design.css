@@ -10,16 +10,19 @@
 .app-shell:is(.explorer-screen,.chords-screen,.drums-screen,.metronome-screen,.bass-screen,.melody-screen,.riff-screen) :is(.result-heading,.control-panel) .eyebrow{color:var(--tool-color)}
 .studio-destinations .nav-explorer{--nav-color:var(--violet)}
 .studio-destinations .nav-metronome{--nav-color:var(--amber)}
-.studio-destinations :is(.nav-explorer,.nav-metronome){border-color:color-mix(in srgb,var(--nav-color) 35%,var(--line));background:color-mix(in srgb,var(--nav-color) 8%,var(--surface))}
-.studio-destinations :is(.nav-explorer,.nav-metronome)>b{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:8px;border:1px solid color-mix(in srgb,var(--nav-color) 55%,var(--line));background:color-mix(in srgb,var(--nav-color) 18%,var(--surface));color:var(--nav-color)}
-html[data-theme] .studio-destinations :is(.nav-explorer,.nav-metronome)[aria-current]{border-left:3px solid var(--nav-color);background:color-mix(in srgb,var(--nav-color) 18%,var(--surface));color:var(--ink)}
-.studio-destinations :is(.nav-explorer,.nav-metronome):hover{background:color-mix(in srgb,var(--nav-color) 14%,var(--surface))}
+.studio-destinations .nav-projects{--nav-color:var(--green)}
+.studio-destinations :is(.nav-projects,.nav-explorer,.nav-metronome){border-color:color-mix(in srgb,var(--nav-color) 35%,var(--line));background:color-mix(in srgb,var(--nav-color) 8%,var(--surface))}
+.studio-destinations :is(.nav-projects,.nav-explorer,.nav-metronome)>b{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:8px;border:1px solid color-mix(in srgb,var(--nav-color) 55%,var(--line));background:color-mix(in srgb,var(--nav-color) 18%,var(--surface));color:var(--nav-color)}
+html[data-theme] .studio-destinations :is(.nav-projects,.nav-explorer,.nav-metronome)[aria-current]{border-left:3px solid var(--nav-color);background:color-mix(in srgb,var(--nav-color) 18%,var(--surface));color:var(--ink)}
+.studio-destinations :is(.nav-projects,.nav-explorer,.nav-metronome):hover{background:color-mix(in srgb,var(--nav-color) 14%,var(--surface))}
 .tool-choice.violet,[data-tool="chords"]{--tool-color:var(--violet)}
 .tool-choice.amber,[data-tool="drums"],[data-tool="riff"]{--tool-color:var(--amber)}
 .tool-choice.blue,[data-tool="bass"]{--tool-color:var(--blue)}
 .tool-choice.coral,[data-tool="melody"],[data-tool="audio"]{--tool-color:var(--coral)}
 .create-choices .tool-choice,.section-assets .asset-tile{border-left:4px solid var(--tool-color);background:linear-gradient(100deg,color-mix(in srgb,var(--tool-color) 10%,var(--surface)),var(--surface) 85%)}
 .create-choices .tool-choice .tool-icon,.section-assets .asset-open>span:first-child{border:1px solid color-mix(in srgb,var(--tool-color) 50%,var(--line));background:color-mix(in srgb,var(--tool-color) 18%,var(--surface));color:var(--tool-color);border-radius:9px}
+.create-choices .tool-choice{width:100%;min-height:78px}
+.create-choices .tool-choice .tool-icon{flex:0 0 39px;width:39px;height:39px}
 .explorer-harmony-controls{display:grid;grid-template-columns:1fr 1.6fr .8fr;gap:10px;margin-top:20px}
 .explorer-harmony-controls .select-control{margin:0;min-width:0}
 .explorer-harmony-controls input{width:100%;min-width:0;height:44px;padding:8px 12px;background:var(--black);color:var(--ink);border:1px solid var(--control-line);border-radius:9px}
@@ -51,8 +54,8 @@ html[data-theme] .studio-destinations :is(.nav-explorer,.nav-metronome)[aria-cur
 .launch-chord-path{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;gap:7px;margin:14px 0 22px}
 .launch-chord-path i{font:650 clamp(13px,1.5vw,21px) var(--font-geist-mono),monospace;font-style:normal;color:var(--violet);padding:15px 4px;border:1px solid color-mix(in srgb,var(--violet) 42%,var(--line));border-radius:10px;text-align:center;background:var(--surface)}
 .studio-utility-actions{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
-.studio-utility-actions button{display:grid;grid-template-columns:36px 1fr;gap:3px 12px;align-items:center;text-align:left;border:1px solid var(--line);border-radius:12px;padding:15px 18px;background:var(--surface);font-size:14px}
-.studio-utility-actions button>span{grid-row:1/3;color:var(--mint);font-size:24px;text-align:center}.studio-utility-actions svg{display:block;margin:auto}
+.studio-utility-actions button{display:grid;grid-template-columns:36px 1fr;gap:3px 12px;align-items:center;text-align:left;border:1px solid var(--line);border-radius:12px;padding:15px 18px;background:var(--surface);font-size:14px;min-height:72px;width:100%}
+.studio-utility-actions button>span{grid-row:1/3;display:grid;place-items:center;width:36px;height:36px;color:var(--mint);font-size:24px;text-align:center}.studio-utility-actions svg{display:block;margin:auto}
 .studio-utility-actions small{color:var(--muted);font-size:13px;line-height:1.4}
 .home-screen .recent-projects{background:none;border:0;padding:0;box-shadow:none;margin-top:32px}.home-screen .recent-projects .eyebrow{display:none}
 .home-screen .recent-projects .project-card{background:var(--surface);border-radius:12px;min-height:125px}

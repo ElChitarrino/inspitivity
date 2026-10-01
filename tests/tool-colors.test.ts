@@ -13,10 +13,10 @@ test("tool identity accents and normal text retain contrast in both themes",asyn
   const sections=css.split('html[data-theme="crimson"]');
   const tokens=(text:string)=>Object.fromEntries([...text.matchAll(/--([\w-]+):\s*(#[0-9a-f]{6});/gi)].map(match=>[match[1],match[2]]));
   const electric=tokens(sections[0]),crimson={...electric,...tokens(sections[1])};
-  for(const palette of [electric,crimson])for(const ink of ["ink","muted","violet","amber","blue","coral"])for(const surface of ["black","surface","surface2"]){
+  for(const palette of [electric,crimson])for(const ink of ["ink","muted","violet","amber","blue","coral","green"])for(const surface of ["black","surface","surface2"]){
     assert.ok(ratio(palette[ink],palette[surface])>=4.5,`${ink} on ${surface}`);
   }
-  for(const palette of [electric,crimson])for(const accent of ["violet","amber","blue","coral"]){
+  for(const palette of [electric,crimson])for(const accent of ["violet","amber","blue","coral","green"]){
     assert.ok(ratio(palette[accent],mix(palette[accent],palette.surface,.18))>=4.5,`${accent} on tinted icon`);
     for(const ink of ["ink","muted"])assert.ok(ratio(palette[ink],mix(palette[accent],palette.surface,.18))>=4.5,`${ink} on tinted panel`);
   }
