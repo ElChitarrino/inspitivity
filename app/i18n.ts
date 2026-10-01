@@ -12,7 +12,6 @@ const german: Record<string, string> = {
   "Local AI is disabled on phones and tablets to avoid memory crashes. Instant chord generation works without a model.":"Lokale KI ist auf Smartphones und Tablets deaktiviert, um Speicherabstürze zu vermeiden. Die direkte Akkorderzeugung funktioniert ohne Modell.",
   "Local AI is disabled on devices reporting less than 8 GB of memory. Instant chord generation works without a model.":"Lokale KI ist auf Geräten deaktiviert, die weniger als 8 GB Speicher melden. Die direkte Akkorderzeugung funktioniert ohne Modell.",
   "Experimental desktop AI · about 520 MB download · uses additional memory while running":"Experimentelle Desktop-KI · etwa 520 MB Download · benötigt zusätzlichen Speicher beim Ausführen",
-  "Independent harmony playground · no project needed":"Unabhängiger Harmonie-Spielplatz · kein Projekt nötig",
   "Describe a scene or choose a feeling. Chords update as you type.":"Beschreibe eine Szene oder wähle ein Gefühl. Akkorde werden während der Eingabe aktualisiert.",
   "Auto chooses a key and mode for the feeling. Select either to keep it fixed.":"Auto wählt Grundton und Modus passend zum Gefühl. Wähle einen Wert, um ihn beizubehalten.",
   "Choose a theme or describe a feeling to begin.":"Wähle ein Thema oder beschreibe ein Gefühl.",

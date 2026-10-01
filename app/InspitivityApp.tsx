@@ -3968,7 +3968,7 @@ function ChordExplorer({back}:{back:()=>void}) {
     chordNoteEvents([chord]).forEach(note=>engine.tone(note.pitch,note.start*seconds,note.duration*seconds,.045*note.velocity,voice));
   };
   return <>
-    <Topbar title="Chord explorer" subtitle="Independent harmony playground · no project needed" onBack={back}/>
+    <Topbar title="Chord explorer" onBack={back}/>
     <div className="tool-layout explorer-workspace is-generate independent-explorer">
       <div className="explorer-composer">
         <section className="theme-explorer" aria-label="Chord and theme explorer">
