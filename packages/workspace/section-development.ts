@@ -116,6 +116,11 @@ export function developSection(project:Project,source:SongSection,role:SectionRo
   const sourceLead=source.ideas.find(i=>i.type==='melody');
   const ideas=result.ideas.map(idea=>{
     let data=idea.data;
+    if(idea.type==='chords'&&data?.length&&(role==='verse'||role==='chorus')){
+      const chords=data.map(decodeRhythmicChord);
+      const attacks=generateChordRhythm(chords,{seed,beatsPerBar:bars(project,source)[0],style:role==='verse'?'sustain':'eighths'});
+      data=chords.map((c,i)=>`${c.name}|${c.beats}|${c.pitches?.join(',')??''}|${encodeChordAttacks(attacks[i])}`);
+    }
     if(idea.type==='melody'&&data?.length&&sourceLead?.data?.length&&role!=='bridge'){
       const opening=sourceLead.data.filter(d=>Number(d.split('|')[1])<(bars(project,source)[0]??4));
       data=[...opening,...data.filter(d=>Number(d.split('|')[1])>=(bars(project,source)[0]??4))];

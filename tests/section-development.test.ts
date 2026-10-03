@@ -49,11 +49,14 @@ test('verse and chorus retain the chord sequence and opening motif but produce c
  let id=0;const newId=()=>`new-${id++}`;
  const verse=developSection(project,source,'verse',71,newId),chorus=developSection(project,source,'chorus',71,newId);
  for(const next of [verse,chorus]){
-  assert.deepEqual(next.ideas.find(i=>i.type==='chords')!.data,source.ideas.find(i=>i.type==='chords')!.data);
+  const chordSignature=(s:SongSection)=>s.ideas.find(i=>i.type==='chords')!.data!.map(d=>d.split('|').slice(0,3));
+  assert.deepEqual(chordSignature(next),chordSignature(source));
   assert.deepEqual(next.ideas.find(i=>i.type==='melody')!.data!.filter(d=>Number(d.split('|')[1])<4),source.ideas.find(i=>i.type==='melody')!.data!.filter(d=>Number(d.split('|')[1])<4));
   assert.equal(next.bars,source.bars);assert.notEqual(next.id,source.id);assert.ok(validProjects([{...project,sections:[next]}]));
  }
  assert.equal(verse.energy,'mellow');assert.equal(chorus.energy,'powerful');assert.notDeepEqual(verse.ideas.find(i=>i.type==='drums')!.data,chorus.ideas.find(i=>i.type==='drums')!.data);
+ const attacks=(s:SongSection)=>s.ideas.find(i=>i.type==='chords')!.data!.flatMap(d=>decodeRhythmicChord(d).attacks??[]);
+ assert.ok(attacks(chorus).length>attacks(verse).length*4);
 });
 test('bridge keeps a related harmonic vocabulary and refits strong pitched notes to its final harmony',()=>{
  let id=0;const bridge=developSection(project,source,'bridge',19,()=>`bridge-${id++}`);
