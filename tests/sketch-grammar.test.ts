@@ -29,7 +29,7 @@ test("a rock backbeat stays predictable while the seeded pattern changes",()=>{
     assert.deepEqual(hits.filter(hit=>hit.instrument==="snare"&&hit.velocity>.6).map(hit=>hit.step),[4,12,20,28,36,44,52,60]);
     assert.deepEqual(hits.filter(hit=>hit.instrument==="kick"&&hit.step%16===0).map(hit=>hit.step),[0,16,32,48]);
   }
-  assert.equal(signatures.size,2);
+  assert.ok(signatures.size>=3);
 });
 
 test("heavy harmony uses guitar-range roots, fifths and octaves, leaving thirds to other parts",()=>{

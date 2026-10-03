@@ -126,7 +126,8 @@ test("arrangement sections expose repeats, energy, copies, and variations withou
   assert.match(source, /setSectionRepeats/);
   assert.match(source, /setSectionEnergy/);
   assert.match(source, /duplicateSection\(section\.id,false\)/);
-  assert.match(source, /duplicateSection\(section\.id,true\)/);
+  assert.match(source, /setCreativeSectionId\(section\.id\)/);
+  assert.match(source, /className="section-creative-launch"/);
   assert.match(studio, /grid-template-columns:minmax\(0,1fr\) 50px 42px/);
   assert.match(theme, /\.project-actions\{bottom:12px\}/);
 });
@@ -258,7 +259,8 @@ test("easy mode creates one coordinated song draft with optional customization",
   assert.match(source, /Easy mode/);
   assert.match(source, /role="dialog" aria-modal="true" aria-labelledby="easy-mode-title"/);
   assert.match(source, /Surprise me within this feel/);
-  assert.match(source, /root=pick\(ROOTS\),mode=pick\(relatedModes\[preset\.id\]\)/);
+  assert.match(source, /emotionalModes\[musicalDirection\]/);
+  assert.match(source, /Emotional direction/);
   assert.match(source, /selectDrafts\(nextOptions,JSON\.stringify/);
   assert.match(source, /Empty project/);
   assert.match(source, /Record idea/);
@@ -315,7 +317,7 @@ test("auto balance confirms success and quick recording is centered",()=>{
   assert.match(workspace,/\.record-visual \{ position:relative;display:flex;align-items:center;justify-content:center/);
   assert.match(source,/className="sketch-intensity"/);
   assert.match(source,/hard\?"distorted guitar"/);
-  assert.match(source,/Inharmonic, short-lived partials/);
+  assert.match(source,/INSTRUMENT_CHARACTERS\[voice\]/);
 });
 
 test("backdrop and popover outside clicks dismiss only the active overlay",()=>{

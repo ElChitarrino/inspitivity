@@ -40,6 +40,8 @@ import { AudioQueue } from "../packages/sequencing/audio-queue";
 import { QuarterClickScheduler } from "../packages/sequencing/live-click";
 import { reorderSection, timelineDuration } from "../packages/workspace/arrangement-order";
 import { playbackProject } from "../packages/workspace/playback";
+import { INSTRUMENT_CHARACTERS, instrumentEnvelope, isCharacterVoice } from "../packages/sequencing/instrument-voices";
+import { samplePlaybackGain } from "../packages/sequencing/sample-levels";
 import { bassHarmonics } from "../packages/sequencing/bass-timbre";
 import { activityGain } from "../packages/workspace/mix-activity";
 import { alignPhrase } from "../packages/workspace/sketch";
@@ -88,6 +90,8 @@ import { buildSketchGroove, chooseSketchGroove, chooseSketchHarmony, heavyPowerV
 import { exportSongMidi } from "../packages/workspace/song-export";
 import { analyzeArrangement, returnSources, preferredReturnSource, type ArrangementInsight } from "../packages/workspace/arrangement";
 import { sortProjects, type Idea, type SongSection, type Project, type TrackMix, type SectionEnergy } from "../packages/workspace";
+import { MUSICAL_DIRECTIONS, chooseDirectionHarmony, type MusicalDirection } from "../packages/workspace/directions";
+import { CREATIVE_LAYERS, developSection, varySection, type SectionLocks, type SectionRole, type SectionChange } from "../packages/workspace/section-development";
 import { varyIdeaData, varyNotes } from "../packages/workspace/variation";
 import {
   generateBassPhrase,
@@ -231,6 +235,7 @@ type SketchOptions = {
   includePattern: boolean;
   extendedForm: boolean;
   intensity: "mellow" | "steady" | "hard";
+  direction?: MusicalDirection;
 };
 
 const SYNTH_VOICES: SynthVoice[] = [
@@ -704,18 +709,20 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions, seed 
     return "develop";
   };
   const themeCount=4;
-  const harmonicTheme=chooseSketchHarmony(preset.id,mode,seed);
-  const harmonicContrast=chooseSketchHarmony(preset.id,mode,seed,1);
+  const feeling=options.direction?MUSICAL_DIRECTIONS[options.direction]:undefined;
+  const baseHarmony=chooseSketchHarmony(preset.id,mode,seed);
+  const harmonicTheme=options.direction?chooseDirectionHarmony(options.direction,seed):baseHarmony;
+  const harmonicContrast=options.direction?chooseDirectionHarmony(options.direction,seed,1):chooseSketchHarmony(preset.id,mode,seed,1);
   const pocket=chooseSketchGroove(preset.id,beatsPerBar,seed);
   const themeChords=makeChordDrafts(
     root,mode,themeCount,preset.id==="neo-soul"||preset.id==="prog"?"advanced":preset.id==="rock"||preset.id==="heavy"?"simple":"medium",
     seed,beatsPerBar,0,"diatonic",preset.opening,
-    preset.id==="emotive"?"open":"mixed",preset.tension,[],harmonicTheme.degrees,
+    preset.id==="emotive"?"open":"mixed",feeling?.tension??preset.tension,[],harmonicTheme.degrees,
   );
   const themePitchClasses=themeChords.map(chord=>notePitchClass(chord.name)).filter((pitch):pitch is number=>pitch!==null);
   const coreMotif=fitMelodyToChords(shapeSketchMotif(alignPhrase(generateMelody({
-    root,mode,notes:preset.id==="emotive"?12:16,density:preset.id==="emotive"?.42:.58,
-    mood:preset.mood,seed:seed+7,shape:preset.id==="heavy"?"hook":preset.id==="emotive"?"floating":"answer",
+    root,mode,notes:feeling?Math.round(8+feeling.density*20):preset.id==="emotive"?12:16,density:feeling?.density??(preset.id==="emotive"?.42:.58),
+    mood:feeling?.mood??preset.mood,seed:seed+7,shape:preset.id==="heavy"?"hook":preset.id==="emotive"?"floating":"answer",
   }),themeCount*beatsPerBar),preset.id,beatsPerBar,seed+7),themeChords);
   const coreRiff=options.includePattern?fitMelodyToChords(alignPhrase(generateProgRiff({
     root,mode,beats:beatsPerBar*themeCount,cycle:preset.id==="heavy"?7:5,
@@ -736,7 +743,7 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions, seed 
     const finalSection = sectionIndex === form.length - 1;
     const relation=relationFor(formSection.name,sectionIndex);
     const bars=relation==="theme"||(/outro|coda|tag/i.test(formSection.name)&&finalSection)?Math.min(4,mainBars):mainBars;
-    const density=Math.max(.2,Math.min(.95,formSection.energy+(hard?.13:mellow?-.15:0)));
+    const density=Math.max(.2,Math.min(.95,formSection.energy+(hard?.13:mellow?-.15:0)+(feeling?(feeling.density-.53)*.7:0)));
     const voicing:VoicingStyle=relation==="return"?"open":relation==="contrast"?"drop 2":"mixed";
     const returnVoicings=voiceProgression(themeChords.map(chord=>chord.name),sectionSeed,voicing);
     const sourceChords=relation==="contrast"?makeChordDrafts(
@@ -744,17 +751,17 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions, seed 
       seed+101,beatsPerBar,0,"diatonic","surprise",voicing,
       preset.tension,themePitchClasses,harmonicContrast.degrees,
     ):themeChords.map((chord,index)=>({...chord,id:uid(),pitches:returnVoicings[index]}));
-    const rhythmStyle:ChordRhythm=mellow||preset.id==="emotive"?(relation==="contrast"?"sparse":"sustain")
+    const rhythmStyle:ChordRhythm=feeling?feeling.rhythm:mellow||preset.id==="emotive"?(relation==="contrast"?"sparse":"sustain")
       :preset.id==="rock"?(formSection.energy>.7?"eighths":"quarters")
       :preset.id==="funk"?"offbeat":preset.id==="neo-soul"?"syncopated"
       :hard?"driving":relation==="contrast"?"sparse":"adaptive";
-    const sectionEnergy:GrooveEnergy=mellow?"mellow":hard?(density>.6?"powerful":"balanced"):formSection.energy<.43?"mellow":formSection.energy>.72?"powerful":"balanced";
+    const sectionEnergy:GrooveEnergy=options.direction==="mellow"?"mellow":options.direction==="driving"&&!mellow?"powerful":mellow?"mellow":hard?(density>.6?"powerful":"balanced"):formSection.energy<.43?"mellow":formSection.energy>.72?"powerful":"balanced";
     const drums=buildSketchGroove(pocket,beatsPerBar,bars,relation==="return"?seed+13:sectionSeed+13,sectionEnergy,relation);
     const rhythmContext:SongSection={id:"rhythm",name:formSection.name,bars,color:formSection.color,ideas:[{id:"drum",type:"drums",name:pocket.name,detail:"",data:drums.map(hit=>`${hit.instrument}|${hit.step}|${hit.velocity}|${beatsPerBar*bars}`)}]};
     const voicedChords=preset.id==="heavy"?sourceChords.map(chord=>({...chord,pitches:heavyPowerVoicing(chord.name)})):sourceChords;
     const chords=rhythmizeChords(voicedChords,relation==="return"?seed:sectionSeed,rhythmStyle,meter,rhythmContext);
     const motifSource=relation==="contrast"
-      ?shapeSketchMotif(alignPhrase(generateMelody({root,mode,notes:Math.max(8,Math.round(12*density)),density:Math.min(.65,density),mood:preset.mood,seed:seed+107,shape:"answer"}),themeCount*beatsPerBar),preset.id,beatsPerBar,seed+107)
+      ?shapeSketchMotif(alignPhrase(generateMelody({root,mode,notes:Math.max(8,Math.round(12*density)),density:Math.min(.65,density),mood:feeling?.mood??preset.mood,seed:seed+107,shape:"answer"}),themeCount*beatsPerBar),preset.id,beatsPerBar,seed+107)
       :coreMotif;
     const melody=fitMelodyToChords(motifSource,chords).map(note=>({...note,velocity:Math.max(.48,Math.min(.82,.5+density*.35))}));
     const riffLeads=options.includePattern&&sectionIndex>0&&(hard||(!mellow&&formSection.energy>=.45))&&(relation!=="return"||preset.id==="heavy");
@@ -801,7 +808,12 @@ function buildGuidedSection(
   returnSourceId?: string,
 ): SongSection {
   const seed=freshSeed(), random=seededRandom(seed), previous=project.sections.at(-1);
-  const source=direction==="return" ? project.sections.find(section=>section.id===returnSourceId) ?? previous : previous;
+  const source=project.sections.find(section=>section.id===returnSourceId) ?? previous;
+  if(source?.ideas.some(idea=>["chords","drums","bass","melody","riff"].includes(idea.type)&&idea.data?.length)){
+    const role:SectionRole=direction==="return"?"return":direction==="contrast"?"bridge":energy==="mellow"||energy==="sparse"?"verse":"chorus";
+    const developed=developSection(project,source,role,seed,uid);
+    const section={...developed,name,energy};return {...section,mix:automaticSectionMix(section,project)};
+  }
   const {root,mode}=projectHarmony(project), beatsPerBar=meterBeats(project.meter);
   const heavy=source?.ideas.some(idea=>idea.type==="riff"||idea.voice==="distorted guitar") ?? false;
   const bars=direction==="return" && source ? source.bars : [4,8,8][Math.floor(random()*3)];
@@ -1116,7 +1128,6 @@ function useAudioEngine() {
     const noiseSamples = new Map<string, AudioBuffer>();
     const driveCurves = new Map<number, Float32Array<ArrayBuffer>>();
     let bassWave: PeriodicWave | null=null;
-    let pulseWave: PeriodicWave | null=null;
     const drumTakes=new Map<DrumInstrument,number>();
     const guitarTakes=new Map<number,number>();
     const openHats=new Set<{source:AudioBufferSourceNode;gain:GainNode;when:number}>();
@@ -1241,8 +1252,8 @@ function useAudioEngine() {
           const end=Math.min(recorded.buffer.duration/recorded.rate,Math.max(.09,muted?Math.min(duration,.22):duration)+release);
           palm.type="lowpass";palm.frequency.value=muted?2600:5600;
           volume.gain.setValueAtTime(.0001,when);
-          volume.gain.linearRampToValueAtTime(gain*2.25,when+.004);
-          volume.gain.setValueAtTime(gain*2.25,Math.max(when+.004,when+end-release));
+          volume.gain.linearRampToValueAtTime(gain*1.65*samplePlaybackGain(recorded.buffer,"guitar"),when+.004);
+          volume.gain.setValueAtTime(gain*1.65*samplePlaybackGain(recorded.buffer,"guitar"),Math.max(when+.004,when+end-release));
           volume.gain.exponentialRampToValueAtTime(.0001,when+end);
           source.connect(palm).connect(volume).connect(getGraph().dryInput);
           sources.add(source);
@@ -1260,8 +1271,8 @@ function useAudioEngine() {
           const release=Math.max(.1,Math.min(.28,duration*.25));
           const end=Math.min(recorded.buffer.duration/recorded.rate,Math.max(.16,duration)+release);
           volume.gain.setValueAtTime(.0001,when);
-          volume.gain.linearRampToValueAtTime(gain*2.4,when+.008);
-          volume.gain.setValueAtTime(gain*2.4,Math.max(when+.008,when+end-release));
+          volume.gain.linearRampToValueAtTime(gain*1.9*samplePlaybackGain(recorded.buffer,"guitar"),when+.008);
+          volume.gain.setValueAtTime(gain*1.9*samplePlaybackGain(recorded.buffer,"guitar"),Math.max(when+.008,when+end-release));
           volume.gain.exponentialRampToValueAtTime(.0001,when+end);
           source.connect(volume).connect(getGraph().dryInput);
           sources.add(source);
@@ -1415,131 +1426,63 @@ function useAudioEngine() {
         pickup.stop(when + .055);
         return;
       }
-      const volume = ctx.createGain();
-      const filter = ctx.createBiquadFilter();
-      const voiceNodes: AudioNode[] = [volume,filter];
-      const profiles = {
-        "air flute": {
-          type: "sine" as OscillatorType,
-          attack: 0.055,
-          cutoff: 3100,
-          release: 0.24,
-          detune: 0,
-        },
-        "distorted guitar": { type: "sawtooth" as OscillatorType, attack: 0.004, cutoff: 3800, release: 0.11, detune: 3 },
-        "warm pad": { type: "sawtooth" as OscillatorType, attack: 0.28, cutoff: 850, release: 0.85, detune: 11 },
-        glass: { type: "sine" as OscillatorType, attack: 0.002, cutoff: 6000, release: 0.75, detune: 0 },
-        pluck: { type: "triangle" as OscillatorType, attack: 0.002, cutoff: 4200, release: 0.08, detune: 0 },
-        "analog pulse": { type: "square" as OscillatorType, attack: 0.004, cutoff: 1850, release: 0.1, detune: 2 },
-        "deep bass": { type: "sawtooth" as OscillatorType, attack: 0.012, cutoff: 520, release: 0.2, detune: 0 },
-        "808 bass": { type: "sine" as OscillatorType, attack: 0.004, cutoff: 420, release: 0.7, detune: 0 },
-        "sub bass": { type: "sine" as OscillatorType, attack: 0.025, cutoff: 360, release: 0.34, detune: 0 },
-        click: { type: "sine" as OscillatorType, attack: 0.001, cutoff: 7000, release: 0.025, detune: 0 },
-      } as const;
-      const profile = profiles[voice] ?? profiles.pluck;
-      if (voice === "analog pulse" && !pulseWave) {
-        const width = 0.23;
-        const real = new Float32Array(33);
-        const imaginary = new Float32Array(33);
-        for (let harmonic = 1; harmonic < real.length; harmonic++) {
-          real[harmonic] = Math.sin(2 * Math.PI * harmonic * width) / (Math.PI * harmonic);
-          imaginary[harmonic] = (1 - Math.cos(2 * Math.PI * harmonic * width)) / (Math.PI * harmonic);
+      if(isCharacterVoice(voice)) {
+        const character=INSTRUMENT_CHARACTERS[voice];
+        const envelope=instrumentEnvelope(character,duration,1);
+        const frequency=440*Math.pow(2,(midi-69)/12);
+        const filter=ctx.createBiquadFilter(),volume=ctx.createGain();
+        const nodes:AudioNode[]=[filter,volume];
+        filter.type="lowpass";filter.Q.value=character.resonance;
+        const brightness=.65+Math.min(1,gain/.055)*.35;
+        const peakCutoff=Math.min(ctx.sampleRate*.45,character.cutoff*brightness);
+        filter.frequency.setValueAtTime(voice==="warm pad"?peakCutoff*.45:peakCutoff,when);
+        filter.frequency.linearRampToValueAtTime(peakCutoff,when+envelope.attack);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(200,peakCutoff*(voice==="pluck"?.18:voice==="analog pulse"?.28:.8)),when+envelope.hold);
+        const energy=Math.sqrt(character.partials.reduce((sum,p)=>sum+p.level*p.level,0));
+        const peak=gain*.95/Math.max(.7,energy);
+        volume.gain.setValueAtTime(.0001,when);
+        volume.gain.linearRampToValueAtTime(peak,when+envelope.attack);
+        volume.gain.linearRampToValueAtTime(Math.max(.0001,peak*character.sustain),when+Math.max(envelope.attack,envelope.hold*.72));
+        volume.gain.setValueAtTime(Math.max(.0001,peak*character.sustain),when+envelope.hold);
+        volume.gain.exponentialRampToValueAtTime(.0001,when+envelope.end);
+        filter.connect(volume).connect(character.room?getGraph().input:getGraph().dryInput);
+        let remaining=character.partials.length;
+        const oscillators=character.partials.map((partial,index)=>{
+          const oscillator=ctx.createOscillator(),level=ctx.createGain();nodes.push(level);
+          oscillator.type=partial.waveform;oscillator.frequency.value=frequency*partial.ratio;oscillator.detune.value=partial.detune;
+          level.gain.setValueAtTime(partial.level,when);
+          if(partial.decay)level.gain.exponentialRampToValueAtTime(.0001,when+Math.max(.02,Math.min(envelope.end,partial.decay)));
+          oscillator.connect(level);
+          if(voice==="warm pad"&&index<2){const pan=ctx.createStereoPanner();pan.pan.value=index===0?-.32:.32;nodes.push(pan);level.connect(pan).connect(filter);}else level.connect(filter);
+          sources.add(oscillator);oscillator.onended=()=>{sources.delete(oscillator);oscillator.disconnect();if(--remaining===0)nodes.forEach(n=>n.disconnect());};
+          oscillator.start(when);oscillator.stop(when+envelope.end+.01);return oscillator;
+        });
+        if(voice==="air flute"&&duration>.18){
+          const vibrato=ctx.createOscillator(),depth=ctx.createGain();vibrato.frequency.value=5.2;
+          depth.gain.setValueAtTime(0,when);depth.gain.linearRampToValueAtTime(5,when+.18);
+          vibrato.connect(depth);oscillators.forEach(o=>depth.connect(o.detune));sources.add(vibrato);
+          vibrato.onended=()=>{sources.delete(vibrato);vibrato.disconnect();depth.disconnect();};vibrato.start(when);vibrato.stop(when+envelope.end);
         }
-        pulseWave = ctx.createPeriodicWave(real, imaginary);
+        return;
       }
-      let remainingOscillators=profile.detune ? 3 : 1;
-      const oscillators = [0, ...(profile.detune ? [-profile.detune, profile.detune] : [])].map((detune) => {
-        const oscillator = ctx.createOscillator();
-        if (voice === "analog pulse") oscillator.setPeriodicWave(pulseWave!);
-        else oscillator.type = profile.type;
-        oscillator.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
-        oscillator.detune.value = detune;
-        oscillator.connect(filter);
-        sources.add(oscillator);
-        oscillator.onended = () => {
-          sources.delete(oscillator); oscillator.disconnect();
-          if (--remainingOscillators===0) voiceNodes.forEach(node=>node.disconnect());
-        };
-        return oscillator;
-      });
-      filter.type = "lowpass";
-      filter.frequency.setValueAtTime(voice==="pluck"?profile.cutoff:voice==="warm pad"?390:Math.max(220, profile.cutoff * 0.46), when);
-      filter.frequency.exponentialRampToValueAtTime(
-        profile.cutoff,
-        when + Math.max(0.02, profile.attack),
-      );
-      filter.frequency.exponentialRampToValueAtTime(
-        Math.max(180, profile.cutoff * (voice==="pluck"?.12:voice==="analog pulse"?.18:voice==="warm pad"?.42:.58)),
-        when + duration + profile.release,
-      );
-      // The driven guitar has much more perceived loudness than the clean
-      // oscillator voices, so leave it with extra headroom in every player.
-      const voiceLevel = voice === "distorted guitar" ? 0.7 : 1;
-      const scaledGain = (gain * 1.35 * voiceLevel) / Math.sqrt(oscillators.length);
-      volume.gain.setValueAtTime(0.0001, when);
-      volume.gain.linearRampToValueAtTime(scaledGain, when + profile.attack);
-      volume.gain.linearRampToValueAtTime(voice === "pluck" ? scaledGain * .12 : voice === "glass" ? scaledGain * .34 : scaledGain, Math.max(when + profile.attack, when + duration * (voice==="pluck"?.32:.7)));
-      volume.gain.exponentialRampToValueAtTime(
-        0.0001,
-        when + duration + profile.release,
-      );
-      if (voice === "distorted guitar") {
-        const drive = ctx.createWaveShaper();
-        drive.curve = driveCurve(5); drive.oversample = "2x";
-        const cabinet = ctx.createBiquadFilter();
-        cabinet.type = "lowpass"; cabinet.frequency.value = 4200; cabinet.Q.value = 0.7;
-        const rumble = ctx.createBiquadFilter(); rumble.type = "highpass"; rumble.frequency.value = 85;
-        voiceNodes.push(drive,cabinet,rumble);
-        filter.connect(drive).connect(cabinet).connect(rumble).connect(volume).connect(getGraph().input);
-      } else filter.connect(volume).connect(getGraph().input);
-      oscillators.forEach((oscillator) => {
-        oscillator.start(when);
-        oscillator.stop(when + duration + profile.release);
-      });
-      if(voice==="glass"){
-        // Inharmonic, short-lived partials distinguish a struck bell from a sine lead.
-        for(const [ratio,level,decay] of [[2.71,.32,.42],[5.43,.14,.22]]){
-          const partial=ctx.createOscillator(),partialGain=ctx.createGain();
-          partial.type="sine";partial.frequency.value=440*Math.pow(2,(midi-69)/12)*ratio;
-          partialGain.gain.setValueAtTime(.0001,when);
-          partialGain.gain.linearRampToValueAtTime(scaledGain*level,when+.003);
-          partialGain.gain.exponentialRampToValueAtTime(.0001,when+decay);
-          partial.connect(partialGain).connect(getGraph().input);
-          sources.add(partial);
-          partial.onended=()=>{sources.delete(partial);partial.disconnect();partialGain.disconnect();};
-          partial.start(when);partial.stop(when+decay+.01);
-        }
-      }
-      if (voice === "pluck") {
-        // A quiet pick transient gives this voice a defined front edge while
-        // the main triangle supplies the decaying body.
-        const pick = ctx.createOscillator();
-        const pickGain = ctx.createGain();
-        pick.type = "sine";
-        pick.frequency.value = Math.min(8500, 440 * Math.pow(2, (midi - 69) / 12) * 4);
-        pickGain.gain.setValueAtTime(0.0001, when);
-        pickGain.gain.linearRampToValueAtTime(scaledGain * 0.22, when + 0.002);
-        pickGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.045);
-        pick.connect(pickGain).connect(getGraph().input);
-        sources.add(pick);
-        pick.onended = () => { sources.delete(pick); pick.disconnect(); pickGain.disconnect(); };
-        pick.start(when); pick.stop(when + 0.05);
-      }
-      if (voice === "air flute") {
-        const vibrato = ctx.createOscillator();
-        const vibratoDepth = ctx.createGain();
-        vibrato.frequency.value = 5.1;
-        vibratoDepth.gain.setValueAtTime(0, when);
-        vibratoDepth.gain.linearRampToValueAtTime(7, when + 0.16);
-        vibrato.connect(vibratoDepth);
-        oscillators.forEach((oscillator) =>
-          vibratoDepth.connect(oscillator.detune),
-        );
-        sources.add(vibrato);
-        vibrato.onended = () => { sources.delete(vibrato); vibrato.disconnect(); vibratoDepth.disconnect(); };
-        vibrato.start(when);
-        vibrato.stop(when + duration + profile.release);
-      }
+      // Lightweight fallback for the sample guitar, sub bass and click.
+      const profile=voice==="distorted guitar"?{type:"sawtooth" as OscillatorType,attack:.004,cutoff:3800,release:.11}:voice==="sub bass"?{type:"sine" as OscillatorType,attack:.025,cutoff:360,release:.2}:{type:"sine" as OscillatorType,attack:.001,cutoff:7000,release:.025};
+      const oscillator=ctx.createOscillator(),volume=ctx.createGain(),filter=ctx.createBiquadFilter();
+      const nodes:AudioNode[]=[volume,filter];
+      const hold=Math.max(.02,duration),attack=Math.min(profile.attack,hold*.65);
+      oscillator.type=profile.type;oscillator.frequency.value=440*Math.pow(2,(midi-69)/12);
+      filter.type="lowpass";filter.frequency.value=profile.cutoff;
+      volume.gain.setValueAtTime(.0001,when);volume.gain.linearRampToValueAtTime(gain*(voice==="sub bass"?1.6:1),when+attack);
+      volume.gain.setValueAtTime(gain,when+hold);volume.gain.exponentialRampToValueAtTime(.0001,when+hold+profile.release);
+      oscillator.connect(filter);
+      if(voice==="distorted guitar"){
+        const drive=ctx.createWaveShaper(),cabinet=ctx.createBiquadFilter(),rumble=ctx.createBiquadFilter();nodes.push(drive,cabinet,rumble);
+        drive.curve=driveCurve(5);drive.oversample="2x";cabinet.type="lowpass";cabinet.frequency.value=4200;rumble.type="highpass";rumble.frequency.value=85;
+        filter.connect(drive).connect(cabinet).connect(rumble).connect(volume);
+      }else filter.connect(volume);
+      volume.connect(getGraph().dryInput);sources.add(oscillator);
+      oscillator.onended=()=>{sources.delete(oscillator);oscillator.disconnect();nodes.forEach(n=>n.disconnect());};
+      oscillator.start(when);oscillator.stop(when+hold+profile.release+.01);
     };
     const createNoiseSample = (
       ctx: AudioContext,
@@ -1596,11 +1539,13 @@ function useAudioEngine() {
         source.buffer=buffer;
         const profile=drumKitProfile(kit as AcousticDrumKit,instrument,buffer.duration);
         const gains:Record<DrumInstrument,number>={kick:.64,snare:.45,hihat:.2,openhat:.22,crash:.27,ride:.22,tomhigh:.48,tomlow:.5};
-        const peak=gains[instrument]*Math.pow(Math.max(0,velocity),1.15)*level*profile.level;
+        const peak=gains[instrument]*Math.pow(Math.max(0,velocity),1.15)*level*profile.level*samplePlaybackGain(buffer,"drum");
         const end=when+profile.tailSeconds;
         source.playbackRate.setValueAtTime(profile.playbackRate,when);
         eq.type=profile.filter;eq.frequency.value=profile.frequency;
         eq.Q.value=profile.q;eq.gain.value=profile.gain;
+        const air=ctx.createBiquadFilter();air.type="lowpass";air.frequency.value=Math.min(ctx.sampleRate*.45,["hihat","openhat","ride","crash"].includes(instrument)?6500+velocity*7500:8500+velocity*6000);
+        source.disconnect();source.connect(air).connect(eq);
         volume.gain.setValueAtTime(peak,when);
         volume.gain.setValueAtTime(peak,Math.max(when,end-.06));
         volume.gain.linearRampToValueAtTime(0,end);
@@ -1624,7 +1569,7 @@ function useAudioEngine() {
         }
         if(instrument==="hihat")for(const hat of openHats)if(hat.when<=when){hat.gain.gain.cancelScheduledValues(when);hat.gain.gain.setTargetAtTime(0,when,.008);try{hat.source.stop(when+.04);}catch{}}
         const hat={source,gain:volume,when};if(instrument==="openhat")openHats.add(hat);
-        sources.add(source);source.onended=()=>{sources.delete(source);openHats.delete(hat);source.disconnect();eq.disconnect();saturation?.disconnect();volume.disconnect();};
+        sources.add(source);source.onended=()=>{sources.delete(source);openHats.delete(hat);source.disconnect();air.disconnect();eq.disconnect();saturation?.disconnect();volume.disconnect();};
         source.start(when);source.stop(end);return;
       }
       velocity*=level;
@@ -2133,7 +2078,7 @@ export default function InspitivityApp({ account, signOutPath }: {
           ...section,
           ideas: section.ideas.map((idea) =>
             idea.id === existingId
-              ? { ...idea, type, name, detail, data, voice }
+              ? { ...idea, type, name, detail, data, voice, cycleBeats:JSON.stringify(data)===JSON.stringify(idea.data)?idea.cycleBeats:undefined }
               : idea,
           ),
         })),
@@ -2534,10 +2479,12 @@ function Home({
   const [includePattern,setIncludePattern]=useState(preset.id==="prog"||preset.id==="heavy");
   const [extendedForm,setExtendedForm]=useState(false);
   const [sketchIntensity,setSketchIntensity]=useState<SketchOptions["intensity"]>("steady");
+  const [musicalDirection,setMusicalDirection]=useState<MusicalDirection>("hopeful");
   const [draftChoices,setDraftChoices]=useState<{settings:string;projects:Project[]}|null>(null);
   const [previewIndex,setPreviewIndex]=useState(0);
   const [previewSectionId,setPreviewSectionId]=useState<string|null>(null);
   const choosePreset=(candidate:SketchPreset)=>{
+    setMusicalDirection(candidate.id==="heavy"?"tense":candidate.id==="rock"||candidate.id==="funk"?"driving":candidate.id==="emotive"?"mellow":"hopeful");
     setPresetId(candidate.id);setSketchRoot(candidate.root);setSketchMode(canonicalMode(candidate.mode) as Mode);setSketchBpm(String(candidate.bpm));
     setMeterTop(candidate.meter.split("/")[0]);setMeterBottom(Number(candidate.meter.split("/")[1]));
     setIncludeMelody(true);setIncludePattern(candidate.id==="prog"||candidate.id==="heavy");setExtendedForm(false);
@@ -2551,7 +2498,9 @@ function Home({
       "neo-soul":["dorian","aeolian","melodic minor"],funk:["mixolydian","dorian","ionian"],
       prog:["dorian","lydian","aeolian","mixolydian"],heavy:["phrygian","aeolian","harmonic minor"],
     };
-    const root=pick(ROOTS),mode=pick(relatedModes[preset.id]);
+    const emotionalModes:Record<MusicalDirection,Mode[]>={mellow:["aeolian","dorian","melodic minor"],hopeful:["ionian","lydian","mixolydian"],driving:["dorian","mixolydian","aeolian"],tense:["phrygian","harmonic minor","aeolian"]};
+    const compatible=relatedModes[preset.id].filter(mode=>emotionalModes[musicalDirection].includes(mode));
+    const root=pick(ROOTS),mode=pick(compatible.length?compatible:emotionalModes[musicalDirection]);
     const bpm=clampBpm(preset.bpm-14+Math.floor(random()*29));
     setSketchRoot(root);setSketchMode(mode);setSketchBpm(String(bpm));
     const nextOptions={...sketchOptions,root,mode,bpm};
@@ -2559,7 +2508,7 @@ function Home({
   };
   const parsedSketchBpm=clampBpm(Number.parseInt(sketchBpm,10)||preset.bpm);
   const parsedMeterTop=Math.max(1,Math.min(16,Number.parseInt(meterTop,10)||Number(preset.meter.split("/")[0])||4));
-  const sketchOptions:SketchOptions={root:sketchRoot,mode:sketchMode,bpm:parsedSketchBpm,meter:`${parsedMeterTop}/${meterBottom===8?8:4}`,includeMelody,includePattern,extendedForm,intensity:sketchIntensity};
+  const sketchOptions:SketchOptions={root:sketchRoot,mode:sketchMode,bpm:parsedSketchBpm,meter:`${parsedMeterTop}/${meterBottom===8?8:4}`,includeMelody,includePattern,extendedForm,intensity:sketchIntensity,direction:musicalDirection};
   const settings=JSON.stringify([preset.id,sketchOptions]);
   const choices=draftChoices?.settings===settings?draftChoices.projects:null;
   const selectedDraft=choices?.[previewIndex];
@@ -2623,6 +2572,7 @@ function Home({
             </button>
             ))}
           </div>
+          <fieldset className="musical-directions"><legend>Emotional direction</legend><div>{(Object.keys(MUSICAL_DIRECTIONS) as MusicalDirection[]).map(direction=><button key={direction} type="button" aria-pressed={musicalDirection===direction} onClick={()=>{setMusicalDirection(direction);setSketchMode(MUSICAL_DIRECTIONS[direction].mode);}}>{MUSICAL_DIRECTIONS[direction].label}</button>)}</div><p>{MUSICAL_DIRECTIONS[musicalDirection].description}</p><small>Choosing a direction suggests a scale. You can change it below.</small></fieldset>
           <fieldset className="sketch-intensity"><legend>Intensity</legend><div>{(["mellow","steady","hard"] as const).map(level=><button key={level} type="button" aria-pressed={sketchIntensity===level} onClick={()=>{setSketchIntensity(level);if(level==="hard")setIncludePattern(true);}}>{level}</button>)}</div><small>{sketchIntensity==="hard"?"Driven guitar, heavier drums and an active bass line":sketchIntensity==="mellow"?"Acoustic chords, light drums and spacious phrases":"A balanced groove with room for contrast"}</small></fieldset>
           <details className="sketch-customize">
             <summary>Customize key, tempo and parts</summary>
@@ -2866,7 +2816,7 @@ function ProjectView({
   const [renamingProject,setRenamingProject]=useState(false);
   const [projectRename,setProjectRename]=useState(project.name);
   const [undoRemoval,setUndoRemoval]=useState<UndoRemoval|null>(null);
-  const [pendingVariation,setPendingVariation]=useState<{sourceId:string;copy:SongSection}|null>(null);
+  const [creativeSectionId,setCreativeSectionId]=useState<string|null>(null);
   const [arrangementPlaying, setArrangementPlaying] = useState(false);
   const [playbackSeconds, setPlaybackSeconds] = useState(0);
   const [countIn, setCountIn] = useState(false);
@@ -3058,8 +3008,7 @@ function ProjectView({
       ])) as Record<SongLayer,TrackMix>};
     }) }));
   };
-  const availableReturnSources=returnSources(project);
-  const selectedReturnSource=availableReturnSources.find(section=>section.id===returnSourceId)??preferredReturnSource(project);
+  const selectedReturnSource=project.sections.find(section=>section.id===returnSourceId)??project.sections.find(section=>section.id===selectedSectionId)??preferredReturnSource(project);
   const finishAddingSection=()=>{setSectionName("");setSectionDirection("continue");setReturnSourceId(null);setNewSectionEnergy("balanced");setAdding(false);};
   const addEmptySection=()=>{
     const name=sectionName.trim();if(!name)return;
@@ -3078,34 +3027,10 @@ function ProjectView({
     finishAddingSection();
   };
   const duplicateSection = (sectionId: string, variation: boolean) => {
-    const index=project.sections.findIndex(section=>section.id===sectionId);
-    if(index<0)return;
-    const source=project.sections[index];
-    const varyData = (idea: Idea) => !variation || !idea.data ? idea.data : varyIdeaData(idea.type,idea.data,Date.now()+idea.id.length);
-    const copy: SongSection = { ...source, id:uid(), name:variation ? `${source.name} variation` : `${source.name} copy`, repeats:1, ideas:source.ideas.map((idea)=>({ ...idea,id:uid(),name:variation?`${idea.name} variation`:idea.name,data:varyData(idea) })) };
-    const before=source.ideas.find(idea=>idea.type==="chords")?.data??[];
-    const after=copy.ideas.find(idea=>idea.type==="chords")?.data??[];
-    if(variation&&harmonyChanged(before,after)&&source.ideas.some(idea=>["bass","melody","riff"].includes(idea.type))){setPendingVariation({sourceId:sectionId,copy});return;}
-    update(p=>{const sections=[...p.sections];sections.splice(sections.findIndex(s=>s.id===sectionId)+1,0,copy);return {...p,sections};});
-  };
-  const resolveVariation=(choice:"adapt"|"keep"|"revert")=>{
-    if(!pendingVariation)return;
-    const {sourceId,copy}=pendingVariation;
-    setPendingVariation(null);
-    if(choice==="revert")return;
-    update(p=>{
-      const index=p.sections.findIndex(section=>section.id===sourceId);
-      if(index<0)return p;
-      let chosen=copy;
-      if(choice==="adapt"){
-        const harmony=copy.ideas.find(idea=>idea.type==="chords")?.data??[];
-        const original=p.sections[index].ideas.find(idea=>idea.type==="chords")?.data??[];
-        const before={...copy,ideas:copy.ideas.map(idea=>idea.type==="chords"?{...idea,data:original}:idea)};
-        const adapted=adaptAccompaniment(before,harmony);
-        chosen={...copy,ideas:adapted.ideas.map(idea=>idea.type==="chords"?copy.ideas.find(item=>item.type==="chords")!:idea)};
-      }
-      const sections=[...p.sections];sections.splice(index+1,0,chosen);return {...p,sections};
-    });
+    if(variation){setCreativeSectionId(sectionId);return;}
+    const source=project.sections.find(section=>section.id===sectionId);if(!source)return;
+    const copy:SongSection={...source,id:uid(),name:`${source.name} copy`,repeats:1,ideas:source.ideas.map(idea=>({...idea,id:uid(),data:idea.data?[...idea.data]:undefined}))};
+    update(p=>{const sections=[...p.sections],index=sections.findIndex(s=>s.id===sectionId);if(index<0)return p;sections.splice(index+1,0,copy);return {...p,sections};});
   };
   const createSectionReturn=(sectionId:string)=>update(p=>{
     const source=p.sections.find(section=>section.id===sectionId);
@@ -3257,13 +3182,7 @@ function ProjectView({
       />
       <ProjectContext project={project} update={update}/>
       {undoRemoval&&<div className="undo-removal" role="status"><span>Removed {undoRemoval.label}</span><button onClick={restoreRemoval}>Undo</button><button aria-label="Dismiss undo" onClick={()=>setUndoRemoval(null)}>×</button></div>}
-      {pendingVariation&&<div className="modal-layer" role="presentation"><section className="modal harmony-decision" role="dialog" aria-modal="true" aria-labelledby="variation-decision-title">
-        <h2 id="variation-decision-title">Variation changes the harmony</h2>
-        <p>Choose how the new section should treat its bass and lead.</p>
-        <button className="primary-button wide" onClick={()=>resolveVariation("adapt")}>Adapt bass and lead</button>
-        <button className="secondary-button wide" onClick={()=>resolveVariation("keep")}>Keep their original notes</button>
-        <button className="export-button wide" data-dialog-dismiss onClick={()=>resolveVariation("revert")}>Cancel variation</button>
-      </section></div>}
+      {creativeSectionId&&project.sections.find(s=>s.id===creativeSectionId)&&<SectionCreativeDialog project={project} source={project.sections.find(s=>s.id===creativeSectionId)!} close={()=>setCreativeSectionId(null)} save={(section,asNew)=>{stopArrangement();stopIdea();update(p=>{const index=p.sections.findIndex(s=>s.id===creativeSectionId);if(index<0)return p;const sections=[...p.sections];if(asNew)sections.splice(index+1,0,section);else sections[index]=section;return {...p,sections};});setSelectedSectionId(section.id);setCreativeSectionId(null);}}/>}
       <SectionTitle
         eyebrow=""
         title="Arrangement"
@@ -3345,6 +3264,7 @@ function ProjectView({
                 <div className="meter-map">{sectionMeterMap(section,project.meter).map((meter,barIndex)=><label key={barIndex}><span>Bar {barIndex+1}</span><select aria-label={`Time signature for bar ${barIndex+1}`} value={meter} onChange={event=>setSectionMeter(section.id,barIndex,event.target.value)}>{[...new Set([meter,...COMMON_METERS])].map(option=><option key={option} value={option}>{option}</option>)}</select></label>)}</div>
               </details>
             </div>
+            <button className="section-creative-launch" onClick={()=>{stopArrangement();stopIdea();window.dispatchEvent(new Event("inspitivity-solo-preview"));setCreativeSectionId(section.id);}}>Develop & vary <small>Keep parts · compare · build related sections</small></button>
             <div className="section-detail-tabs" role="tablist" aria-label={`${section.name} details`}>
               {(["parts","mix","notes"] as const).map(panel=><button key={panel} role="tab" aria-selected={sectionPanel===panel} onClick={()=>setSectionPanel(panel)}>{panel}</button>)}
             </div>
@@ -3415,7 +3335,7 @@ function ProjectView({
                 <summary aria-label={`More actions for ${section.name}`}>•••</summary>
                 <div>
                   <button onClick={()=>duplicateSection(section.id,false)} aria-label={`Duplicate ${section.name}`}>⧉ <span>Copy</span></button>
-                  <button onClick={()=>duplicateSection(section.id,true)} aria-label={`Create variation of ${section.name}`}>⌁ <span>Variation</span></button>
+                  <button onClick={()=>{stopArrangement();stopIdea();window.dispatchEvent(new Event("inspitivity-solo-preview"));setCreativeSectionId(section.id);}} aria-label={`Develop and vary ${section.name}`}>⌁ <span>Develop & vary</span></button>
                   <button className="danger-action" onClick={()=>removeSection(section.id)} disabled={project.sections.length===1} aria-label={`Remove ${section.name}`}><TrashIcon /><span>Delete</span></button>
                 </div>
               </details>
@@ -3458,7 +3378,7 @@ function ProjectView({
               <Select label="Relationship" value={sectionDirection} options={["continue","contrast","return"]} set={(value)=>setSectionDirection(value as GuidedSectionDirection)} />
               <Select label="Energy" value={sectionEnergy} options={[...SECTION_FEELS]} set={(value)=>setNewSectionEnergy(value as SectionEnergy)} />
             </div>
-            {sectionDirection==="return"&&selectedReturnSource&&<label className="field"><span>Return to</span><select aria-label="Section to return to" value={selectedReturnSource.id} onChange={event=>setReturnSourceId(event.target.value)}>{availableReturnSources.map(section=><option key={section.id} value={section.id} data-no-translate>{section.name}</option>)}</select></label>}
+            {selectedReturnSource&&<label className="field"><span>{sectionDirection==="return"?"Return to":"Develop from"}</span><select aria-label="Source section" value={selectedReturnSource.id} onChange={event=>setReturnSourceId(event.target.value)}>{project.sections.map(section=><option key={section.id} value={section.id} data-no-translate>{section.name}</option>)}</select></label>}
             <p className="guided-section-copy">Generate creates harmony, melody, drums and bass together. Powerful or riff-led songs also receive a supporting pattern.</p>
             <button
               className="primary-button wide"
@@ -3530,7 +3450,58 @@ function ProjectView({
   );
 }
 
-function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, go, chooseSection, updateProject, previewOnly=false }: {
+function SectionCreativeDialog({project,source,close,save}:{project:Project;source:SongSection;close:()=>void;save:(section:SongSection,asNew:boolean)=>void}) {
+  const [locks,setLocks]=useState<SectionLocks>({chords:true});
+  const [candidate,setCandidate]=useState<SongSection|null>(null);
+  const [side,setSide]=useState<"A"|"B">("A");
+  const [summary,setSummary]=useState<string[]>([]);
+  const [role,setRole]=useState<SectionRole|null>(null);
+  const [revision,setRevision]=useState(0);
+  const [autoAudition,setAutoAudition]=useState(false);
+  const auditionEngine=useAudioEngine();
+  const dialog=useRef<HTMLElement|null>(null),closeRef=useRef(close);closeRef.current=close;
+  useEffect(()=>{
+    const trigger=document.activeElement as HTMLElement|null;
+    dialog.current?.querySelector<HTMLButtonElement>('.modal-close')?.focus();
+    const keyboard=(event:KeyboardEvent)=>{
+      if(event.key==="Escape"){event.preventDefault();window.dispatchEvent(new Event("inspitivity-solo-preview"));closeRef.current();return;}
+      if(event.key!=="Tab")return;
+      const controls=Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary,[tabindex="0"]')??[]).filter(el=>el.getClientRects().length>0);
+      const first=controls[0],last=controls.at(-1);
+      if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
+    };
+    document.addEventListener('keydown',keyboard);return()=>{document.removeEventListener('keydown',keyboard);trigger?.focus();};
+  },[]);
+  const available=CREATIVE_LAYERS.filter(layer=>source.ideas.some(i=>i.type===layer&&(i.data?.length||layer==="chords"&&i.detail)));
+  const stop=()=>window.dispatchEvent(new Event("inspitivity-solo-preview"));
+  const chooseSide=(next:"A"|"B")=>{stop();void auditionEngine.unlock();setSide(next);setAutoAudition(true);setRevision(n=>n+1);};
+  const generate=(change:SectionChange)=>{
+    stop();const result=varySection(project,source,locks,change,freshSeed());
+    setCandidate(result.section);setSummary(result.summary);setSide("B");setRole(null);setRevision(n=>n+1);
+  };
+  const develop=(nextRole:SectionRole)=>{
+    stop();const result=developSection(project,source,nextRole,freshSeed(),uid);
+    setCandidate({...result,mix:automaticSectionMix(result,project)});setRole(nextRole);setSide("B");setRevision(n=>n+1);
+    setSummary([nextRole==="bridge"?"Related harmonic contrast; accompaniment follows the new chords":nextRole==="return"?"The original theme returns with a small variation":"Chord progression and opening motif retained",nextRole==="verse"?"More space and softer drums":nextRole==="chorus"?"Stronger pulse and fuller bass":"A different perspective on the same material"]);
+  };
+  const shown=side==="B"&&candidate?candidate:source;
+  const dismiss=()=>{stop();close();};
+  const preview={...project,id:`${project.id}/creative-preview`,sections:[shown]};
+  return <div className="modal-layer" onMouseDown={e=>{if(e.target===e.currentTarget)dismiss();}}>
+    <section ref={dialog} className="modal section-creative-modal" role="dialog" aria-modal="true" aria-labelledby="section-creative-title">
+      <button className="modal-close" aria-label="Close section development" onClick={dismiss}>×</button>
+      <h2 id="section-creative-title">Develop & vary</h2><p data-no-translate>{source.name}</p>
+      <fieldset className="creative-locks"><legend>Keep these parts</legend>{available.map(layer=><label key={layer}><input type="checkbox" checked={!!locks[layer]} onChange={e=>setLocks(current=>({...current,[layer]:e.target.checked}))}/><span>{layer}</span></label>)}</fieldset>
+      <div className="creative-actions">{([["subtle","New variation"],["space","More space"],["energy","More energy"]] as const).map(([change,label])=><button key={change} disabled={available.length===0||available.every(layer=>locks[layer])} onClick={()=>generate(change)}>{label}</button>)}</div>
+      <details className="creative-development"><summary>Build a related section</summary><p>These actions develop all parts together. Track locks apply to variations above.</p><div className="creative-actions">{([["verse","Quieter verse"],["chorus","Stronger chorus"],["bridge","Contrasting bridge"],["return","Theme return"]] as const).map(([nextRole,label])=><button key={nextRole} disabled={!available.length} onClick={()=>develop(nextRole)}>{label}</button>)}</div></details>
+      {candidate&&<><div className="creative-comparison" role="group" aria-label="Compare original and variation"><button aria-pressed={side==="A"} onClick={()=>chooseSide("A")}>A · Original</button><button aria-pressed={side==="B"} onClick={()=>chooseSide("B")}>B · {role?candidate.name:"Variation"}</button></div><ul className="creative-summary" role="status">{summary.map(text=><li key={text}>{text}</li>)}</ul></>}
+      <div className="creative-preview"><SharedSectionPlayer key={`${side}/${revision}`} project={preview} previews={{}} activeSectionId={shown.id} activeTool="project" go={()=>{}} chooseSection={()=>{}} updateProject={()=>{}} previewOnly autoStart={autoAudition} /></div>
+      <div className="creative-footer"><button className="secondary-button" onClick={dismiss}>Keep original</button><button className="primary-button" disabled={!candidate||side!=="B"} onClick={()=>{if(candidate){stop();save(candidate,!!role);}}}>{role?"Add related section":"Keep variation"}</button></div>
+    </section>
+  </div>;
+}
+
+function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, go, chooseSection, updateProject, previewOnly=false, autoStart=false }: {
   project: Project;
   previews: Record<string, DraftPreview>;
   activeSectionId: string | null;
@@ -3539,6 +3510,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
   chooseSection: (id: string) => void;
   updateProject: (fn: (project: Project) => Project) => void;
   previewOnly?: boolean;
+  autoStart?: boolean;
 }) {
   const engine = useAudioEngine();
   const clickEngine=useAudioEngine();
@@ -3685,6 +3657,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
     } catch { setMessage("Audio could not start. Tap Play again."); stop(); }
     finally{setBusy(false);}
   };
+  useEffect(()=>{if(autoStart)void start();},[autoStart]);
   const pause=async()=>{
     setBusy(true);pausedRef.current=true;
     const token=generation.current;
@@ -3910,8 +3883,27 @@ type EditorMode = "generate" | "edit" | "sound";
 function EditorModeTabs({label,value,set}:{label:string;value:EditorMode;set:(value:EditorMode)=>void}){
   return <div className="instrument-mode-tabs" role="group" aria-label={label}>{(["generate","edit","sound"] as const).map(mode=><button key={mode} aria-pressed={value===mode} onClick={()=>set(mode)}>{mode==="generate"?"Generate":mode==="edit"?"Edit Notes":"Edit Sound"}</button>)}</div>;
 }
+const SOUND_CHARACTER:Record<string,string>={
+  "warm pad":"Slow stereo bloom · soft saw layers · long release",glass:"Bell-like partials · bright strike · decaying overtones",pluck:"Dry picked attack · short harmonic decay","analog pulse":"Focused analog lead · resonant filter · firm sustain","air flute":"Soft breath-like tone · harmonic body · gentle vibrato","deep bass":"Electric-style bass · pickup transient · warm body","808 bass":"Pitch-drop attack · long sub tail","sub bass":"Pure low fundamental · smooth envelope","acoustic guitar":"Recorded classical guitar · natural string decay","distorted guitar":"Recorded driven guitar · alternate takes · short notes palm-muted"
+};
 function SoundEditor({label,voice,options,change}:{label:string;voice:string;options:readonly string[];change:(value:string)=>void}) {
-  return <section className="sound-editor" aria-label={`Edit ${label} sound`}><h2>Edit Sound</h2><Select label={label==="Drum"?"Drum kit":`${label} instrument`} value={voice} options={options} set={change}/><p>Choose a sound while listening. The saved part keeps this instrument.</p></section>;
+  const engine=useAudioEngine(),token=useRef(0);
+  const [message,setMessage]=useState("");
+  const stop=()=>{token.current++;engine.stopAll();};
+  useEffect(()=>()=>{token.current++;engine.stopAll();},[engine]);
+  const audition=async()=>{
+    window.dispatchEvent(new Event("inspitivity-solo-preview"));stop();const current=token.current;
+    setMessage("Loading sound…");
+    try{
+      const ready=await engine.unlock(label==="Drum"?voice as DrumKit:undefined,voice==="acoustic guitar",voice==="distorted guitar");
+      if(current!==token.current)return;
+      if(!ready){setMessage("Sound unavailable. Try again.");return;}
+      if(label==="Drum")for(const [instrument,at,velocity] of [["kick",0,.85],["hihat",0,.55],["snare",.5,.85],["hihat",.75,.4],["kick",1,.7],["snare",1.5,.8]] as const)engine.drum(instrument,at,velocity,voice as DrumKit,.8);
+      else (label==="Chord"?[48,52,55]:label==="Bass"?[36]:[60,64,67]).forEach((pitch,i)=>engine.tone(pitch,label==="Chord"?i*.014:i*.45,label==="Chord"?1.3:.4,label==="Bass"?.08:.045,voice as SynthVoice));
+      setMessage("Sound preview");
+    }catch{if(current===token.current)setMessage("Sound unavailable. Try again.");}
+  };
+  return <section className="sound-editor" aria-label={`Edit ${label} sound`}><h2>Edit Sound</h2><Select label={label==="Drum"?"Drum kit":`${label} instrument`} value={voice} options={options} set={value=>{stop();setMessage("");change(value);}}/><p>{SOUND_CHARACTER[voice]??DRUM_KIT_LABELS[voice as DrumKit]}</p><button className="secondary-button" onClick={()=>void audition()}>Preview sound</button><small role="status">{message}</small><p>The saved part keeps this instrument.</p></section>;
 }
 function ChordExplorer({back}:{back:()=>void}) {
   const [prompt,setPrompt]=useState("");

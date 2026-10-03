@@ -59,26 +59,35 @@ export function chooseSketchGroove(style: SketchStyle, beatsPerBar: number, seed
     emotive: [
       {name:"flowing six-eight",kick:[0,12],snare:[12],hats:[0,4,8,12,16,20]},
       {name:"soft pulse",kick:[0,16],snare:[12],hats:[0,4,8,12,16,20]},
+      {name:"gentle rolling pulse",kick:[0,8,16],snare:[12],hats:[0,4,8,12,16,20]},
     ],
     rock: [
       {name:"straight rock backbeat",kick:[0,8],snare:[4,12],hats:[0,2,4,6,8,10,12,14]},
       {name:"rock push",kick:[0,7,8],snare:[4,12],hats:[0,2,4,6,8,10,12,14]},
+      {name:"driving double-kick backbeat",kick:[0,2,8,10],snare:[4,12],hats:[0,2,4,6,8,10,12,14]},
+      {name:"rock anticipation",kick:[0,6,8,14],snare:[4,12],hats:[0,2,4,6,8,10,12,14]},
     ],
     "neo-soul": [
       {name:"laid-back soul pocket",kick:[0,7,10],snare:[4,12],ghost:[11],hats:[0,2,4,6,8,10,12,14],swing:.65},
       {name:"half-time soul shuffle",kick:[0,6,10],snare:[8],ghost:[7,15],hats:[0,2,4,6,8,10,12,14],swing:.8},
+      {name:"floating soul backbeat",kick:[0,5,10,14],snare:[4,12],ghost:[3,10.5],hats:[0,2,4,6,8,10,12,14],swing:.45},
+      {name:"soul pickup pocket",kick:[0,3,8,11],snare:[4,12],ghost:[7,15],hats:[0,2,4,6,8,10,12,14],swing:.7},
     ],
     funk: [
       {name:"syncopated funk",kick:[0,7,10,14],snare:[4,12],ghost:[3,11],hats:[0,2,4,6,8,10,12,14]},
       {name:"open funk pocket",kick:[0,6,11],snare:[4,12],ghost:[15],hats:[0,2,4,6,8,10,12,14],swing:.3},
+      {name:"funk kick conversation",kick:[0,3,6,10,15],snare:[4,12],ghost:[7,11],hats:[0,2,4,6,8,10,12,14]},
+      {name:"lean funk pickup",kick:[0,7,11,14],snare:[4,12],ghost:[3,15],hats:[0,2,4,6,8,10,12,14],swing:.2},
     ],
     prog: [
       {name:"grouped odd-meter pulse",kick:[0,12,20],snare:[8,24],hats:[0,2,4,6,8,10,12,14,16,18,20,22,24,26]},
       {name:"shifting accents",kick:[0,8,18],snare:[12,24],hats:[0,2,4,6,8,10,12,14,16,18,20,22,24,26]},
+      {name:"progressive three-group pocket",kick:[0,6,14,20],snare:[8,24],ghost:[23],hats:[0,2,4,6,8,10,12,14,16,18,20,22,24,26]},
     ],
     heavy: [
       {name:"driving heavy pulse",kick:[0,6,12,20],snare:[12,24],hats:[0,2,4,6,8,10,12,14,16,18,20,22,24,26]},
       {name:"half-time impact",kick:[0,8,18,22],snare:[12,24],hats:[0,2,4,6,8,10,12,14,16,18,20,22,24,26]},
+      {name:"heavy staggered pulse",kick:[0,2,10,14,20,22],snare:[12,24],hats:[0,2,4,6,8,10,12,14,16,18,20,22,24,26]},
     ],
   };
   const choices=palettes[style];

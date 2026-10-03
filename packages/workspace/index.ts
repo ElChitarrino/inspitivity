@@ -6,6 +6,8 @@ export type Idea = {
   voice?: string;
   recordingId?: string;
   data?: string[];
+  /** Explicit phrase boundary retains rests after non-destructive rhythmic variation. */
+  cycleBeats?: number;
 };
 export type TrackMix = { muted: boolean; solo: boolean; volume: number };
 export type SectionMix = Partial<Record<"drums" | "bass" | "chords" | "melody" | "riff", TrackMix>>;
@@ -57,6 +59,7 @@ export function validProjects(value: unknown): value is Project[] {
         ["audio", "chords", "melody", "drums", "bass", "riff", "transition", "text"].includes(String(i.type)) &&
         (i.voice === undefined || ["current", "acoustic studio", "dry studio", "rock", "prog metal", "roomy rock", "dark acoustic", "acoustic guitar", "distorted guitar", "air flute", "warm pad", "glass", "pluck", "analog pulse", "deep bass", "808 bass", "sub bass"].includes(String(i.voice))) &&
         (i.recordingId === undefined || str(i.recordingId, 150)) &&
+        (i.cycleBeats === undefined || (typeof i.cycleBeats === "number" && Number.isFinite(i.cycleBeats) && i.cycleBeats >= .125 && i.cycleBeats <= 16384)) &&
         (i.data === undefined || (Array.isArray(i.data) && i.data.length <= 10000 && i.data.every(d => str(d, 1000)))))));
 }
 

@@ -105,7 +105,7 @@ export function buildSongPlan(project: Project) {
         }).filter(n => [n.pitch,n.start,n.duration].every(Number.isFinite));
         // A saved phrase is its own loop. Repeat it intact until the section
         // ends instead of stretching it to the first bar or dropping it early.
-        const phraseEnd = Math.max(.125, ...notes.map(n => n.start + n.duration));
+        const phraseEnd = Math.max(.125, idea?.cycleBeats ?? Math.max(...notes.map(n => n.start + n.duration)));
         // Bass phrases repeat on a complete bar, retaining the rest after their
         // last note. Mixed meter sections retain their full written bass line.
         let barEnd = 0;
