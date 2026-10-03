@@ -1,5 +1,5 @@
 import { DRUM_PITCHES, drumPatternBeats, type DrumInstrument } from "../sequencing/index.js";
-import { decodeVoicing, notePitchClass } from "../music-theory/index.js";
+import { notePitchClass } from "../music-theory/index.js";
 import { chordNoteEvents, decodeRhythmicChord } from "../music-theory/chord-rhythm.js";
 import type { Project, SongSection, SectionEnergy } from "./index.js";
 

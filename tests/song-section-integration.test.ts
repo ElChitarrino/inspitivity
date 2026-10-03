@@ -43,7 +43,7 @@ for(const [meter,beats,root,mode] of [["4/4",4,"C","major"],["7/8",7,"E","dorian
 for(const beats of [9,12]){
   test(`${beats}/8 harmony stays aligned to every bar and the bass`,()=>{
     const symbols=["Cmaj7","Am7","Fmaj7","G7"];
-    const chords=symbols.map((name,index)=>({symbol:name,beats}));
+    const chords=symbols.map((name)=>({symbol:name,beats}));
     const bass=generateBassPhrase({length:beats*4,meter:`${beats}/8`,root:"C",mode:"major",harmony:chords,direction:"sustained",movement:"rooted",lockToKick:false,seed:33});
     const project:Project={id:"compound",name:"Compound",key:"C major",bpm:110,meter:`${beats}/8`,updated:0,sections:[{id:"verse",name:"Verse",bars:4,color:"mint",ideas:[
       {id:"h",type:"chords",name:"Harmony",detail:"",data:chords.map(chord=>`${chord.symbol}|${chord.beats}`)},

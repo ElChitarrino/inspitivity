@@ -20,7 +20,6 @@ import {
   generateChordProgression,
   generateMelody,
   getScale,
-  SCALE_MODES,
   SELECTABLE_MODES,
   canonicalMode,
   MODE_LABELS,
@@ -35,23 +34,18 @@ import {
 import { createMidiFile, type MidiNoteEvent } from "../packages/midi";
 import { voiceProgression } from "../packages/music-theory/voicing";
 import { playbackBeat, activeChordIndex } from "../packages/sequencing/playhead";
-import { scheduleWindow } from "../packages/sequencing/schedule-window";
-import { AudioQueue } from "../packages/sequencing/audio-queue";
+import { useAudioEngine } from "./audio/use-audio-engine";
+import type { SynthVoice, BassVoice } from "../packages/sequencing/voice-types";
+import { LAYER_LABELS, sectionMix, automaticSectionMix } from "../packages/workspace/section-mix";
 import { QuarterClickScheduler } from "../packages/sequencing/live-click";
 import { reorderSection, timelineDuration } from "../packages/workspace/arrangement-order";
 import { playbackProject } from "../packages/workspace/playback";
-import { INSTRUMENT_CHARACTERS, instrumentEnvelope, isCharacterVoice } from "../packages/sequencing/instrument-voices";
-import { samplePlaybackGain } from "../packages/sequencing/sample-levels";
-import { bassHarmonics } from "../packages/sequencing/bass-timbre";
-import { activityGain } from "../packages/workspace/mix-activity";
 import { alignPhrase } from "../packages/workspace/sketch";
 import { chooseSketch, scoreSketch } from "../packages/workspace/sketch-quality";
 import { generateThemeDraft, THEME_FEELS, type ThemeFeel, type ExplorerOptions } from "../packages/workspace/theme-explorer";
 import { useThemeAI } from "./use-theme-ai";
 import { adaptAccompaniment, harmonyChanged } from "../packages/workspace/harmony-adapt";
-import {DRUM_KITS,DRUM_KIT_LABELS,loadDrumSamples,loadMetalDrumSamples,drumSample,metalDrumSample,drumKitProfile,type AcousticDrumKit,type DrumKit} from '../packages/sequencing/drum-samples';
-import {loadGuitarSamples,guitarSample} from '../packages/sequencing/guitar-samples';
-import {loadElectricGuitarSamples,electricGuitarSample} from '../packages/sequencing/electric-guitar-samples';
+import {DRUM_KITS,DRUM_KIT_LABELS,type DrumKit} from '../packages/sequencing/drum-samples';
 import { CHORD_RHYTHMS, CHORD_RHYTHM_LABELS, chordNoteEvents, decodeRhythmicChord, encodeChordAttacks, generateChordRhythm, type ChordRhythm, type ChordAttack } from "../packages/music-theory/chord-rhythm";
 import {
   beatDurationSeconds,
@@ -88,10 +82,13 @@ import { DraftSession, DraftToolbar, useDraftState, useDraftPreview, type DraftP
 import { sectionFeel, buildSongPlan, type SongLayer } from "../packages/workspace/music";
 import { buildSketchGroove, chooseSketchGroove, chooseSketchHarmony, heavyPowerVoicing, shapeSketchMotif, type SketchStyle } from "../packages/workspace/sketch-grammar";
 import { exportSongMidi } from "../packages/workspace/song-export";
-import { analyzeArrangement, returnSources, preferredReturnSource, type ArrangementInsight } from "../packages/workspace/arrangement";
+import { analyzeArrangement, preferredReturnSource, type ArrangementInsight } from "../packages/workspace/arrangement";
 import { sortProjects, type Idea, type SongSection, type Project, type TrackMix, type SectionEnergy } from "../packages/workspace";
 import { MUSICAL_DIRECTIONS, chooseDirectionHarmony, type MusicalDirection } from "../packages/workspace/directions";
-import { CREATIVE_LAYERS, developSection, varySection, type SectionLocks, type SectionRole, type SectionChange } from "../packages/workspace/section-development";
+import { developSection, type SectionRole } from "../packages/workspace/section-development";
+import { Select } from "./components/select";
+import { SoundEditor } from "./components/sound-editor";
+import { SectionCreativeDialog } from "./components/section-creative-dialog";
 import { varyIdeaData, varyNotes } from "../packages/workspace/variation";
 import {
   generateBassPhrase,
@@ -132,58 +129,7 @@ const rhythmizeChords = (chords: ChordDraft[], seed: number, style: ChordRhythm 
   const rhythms = generateChordRhythm(chords, {seed,style,beatsPerBar:meterBeats(meter),kickSteps:drums.filter(hit=>hit.instrument==="kick").map(hit=>hit.step),snareSteps:drums.filter(hit=>hit.instrument==="snare").map(hit=>hit.step)});
   return chords.map((chord,index) => ({...chord,attacks:rhythms[index]}));
 };
-type SynthVoice =
-  | "air flute"
-  | "warm pad"
-  | "glass"
-  | "pluck"
-  | "analog pulse"
-  | "deep bass"
-  | "808 bass"
-  | "sub bass"
-  | "acoustic guitar"
-  | "distorted guitar";
-type BassVoice = "deep bass" | "808 bass" | "sub bass";
 const freshSeed = () => Math.floor(Math.random() * 1000000000);
-const LAYER_LABELS = [
-  ["drums", "Drums"],
-  ["bass", "Bass"],
-  ["chords", "Chords"],
-  ["melody", "Melody"],
-  ["riff", "Pattern"],
-] as const satisfies readonly (readonly [SongLayer, string])[];
-const DEFAULT_SECTION_MIX: Record<SongLayer, TrackMix> = {
-  drums: { muted: false, solo: false, volume: 0.82 },
-  bass: { muted: false, solo: false, volume: 0.74 },
-  chords: { muted: false, solo: false, volume: 0.58 },
-  melody: { muted: false, solo: false, volume: 0.72 },
-  riff: { muted: false, solo: false, volume: 0.54 },
-};
-const sectionMix = (section?: SongSection): Record<SongLayer, TrackMix> =>
-  Object.fromEntries(
-    LAYER_LABELS.map(([layer]) => [
-      layer,
-      { ...DEFAULT_SECTION_MIX[layer], ...section?.mix?.[layer] },
-    ]),
-  ) as Record<SongLayer, TrackMix>;
-
-const automaticSectionMix = (section: SongSection, context?: Project): Record<SongLayer, TrackMix> => {
-  const present = new Set(section.ideas.map((idea) => idea.type));
-  const energy = section.energy ?? "balanced";
-  const mix = Object.fromEntries(LAYER_LABELS.map(([layer]) => [layer, { ...DEFAULT_SECTION_MIX[layer] }])) as Record<SongLayer, TrackMix>;
-  if (energy === "sparse") { mix.drums.volume = .55; mix.bass.volume = .7; mix.chords.volume = .66; }
-  if (energy === "mellow") { mix.drums.volume = .7; mix.bass.volume = .68; mix.chords.volume = .62; }
-  if (energy === "driving") { mix.drums.volume = .86; mix.bass.volume = .78; mix.chords.volume = .54; }
-  if (energy === "powerful") { mix.drums.volume = .9; mix.bass.volume = .8; mix.chords.volume = .52; }
-  if (present.has("chords") && present.has("riff")) { mix.chords.volume -= .08; mix.riff.volume -= .05; }
-  if (present.has("melody")) mix.melody.volume = energy === "powerful" ? .68 : .74;
-  if(context){
-    const plan=buildSongPlan({...context,sections:[{...section,repeats:1}]});
-    for(const [layer] of LAYER_LABELS)mix[layer].volume=Number((mix[layer].volume*activityGain(plan.events,plan.seconds,layer)).toFixed(2));
-  }
-  return mix;
-};
-
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
@@ -1084,595 +1030,6 @@ function BottomNav({
   </>;
 }
 
-type SharedAudioGraph = {
-  context: AudioContext;
-  input: GainNode;
-  dryInput: GainNode;
-  analyser: AnalyserNode;
-};
-
-let sharedAudioGraph: SharedAudioGraph | null = null;
-let sharedNativeAudioUnlock: HTMLAudioElement | null = null;
-
-function silentWavUrl() {
-  const sampleRate = 8000;
-  const sampleCount = 800;
-  const buffer = new ArrayBuffer(44 + sampleCount);
-  const view = new DataView(buffer);
-  const write = (offset: number, value: string) => {
-    for (let index = 0; index < value.length; index++)
-      view.setUint8(offset + index, value.charCodeAt(index));
-  };
-  write(0, "RIFF");
-  view.setUint32(4, 36 + sampleCount, true);
-  write(8, "WAVEfmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate, true);
-  view.setUint16(32, 1, true);
-  view.setUint16(34, 8, true);
-  write(36, "data");
-  view.setUint32(40, sampleCount, true);
-  for (let index = 44; index < buffer.byteLength; index++)
-    view.setUint8(index, 128);
-  return URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
-}
-
-function useAudioEngine() {
-  return useMemo(() => {
-    const sources = new Set<AudioScheduledSourceNode>();
-    const pendingAudio = new AudioQueue();
-    let pendingTimer: ReturnType<typeof setInterval> | null = null;
-    const noiseSamples = new Map<string, AudioBuffer>();
-    const driveCurves = new Map<number, Float32Array<ArrayBuffer>>();
-    let bassWave: PeriodicWave | null=null;
-    const drumTakes=new Map<DrumInstrument,number>();
-    const guitarTakes=new Map<number,number>();
-    const openHats=new Set<{source:AudioBufferSourceNode;gain:GainNode;when:number}>();
-    const driveCurve = (amount: number) => {
-      let curve = driveCurves.get(amount);
-      if (!curve) {
-        curve = new Float32Array(2048);
-        for (let i=0;i<curve.length;i++) curve[i]=Math.tanh(amount*(2*i/(curve.length-1)-1));
-        driveCurves.set(amount,curve);
-      }
-      return curve;
-    };
-    const getGraph = (): SharedAudioGraph => {
-      if (sharedAudioGraph && sharedAudioGraph.context.state !== "closed")
-        return sharedAudioGraph;
-      const AudioContextConstructor =
-        window.AudioContext ??
-        (window as typeof window & {
-          webkitAudioContext?: typeof AudioContext;
-        }).webkitAudioContext;
-      if (!AudioContextConstructor)
-        throw new Error("Web Audio is not supported on this device.");
-      const context = new AudioContextConstructor({ latencyHint: "interactive" });
-      const input = context.createGain();
-      const dryInput = context.createGain();
-      const dry = context.createGain();
-      const reverb = context.createConvolver();
-      const preDelay = context.createDelay(0.05);
-      const reverbHighpass = context.createBiquadFilter();
-      const reverbLowpass = context.createBiquadFilter();
-      const wet = context.createGain();
-      const compressor = context.createDynamicsCompressor();
-      const master = context.createGain();
-      const analyser = context.createAnalyser();
-
-      const impulseLength = Math.floor(context.sampleRate * 1.45);
-      const impulse = context.createBuffer(2, impulseLength, context.sampleRate);
-      for (let channel = 0; channel < impulse.numberOfChannels; channel++) {
-        const data = impulse.getChannelData(channel);
-        for (let index = 0; index < impulseLength; index++) {
-          const fade = Math.pow(1 - index / impulseLength, 2.7);
-          data[index] = (Math.random() * 2 - 1) * fade;
-        }
-      }
-      reverb.buffer = impulse;
-      preDelay.delayTime.value = 0.019;
-      reverbHighpass.type = "highpass";
-      reverbHighpass.frequency.value = 280;
-      reverbLowpass.type = "lowpass";
-      reverbLowpass.frequency.value = 5800;
-      dry.gain.value = 1;
-      wet.gain.value = 0.095;
-      // Preserve the attack of drums and picked notes instead of pushing every
-      // layer through the old 4:1, fast-attack compressor.
-      compressor.threshold.value = -14;
-      compressor.knee.value = 12;
-      compressor.ratio.value = 2;
-      compressor.attack.value = 0.018;
-      compressor.release.value = 0.2;
-      master.gain.value = 0.82;
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.2;
-
-      input.connect(dry).connect(compressor);
-      input.connect(preDelay).connect(reverb).connect(reverbHighpass).connect(reverbLowpass).connect(wet).connect(compressor);
-      dryInput.connect(compressor);
-      compressor.connect(master).connect(analyser).connect(context.destination);
-      const createdGraph = { context, input, dryInput, analyser };
-      sharedAudioGraph = createdGraph;
-      return createdGraph;
-    };
-    const get = () => {
-      const { context } = getGraph();
-      if (context.state === "suspended") void context.resume();
-      return context;
-    };
-    const unlock = async (kit?:DrumKit|"all", guitar=false, electric=false) => {
-      const { context, input } = getGraph();
-      if (!sharedNativeAudioUnlock) {
-        sharedNativeAudioUnlock = new Audio(silentWavUrl());
-        sharedNativeAudioUnlock.loop = true;
-        sharedNativeAudioUnlock.preload = "auto";
-        sharedNativeAudioUnlock.setAttribute("playsinline", "");
-      }
-      const nativeUnlock = sharedNativeAudioUnlock.play().catch(() => undefined);
-      const contextUnlock =
-        context.state === "running" ? Promise.resolve() : context.resume();
-      await Promise.allSettled([nativeUnlock, contextUnlock]);
-      if(kit&&kit!=="current"){
-        try{await loadDrumSamples(context);}catch{return false;}
-        if(kit==="rock"||kit==="prog metal"||kit==="all"){
-          try{await loadMetalDrumSamples(context);}catch{return false;}
-        }
-      }
-      if(guitar){try{await loadGuitarSamples(context);}catch{return false;}}
-      if(electric){try{await loadElectricGuitarSamples(context);}catch{return false;}}
-      const silence = context.createBufferSource();
-      silence.buffer = context.createBuffer(1, 1, context.sampleRate);
-      silence.connect(input);
-      silence.start();
-      return context.state === "running";
-    };
-    const tone = (
-      midi: number,
-      start = 0,
-      duration = 0.22,
-      gain = 0.07,
-      voice: SynthVoice | "click" = "pluck",
-      palmMuted = false,
-    ) => {
-      const ctx = get();
-      const when = ctx.currentTime + start;
-      if (voice === "distorted guitar") {
-        const take=guitarTakes.get(midi)??0;
-        const recorded=electricGuitarSample(ctx,midi,gain<.033,take);
-        if(recorded){
-          guitarTakes.set(midi,take+1);
-          const source=ctx.createBufferSource(),volume=ctx.createGain(),palm=ctx.createBiquadFilter();
-          source.buffer=recorded.buffer;source.playbackRate.value=recorded.rate;
-          const muted=palmMuted||duration<.32;
-          const release=muted?.045:.105;
-          const end=Math.min(recorded.buffer.duration/recorded.rate,Math.max(.09,muted?Math.min(duration,.22):duration)+release);
-          palm.type="lowpass";palm.frequency.value=muted?2600:5600;
-          volume.gain.setValueAtTime(.0001,when);
-          volume.gain.linearRampToValueAtTime(gain*1.65*samplePlaybackGain(recorded.buffer,"guitar"),when+.004);
-          volume.gain.setValueAtTime(gain*1.65*samplePlaybackGain(recorded.buffer,"guitar"),Math.max(when+.004,when+end-release));
-          volume.gain.exponentialRampToValueAtTime(.0001,when+end);
-          source.connect(palm).connect(volume).connect(getGraph().dryInput);
-          sources.add(source);
-          source.onended=()=>{sources.delete(source);source.disconnect();palm.disconnect();volume.disconnect();};
-          source.start(when);source.stop(when+end);
-          return;
-        }
-        void loadElectricGuitarSamples(ctx).catch(()=>undefined);
-      }
-      if (voice === "acoustic guitar") {
-        const recorded=guitarSample(ctx,midi);
-        if(recorded){
-          const source=ctx.createBufferSource(),volume=ctx.createGain();
-          source.buffer=recorded.buffer;source.playbackRate.value=recorded.rate;
-          const release=Math.max(.1,Math.min(.28,duration*.25));
-          const end=Math.min(recorded.buffer.duration/recorded.rate,Math.max(.16,duration)+release);
-          volume.gain.setValueAtTime(.0001,when);
-          volume.gain.linearRampToValueAtTime(gain*1.9*samplePlaybackGain(recorded.buffer,"guitar"),when+.008);
-          volume.gain.setValueAtTime(gain*1.9*samplePlaybackGain(recorded.buffer,"guitar"),Math.max(when+.008,when+end-release));
-          volume.gain.exponentialRampToValueAtTime(.0001,when+end);
-          source.connect(volume).connect(getGraph().dryInput);
-          sources.add(source);
-          source.onended=()=>{sources.delete(source);source.disconnect();volume.disconnect();};
-          source.start(when);source.stop(when+end);
-          return;
-        }
-        void loadGuitarSamples(ctx).catch(()=>undefined);
-        // Keep an audible fallback for a sound selected during active playback.
-        const frequency = 440 * Math.pow(2, (midi - 69) / 12);
-        const period = Math.max(8,Math.round(ctx.sampleRate/frequency));
-        const seconds = Math.min(3.2,Math.max(.55,duration+.72));
-        const buffer = ctx.createBuffer(1,Math.ceil(seconds*ctx.sampleRate),ctx.sampleRate);
-        const samples = buffer.getChannelData(0);
-        const string = new Float32Array(period);
-        let random = (midi*2654435761) >>> 0;
-        const noise = () => { random ^= random << 13; random ^= random >>> 17; random ^= random << 5; return (random >>> 0)/2147483648-1; };
-        for(let i=0;i<period;i++)string[i]=(noise()+noise()*.35)*.6;
-        let previous=0;
-        const damping=frequency<220?.994:.989;
-        for(let i=0;i<samples.length;i++){
-          const slot=i%period;
-          const next=(string[slot]+string[(slot+1)%period])*.5*damping;
-          string[slot]=next;
-          previous=previous*.32+next*.68;
-          const envelope=Math.min(1,i/(ctx.sampleRate*.003))*Math.min(1,(samples.length-i)/(ctx.sampleRate*.045));
-          samples[i]=previous*envelope;
-        }
-        const source=ctx.createBufferSource(), body=ctx.createBiquadFilter(), toneFilter=ctx.createBiquadFilter(), volume=ctx.createGain();
-        source.buffer=buffer;
-        body.type="peaking";body.frequency.value=215;body.Q.value=.85;body.gain.value=3.5;
-        toneFilter.type="lowpass";toneFilter.frequency.value=Math.min(6500,2600+frequency*4);
-        volume.gain.value=gain*.8;
-        source.connect(body).connect(toneFilter).connect(volume).connect(getGraph().dryInput);
-        sources.add(source);
-        source.onended=()=>{sources.delete(source);source.disconnect();body.disconnect();toneFilter.disconnect();volume.disconnect();};
-        source.start(when);
-        return;
-      }
-      if (voice === "808 bass") {
-        const frequency = 440 * Math.pow(2, (midi - 69) / 12);
-        const oscillator = ctx.createOscillator();
-        const overtone = ctx.createOscillator();
-        const overtoneGain = ctx.createGain();
-        const filter = ctx.createBiquadFilter();
-        const volume = ctx.createGain();
-        const release = Math.max(.38, Math.min(1.4, duration * .7));
-        oscillator.type = "sine";
-        overtone.type = "triangle";
-        oscillator.frequency.setValueAtTime(frequency * 1.85, when);
-        oscillator.frequency.exponentialRampToValueAtTime(frequency, when + .055);
-        overtone.frequency.setValueAtTime(frequency * 3.7, when);
-        overtone.frequency.exponentialRampToValueAtTime(frequency * 2, when + .065);
-        overtoneGain.gain.setValueAtTime(.22, when);
-        overtoneGain.gain.exponentialRampToValueAtTime(.0001, when + .16);
-        filter.type = "lowpass";
-        filter.frequency.setValueAtTime(1250, when);
-        filter.frequency.exponentialRampToValueAtTime(190, when + .24);
-        volume.gain.setValueAtTime(.0001, when);
-        volume.gain.exponentialRampToValueAtTime(gain * 2.15, when + .006);
-        volume.gain.exponentialRampToValueAtTime(gain * 1.2, when + Math.max(.12, duration * .55));
-        volume.gain.exponentialRampToValueAtTime(.0001, when + duration + release);
-        oscillator.connect(filter);
-        overtone.connect(overtoneGain).connect(filter);
-        filter.connect(volume).connect(getGraph().dryInput);
-        sources.add(oscillator); sources.add(overtone);
-        let remaining = 2;
-        const ended = (source: OscillatorNode) => {
-          sources.delete(source); source.disconnect();
-          if (--remaining === 0) { overtoneGain.disconnect(); filter.disconnect(); volume.disconnect(); }
-        };
-        oscillator.onended = () => ended(oscillator);
-        overtone.onended = () => ended(overtone);
-        oscillator.start(when); overtone.start(when);
-        oscillator.stop(when + duration + release + .02);
-        overtone.stop(when + duration + release + .02);
-        return;
-      }
-      if (voice === "deep bass") {
-        if(!bassWave){const harmonics=bassHarmonics();bassWave=ctx.createPeriodicWave(new Float32Array(harmonics.length),harmonics,{disableNormalization:true});}
-        const frequency = 440 * Math.pow(2, (midi - 69) / 12);
-        const voiceMix = ctx.createGain();
-        const filter = ctx.createBiquadFilter();
-        const cabinet = ctx.createBiquadFilter();
-        const body = ctx.createBiquadFilter();
-        const rumble = ctx.createBiquadFilter();
-        const drive = ctx.createWaveShaper();
-        const volume = ctx.createGain();
-        const voiceNodes: AudioNode[] = [voiceMix,filter,cabinet,body,rumble,drive,volume];
-        let remainingLayers=2;
-        drive.curve = driveCurve(1.2);
-        drive.oversample = "2x";
-        filter.type = "lowpass";
-        filter.Q.value = .55;
-        filter.frequency.setValueAtTime(950+Math.min(1,gain/.07)*1100, when);
-        filter.frequency.exponentialRampToValueAtTime(420+frequency*2, when + .16);
-        cabinet.type = "lowpass";
-        cabinet.frequency.value = 2400;
-        cabinet.Q.value = .55;
-        body.type = "lowshelf";
-        body.frequency.value = 105;
-        body.gain.value = 2;
-        rumble.type = "highpass";
-        rumble.frequency.value = 22;
-        rumble.Q.value = .7;
-        const layers = [
-          { type:"custom" as OscillatorType, level:1, detune:0 },
-          { type:"sine" as OscillatorType, level:.25, detune:0 },
-        ].map((layer) => {
-          const oscillator = ctx.createOscillator();
-          const layerGain = ctx.createGain();
-          voiceNodes.push(layerGain);
-          if(layer.type==="custom")oscillator.setPeriodicWave(bassWave!);else oscillator.type = layer.type;
-          oscillator.frequency.setValueAtTime(frequency * 1.002, when);
-          oscillator.frequency.exponentialRampToValueAtTime(frequency, when + .035);
-          oscillator.detune.value = layer.detune;
-          layerGain.gain.value = layer.level;
-          oscillator.connect(layerGain).connect(voiceMix);
-          sources.add(oscillator);
-          oscillator.onended = () => {
-            sources.delete(oscillator); oscillator.disconnect();
-            if (--remainingLayers===0) voiceNodes.forEach(node=>node.disconnect());
-          };
-          return oscillator;
-        });
-        const pickup = ctx.createOscillator();
-        const pickupFilter = ctx.createBiquadFilter();
-        const pickupGain = ctx.createGain();
-        pickup.type = "triangle";
-        pickup.frequency.value = frequency * 3;
-        pickupFilter.type = "bandpass";
-        pickupFilter.frequency.value = 920;
-        pickupFilter.Q.value = .75;
-        pickupGain.gain.setValueAtTime(Math.max(.0001, gain * .16), when);
-        pickupGain.gain.exponentialRampToValueAtTime(.0001, when + .045);
-        pickup.connect(pickupFilter).connect(pickupGain).connect(voiceMix);
-        sources.add(pickup);
-        pickup.onended = () => { sources.delete(pickup); pickup.disconnect(); pickupFilter.disconnect(); pickupGain.disconnect(); };
-        voiceMix.connect(filter).connect(drive).connect(cabinet).connect(body).connect(rumble).connect(volume).connect(getGraph().dryInput);
-        const peak = gain * 1.8;
-        volume.gain.setValueAtTime(.0001, when);
-        volume.gain.exponentialRampToValueAtTime(peak, when + .007);
-        volume.gain.exponentialRampToValueAtTime(peak * .76, when + Math.min(.09, duration * .35));
-        volume.gain.exponentialRampToValueAtTime(peak * .48, when + Math.max(.1, duration));
-        volume.gain.exponentialRampToValueAtTime(.0001, when + Math.max(.1,duration) + .08);
-        layers.forEach((oscillator) => {
-          oscillator.start(when);
-          oscillator.stop(when + duration + .18);
-        });
-        pickup.start(when);
-        pickup.stop(when + .055);
-        return;
-      }
-      if(isCharacterVoice(voice)) {
-        const character=INSTRUMENT_CHARACTERS[voice];
-        const envelope=instrumentEnvelope(character,duration,1);
-        const frequency=440*Math.pow(2,(midi-69)/12);
-        const filter=ctx.createBiquadFilter(),volume=ctx.createGain();
-        const nodes:AudioNode[]=[filter,volume];
-        filter.type="lowpass";filter.Q.value=character.resonance;
-        const brightness=.65+Math.min(1,gain/.055)*.35;
-        const peakCutoff=Math.min(ctx.sampleRate*.45,character.cutoff*brightness);
-        filter.frequency.setValueAtTime(voice==="warm pad"?peakCutoff*.45:peakCutoff,when);
-        filter.frequency.linearRampToValueAtTime(peakCutoff,when+envelope.attack);
-        filter.frequency.exponentialRampToValueAtTime(Math.max(200,peakCutoff*(voice==="pluck"?.18:voice==="analog pulse"?.28:.8)),when+envelope.hold);
-        const energy=Math.sqrt(character.partials.reduce((sum,p)=>sum+p.level*p.level,0));
-        const peak=gain*.95/Math.max(.7,energy);
-        volume.gain.setValueAtTime(.0001,when);
-        volume.gain.linearRampToValueAtTime(peak,when+envelope.attack);
-        volume.gain.linearRampToValueAtTime(Math.max(.0001,peak*character.sustain),when+Math.max(envelope.attack,envelope.hold*.72));
-        volume.gain.setValueAtTime(Math.max(.0001,peak*character.sustain),when+envelope.hold);
-        volume.gain.exponentialRampToValueAtTime(.0001,when+envelope.end);
-        filter.connect(volume).connect(character.room?getGraph().input:getGraph().dryInput);
-        let remaining=character.partials.length;
-        const oscillators=character.partials.map((partial,index)=>{
-          const oscillator=ctx.createOscillator(),level=ctx.createGain();nodes.push(level);
-          oscillator.type=partial.waveform;oscillator.frequency.value=frequency*partial.ratio;oscillator.detune.value=partial.detune;
-          level.gain.setValueAtTime(partial.level,when);
-          if(partial.decay)level.gain.exponentialRampToValueAtTime(.0001,when+Math.max(.02,Math.min(envelope.end,partial.decay)));
-          oscillator.connect(level);
-          if(voice==="warm pad"&&index<2){const pan=ctx.createStereoPanner();pan.pan.value=index===0?-.32:.32;nodes.push(pan);level.connect(pan).connect(filter);}else level.connect(filter);
-          sources.add(oscillator);oscillator.onended=()=>{sources.delete(oscillator);oscillator.disconnect();if(--remaining===0)nodes.forEach(n=>n.disconnect());};
-          oscillator.start(when);oscillator.stop(when+envelope.end+.01);return oscillator;
-        });
-        if(voice==="air flute"&&duration>.18){
-          const vibrato=ctx.createOscillator(),depth=ctx.createGain();vibrato.frequency.value=5.2;
-          depth.gain.setValueAtTime(0,when);depth.gain.linearRampToValueAtTime(5,when+.18);
-          vibrato.connect(depth);oscillators.forEach(o=>depth.connect(o.detune));sources.add(vibrato);
-          vibrato.onended=()=>{sources.delete(vibrato);vibrato.disconnect();depth.disconnect();};vibrato.start(when);vibrato.stop(when+envelope.end);
-        }
-        return;
-      }
-      // Lightweight fallback for the sample guitar, sub bass and click.
-      const profile=voice==="distorted guitar"?{type:"sawtooth" as OscillatorType,attack:.004,cutoff:3800,release:.11}:voice==="sub bass"?{type:"sine" as OscillatorType,attack:.025,cutoff:360,release:.2}:{type:"sine" as OscillatorType,attack:.001,cutoff:7000,release:.025};
-      const oscillator=ctx.createOscillator(),volume=ctx.createGain(),filter=ctx.createBiquadFilter();
-      const nodes:AudioNode[]=[volume,filter];
-      const hold=Math.max(.02,duration),attack=Math.min(profile.attack,hold*.65);
-      oscillator.type=profile.type;oscillator.frequency.value=440*Math.pow(2,(midi-69)/12);
-      filter.type="lowpass";filter.frequency.value=profile.cutoff;
-      volume.gain.setValueAtTime(.0001,when);volume.gain.linearRampToValueAtTime(gain*(voice==="sub bass"?1.6:1),when+attack);
-      volume.gain.setValueAtTime(gain,when+hold);volume.gain.exponentialRampToValueAtTime(.0001,when+hold+profile.release);
-      oscillator.connect(filter);
-      if(voice==="distorted guitar"){
-        const drive=ctx.createWaveShaper(),cabinet=ctx.createBiquadFilter(),rumble=ctx.createBiquadFilter();nodes.push(drive,cabinet,rumble);
-        drive.curve=driveCurve(5);drive.oversample="2x";cabinet.type="lowpass";cabinet.frequency.value=4200;rumble.type="highpass";rumble.frequency.value=85;
-        filter.connect(drive).connect(cabinet).connect(rumble).connect(volume);
-      }else filter.connect(volume);
-      volume.connect(getGraph().dryInput);sources.add(oscillator);
-      oscillator.onended=()=>{sources.delete(oscillator);oscillator.disconnect();nodes.forEach(n=>n.disconnect());};
-      oscillator.start(when);oscillator.stop(when+hold+profile.release+.01);
-    };
-    const createNoiseSample = (
-      ctx: AudioContext,
-      duration: number,
-      decay: number,
-    ) => {
-      const key = `${ctx.sampleRate}/${duration}/${decay}`;
-      const cached = noiseSamples.get(key);
-      if (cached) return cached;
-      const buffer = ctx.createBuffer(
-        1,
-        Math.ceil(ctx.sampleRate * duration),
-        ctx.sampleRate,
-      );
-      const data = buffer.getChannelData(0);
-      for (let index = 0; index < data.length; index++)
-        data[index] =
-          (Math.random() * 2 - 1) * Math.exp(-index / (ctx.sampleRate * decay));
-      noiseSamples.set(key,buffer);
-      return buffer;
-    };
-    const cymbalNoise = (
-      start: number,
-      duration: number,
-      gain: number,
-      cutoff: number,
-      decay: number,
-    ) => {
-      const ctx = get();
-      const source = ctx.createBufferSource();
-      const filter = ctx.createBiquadFilter();
-      const volume = ctx.createGain();
-      const when = ctx.currentTime + start;
-      source.buffer = createNoiseSample(ctx, duration, decay);
-      filter.type = "highpass";
-      filter.frequency.setValueAtTime(cutoff, when);
-      volume.gain.setValueAtTime(gain, when);
-      volume.gain.exponentialRampToValueAtTime(0.0001, when + duration);
-      source.connect(filter).connect(volume).connect(getGraph().input);
-      sources.add(source);
-      source.onended = () => { sources.delete(source); source.disconnect(); filter.disconnect(); volume.disconnect(); };
-      source.start(when);
-      source.stop(when + duration);
-    };
-    const drum = (instrument: DrumInstrument, start = 0, velocity = 1, kit: DrumKit = "current", level = 1) => {
-      if(kit!=="current"){
-        const ctx=get(),when=ctx.currentTime+start;
-        const take=drumTakes.get(instrument)??0;
-        const metalBank=(kit==="rock"||kit==="prog metal")&&instrument!=="crash";
-        const buffer=metalBank?metalDrumSample(ctx,instrument,velocity,take):drumSample(ctx,instrument,velocity,take);
-        if(!buffer)return; // Startup awaits samples; never substitute a synthetic kit silently.
-        drumTakes.set(instrument,take+1);
-        const source=ctx.createBufferSource(),volume=ctx.createGain(),eq=ctx.createBiquadFilter();
-        source.buffer=buffer;
-        const profile=drumKitProfile(kit as AcousticDrumKit,instrument,buffer.duration);
-        const gains:Record<DrumInstrument,number>={kick:.64,snare:.45,hihat:.2,openhat:.22,crash:.27,ride:.22,tomhigh:.48,tomlow:.5};
-        const peak=gains[instrument]*Math.pow(Math.max(0,velocity),1.15)*level*profile.level*samplePlaybackGain(buffer,"drum");
-        const end=when+profile.tailSeconds;
-        source.playbackRate.setValueAtTime(profile.playbackRate,when);
-        eq.type=profile.filter;eq.frequency.value=profile.frequency;
-        eq.Q.value=profile.q;eq.gain.value=profile.gain;
-        const air=ctx.createBiquadFilter();air.type="lowpass";air.frequency.value=Math.min(ctx.sampleRate*.45,["hihat","openhat","ride","crash"].includes(instrument)?6500+velocity*7500:8500+velocity*6000);
-        source.disconnect();source.connect(air).connect(eq);
-        volume.gain.setValueAtTime(peak,when);
-        volume.gain.setValueAtTime(peak,Math.max(when,end-.06));
-        volume.gain.linearRampToValueAtTime(0,end);
-        const saturation=profile.drive?ctx.createWaveShaper():null;
-        source.connect(eq);
-        if(saturation){saturation.curve=driveCurve(profile.drive);saturation.oversample="2x";eq.connect(saturation).connect(volume);}
-        else eq.connect(volume);
-        volume.connect(profile.route==="room"?getGraph().input:getGraph().dryInput);
-        if(profile.click)cymbalNoise(start,.025,peak*profile.click,1800,.006);
-        if(profile.body){
-          const sub=ctx.createOscillator(),subGain=ctx.createGain();
-          sub.type="sine";
-          sub.frequency.setValueAtTime(105,when);
-          sub.frequency.exponentialRampToValueAtTime(52,when+.08);
-          subGain.gain.setValueAtTime(peak*profile.body,when);
-          subGain.gain.exponentialRampToValueAtTime(.0001,when+.19);
-          sub.connect(subGain).connect(getGraph().dryInput);
-          sources.add(sub);
-          sub.onended=()=>{sources.delete(sub);sub.disconnect();subGain.disconnect();};
-          sub.start(when);sub.stop(when+.2);
-        }
-        if(instrument==="hihat")for(const hat of openHats)if(hat.when<=when){hat.gain.gain.cancelScheduledValues(when);hat.gain.gain.setTargetAtTime(0,when,.008);try{hat.source.stop(when+.04);}catch{}}
-        const hat={source,gain:volume,when};if(instrument==="openhat")openHats.add(hat);
-        sources.add(source);source.onended=()=>{sources.delete(source);openHats.delete(hat);source.disconnect();air.disconnect();eq.disconnect();saturation?.disconnect();volume.disconnect();};
-        source.start(when);source.stop(end);return;
-      }
-      velocity*=level;
-      const rock = false, metal = false; // The original electronic voice; acoustic kits return above.
-      const tail = rock ? 1.5 : metal ? 0.72 : 1;
-      if (kit !== "current" && instrument === "kick") cymbalNoise(start, 0.025, velocity * (metal ? 0.09 : 0.04), 2800, 0.007);
-      const ctx = get();
-      const when = ctx.currentTime + start;
-      if (instrument === "kick") {
-        const oscillator = ctx.createOscillator();
-        const volume = ctx.createGain();
-        oscillator.type = "sine";
-        oscillator.frequency.setValueAtTime(metal ? 210 : rock ? 170 : 150, when);
-        oscillator.frequency.exponentialRampToValueAtTime(metal ? 51 : rock ? 46 : 43, when + 0.13 * tail);
-        volume.gain.setValueAtTime(0.26 * velocity, when);
-        volume.gain.exponentialRampToValueAtTime(0.0001, when + 0.18 * tail);
-        oscillator.connect(volume).connect(getGraph().input);
-        sources.add(oscillator);
-        oscillator.onended = () => { sources.delete(oscillator); oscillator.disconnect(); volume.disconnect(); };
-        oscillator.start(when);
-        oscillator.stop(when + 0.19 * tail);
-        return;
-      }
-      if (instrument === "snare") {
-        cymbalNoise(start, 0.19 * tail, (rock ? 0.17 : metal ? 0.15 : 0.12) * velocity, metal ? 1800 : rock ? 900 : 1200, 0.055 * tail);
-        tone(metal ? 57 : rock ? 50 : 78, start, 0.07 * tail, (rock || metal ? 0.055 : 0.025) * velocity, "click");
-        return;
-      }
-      if (instrument === "tomhigh" || instrument === "tomlow") {
-        const oscillator=ctx.createOscillator(), volume=ctx.createGain();
-        const pitch=instrument === "tomhigh" ? 180 : 105;
-        oscillator.frequency.setValueAtTime(pitch*1.5,when);
-        oscillator.frequency.exponentialRampToValueAtTime(pitch,when+.09);
-        volume.gain.setValueAtTime(.18*velocity,when);
-        volume.gain.exponentialRampToValueAtTime(.0001,when+.32*tail);
-        oscillator.connect(volume).connect(getGraph().input); sources.add(oscillator);
-        oscillator.onended=()=>{sources.delete(oscillator);oscillator.disconnect();volume.disconnect();}; oscillator.start(when); oscillator.stop(when+.34*tail);
-        cymbalNoise(start,.035,.025*velocity,1400,.012); return;
-      }
-      if (instrument === "openhat") { cymbalNoise(start,.38*tail,.085*velocity,6500,.12*tail); return; }
-      if (instrument === "hihat") {
-        cymbalNoise(start, 0.13 * tail, 0.085 * velocity, metal ? 8200 : rock ? 5800 : 6800, 0.022 * tail);
-        return;
-      }
-      if (instrument === "crash") {
-        cymbalNoise(start, 0.95 * tail, 0.12 * velocity, metal ? 3600 : 2500, 0.32 * tail);
-        return;
-      }
-      cymbalNoise(start, 0.52 * tail, 0.075 * velocity, metal ? 5200 : 4200, 0.16 * tail);
-      tone(82, start, 0.17, 0.014 * velocity, "click");
-    };
-    const diagnostics = () => {
-      const { context, analyser } = getGraph();
-      const samples = new Uint8Array(analyser.fftSize);
-      analyser.getByteTimeDomainData(samples);
-      return {
-        state: context.state,
-        peak: samples.reduce(
-          (maximum, sample) => Math.max(maximum, Math.abs(sample - 128)),
-          0,
-        ),
-        activeSources: sources.size,
-      };
-    };
-    const stopAll = () => {
-      pendingAudio.clear();
-      if (pendingTimer !== null) clearInterval(pendingTimer);
-      pendingTimer = null;
-      sources.forEach((source) => {
-        try {
-          source.stop();
-        } catch {
-          /* already stopped */
-        }
-      });
-      sources.clear();
-    };
-    const enqueue = (delay: number, emit: (remaining: number) => void) => {
-      if (!Number.isFinite(delay)) return;
-      if (delay <= .2) { emit(Math.max(0, delay)); return; }
-      pendingAudio.add(getGraph().context.currentTime + delay, emit);
-      if (pendingTimer === null) pendingTimer = setInterval(() => {
-        if (getGraph().context.state === "running") pendingAudio.flush(getGraph().context.currentTime);
-        if (!pendingAudio.size && pendingTimer !== null) {
-          clearInterval(pendingTimer);
-          pendingTimer = null;
-        }
-      }, 25);
-    };
-    const queuedTone: typeof tone = (pitch, start = 0, ...rest) => enqueue(start, delay => tone(pitch, delay, ...rest));
-    const queuedDrum: typeof drum = (instrument, start = 0, ...rest) => enqueue(start, delay => drum(instrument, delay, ...rest));
-    return { tone: queuedTone, drum: queuedDrum, get, unlock, diagnostics, stopAll };
-  }, []);
-}
-
-function playChord(
-  engine: ReturnType<typeof useAudioEngine>, symbol: string, start: number,
-  duration: number, gain = .045, voice: SynthVoice = "warm pad", pitches?: number[],
-) {
-  const notes = pitches ?? decodeVoicing(symbol);
-  notes.forEach((pitch,index) => engine.tone(pitch,start+index*.014,Math.max(.1,duration-index*.014),gain*(index===0?.72:1),voice));
-}
-
 function fitMelodyToChords<
   T extends {
     pitch: number;
@@ -1794,7 +1151,8 @@ function useLoopTransport(
   clickOptions?: {enabled:boolean;beatSeconds:number;meter:string},
 ) {
   const clickEngine=useAudioEngine();
-  const clickRef=useRef(clickOptions);clickRef.current=clickOptions;
+  const clickRef=useRef(clickOptions);
+  useEffect(()=>{clickRef.current=clickOptions;},[clickOptions]);
   const clickTick=useRef<(()=>void)|null>(null);
   const [mode, setMode] = useState<"stopped" | "once" | "loop">("stopped");
   const modeRef = useRef<"stopped" | "once" | "loop">("stopped");
@@ -1819,11 +1177,11 @@ function useLoopTransport(
     stopAudio();
   }, [stopAudio,clickEngine]);
   const beginCycle=useCallback(()=>{
-    const origin=sharedAudioGraph?.context.currentTime??0;
+    const origin=clickEngine.get().currentTime;
     const cursor=new QuarterClickScheduler(clickRef.current?.enabled??false);
     clickEngine.stopAll();
     const tick=()=>{
-      const now=sharedAudioGraph?.context.currentTime??origin;
+      const now=clickEngine.get().currentTime;
       const options=clickRef.current;
       if(options)for(const beat of cursor.collect(options.enabled,now-origin,options.beatSeconds,durationRef.current/1000)){
         const accent=beat%(Number(options.meter.split("/")[0])||4)===0;
@@ -1832,7 +1190,7 @@ function useLoopTransport(
     };
     clickTick.current=tick;tick();playRef.current();
     if(visualTimer.current)clearInterval(visualTimer.current);
-    visualTimer.current=setInterval(()=>{tick();publishPlayhead(Math.max(0,(sharedAudioGraph?.context.currentTime??origin)-origin));},25);
+    visualTimer.current=setInterval(()=>{tick();publishPlayhead(Math.max(0,(clickEngine.get().currentTime)-origin));},25);
   },[clickEngine]);
   useEffect(()=>{
     if(!clickOptions?.enabled)clickEngine.stopAll();
@@ -2817,23 +2175,16 @@ function ProjectView({
   const [projectRename,setProjectRename]=useState(project.name);
   const [undoRemoval,setUndoRemoval]=useState<UndoRemoval|null>(null);
   const [creativeSectionId,setCreativeSectionId]=useState<string|null>(null);
-  const [arrangementPlaying, setArrangementPlaying] = useState(false);
-  const [playbackSeconds, setPlaybackSeconds] = useState(0);
-  const [countIn, setCountIn] = useState(false);
-  const [arrangementClick, setArrangementClick] = useState(false);
   const dragSection=useRef<string|null>(null);
   const dragTarget=useRef<string|null>(null);
   const [dropTarget,setDropTarget]=useState<string|null>(null);
   const [orderMessage,setOrderMessage]=useState("");
-  const [loopArrangement, setLoopArrangement] = useState(false);
-  const [audioStatus, setAudioStatus] = useState<string | null>(null);
   const [activeSectionIndex, setActiveSectionIndex] = useState<number | null>(
     null,
   );
   const [playingIdeaId, setPlayingIdeaId] = useState<string | null>(null);
   const arrangementTimer = useRef<number | null>(null);
   const playbackTimer = useRef<number | null>(null);
-  const loopArrangementRef = useRef(false);
   const sectionTimers = useRef<number[]>([]);
   const ideaTimer = useRef<number | null>(null);
   const ideaAudio = useRef<HTMLAudioElement | null>(null);
@@ -2841,9 +2192,9 @@ function ProjectView({
   useEffect(()=>{
     const receive=(event:Event)=>{
       const data=(event as CustomEvent<{projectId:string;sectionId:string;seconds:number}|null>).detail;
-      if(!data){setArrangementPlaying(false);setActiveSectionIndex(null);setPlaybackSeconds(0);return;}
+      if(!data){setActiveSectionIndex(null);return;}
       if(data.projectId!==project.id)return;
-      setArrangementPlaying(true);setActiveSectionIndex(project.sections.findIndex(s=>s.id===data.sectionId));setPlaybackSeconds(data.seconds);
+      setActiveSectionIndex(project.sections.findIndex(s=>s.id===data.sectionId));
     };
     window.addEventListener("inspitivity-song-position",receive);
     return()=>window.removeEventListener("inspitivity-song-position",receive);
@@ -2852,7 +2203,6 @@ function ProjectView({
     if (!project.sections.some((section) => section.id === selectedSectionId))
       setSelectedSectionId(project.sections[0]?.id ?? null);
   }, [project.sections, selectedSectionId]);
-  useEffect(() => { loopArrangementRef.current = loopArrangement; }, [loopArrangement]);
   const move = (index: number, direction: number) =>
     update((p) => {
       const sections = [...p.sections];
@@ -2869,9 +2219,9 @@ function ProjectView({
     sectionTimers.current.forEach((timer) => window.clearTimeout(timer));
     sectionTimers.current = [];
     engine.stopAll();
-    setArrangementPlaying(false);
+
     setActiveSectionIndex(null);
-    setPlaybackSeconds(0);
+
   }, [engine]);
   const stopIdea = useCallback(() => {
     if (ideaTimer.current) window.clearTimeout(ideaTimer.current);
@@ -2988,10 +2338,6 @@ function ProjectView({
     stopArrangement();
     update((p) => ({ ...p, sections:p.sections.map((section) => section.id === sectionId ? { ...section, mix:automaticSectionMix(section,p) } : section) }));
   };
-  const autoBalanceAll = () => {
-    stopArrangement();
-    update((p) => ({ ...p, sections:p.sections.map((section) => ({ ...section, mix:automaticSectionMix(section,p) })) }));
-  };
   const setSectionRepeats = (sectionId: string, repeats: number) => {
     stopArrangement();
     update((p) => ({ ...p, sections:p.sections.map((section) => section.id === sectionId ? { ...section, repeats } : section) }));
@@ -3061,7 +2407,7 @@ function ProjectView({
     }
     stopArrangement();
     stopIdea();
-    if (!(await engine.unlock(idea.type==="drums"?(idea.voice as DrumKit)||"current":undefined,idea.voice==="acoustic guitar",idea.voice==="distorted guitar"))) {setAudioStatus("Instrument samples or audio unavailable. Try Play again.");return;}
+    if (!(await engine.unlock(idea.type==="drums"?(idea.voice as DrumKit)||"current":undefined,idea.voice==="acoustic guitar",idea.voice==="distorted guitar"))) {window.dispatchEvent(new CustomEvent("inspitivity-notice",{detail:"Instrument samples or audio unavailable. Try Play again."}));return;}
     const beat = beatDurationSeconds(project.bpm);
     const beatsPerBar = Number(project.meter.split("/")[0]) || 4;
     setPlayingIdeaId(idea.id);
@@ -3169,10 +2515,6 @@ function ProjectView({
     update(p=>({...p,sections:reorderSection(p.sections,source,target)}));
     setOrderMessage(`Moved ${project.sections.find(s=>s.id===source)?.name ?? "section"} to position ${project.sections.findIndex(s=>s.id===target)+1}`);
   };
-  const markerIndex = Math.max(0, arrangementPlan.markers.findLastIndex((marker) => marker.seconds <= playbackSeconds));
-  const marker = arrangementPlan.markers[markerIndex];
-  const beatInBar = marker ? Math.max(1, Math.floor((playbackSeconds-marker.seconds)/(60/marker.bpm))+1) : 1;
-  const playhead = arrangementPlan.seconds ? Math.min(100,(playbackSeconds/arrangementPlan.seconds)*100) : 0;
   return (
     <>
       <Topbar
@@ -3182,7 +2524,7 @@ function ProjectView({
       />
       <ProjectContext project={project} update={update}/>
       {undoRemoval&&<div className="undo-removal" role="status"><span>Removed {undoRemoval.label}</span><button onClick={restoreRemoval}>Undo</button><button aria-label="Dismiss undo" onClick={()=>setUndoRemoval(null)}>×</button></div>}
-      {creativeSectionId&&project.sections.find(s=>s.id===creativeSectionId)&&<SectionCreativeDialog project={project} source={project.sections.find(s=>s.id===creativeSectionId)!} close={()=>setCreativeSectionId(null)} save={(section,asNew)=>{stopArrangement();stopIdea();update(p=>{const index=p.sections.findIndex(s=>s.id===creativeSectionId);if(index<0)return p;const sections=[...p.sections];if(asNew)sections.splice(index+1,0,section);else sections[index]=section;return {...p,sections};});setSelectedSectionId(section.id);setCreativeSectionId(null);}}/>}
+      {creativeSectionId&&project.sections.find(s=>s.id===creativeSectionId)&&<SectionCreativeDialog newId={uid} generateSeed={freshSeed} renderPreview={(preview,sectionId,autoStart,key)=><SharedSectionPlayer key={key} project={preview} previews={{}} activeSectionId={sectionId} activeTool="project" go={()=>{}} chooseSection={()=>{}} updateProject={()=>{}} previewOnly autoStart={autoStart}/>} project={project} source={project.sections.find(s=>s.id===creativeSectionId)!} close={()=>setCreativeSectionId(null)} save={(section,asNew)=>{stopArrangement();stopIdea();update(p=>{const index=p.sections.findIndex(s=>s.id===creativeSectionId);if(index<0)return p;const sections=[...p.sections];if(asNew)sections.splice(index+1,0,section);else sections[index]=section;return {...p,sections};});setSelectedSectionId(section.id);setCreativeSectionId(null);}}/>}
       <SectionTitle
         eyebrow=""
         title="Arrangement"
@@ -3450,56 +2792,6 @@ function ProjectView({
   );
 }
 
-function SectionCreativeDialog({project,source,close,save}:{project:Project;source:SongSection;close:()=>void;save:(section:SongSection,asNew:boolean)=>void}) {
-  const [locks,setLocks]=useState<SectionLocks>({chords:true});
-  const [candidate,setCandidate]=useState<SongSection|null>(null);
-  const [side,setSide]=useState<"A"|"B">("A");
-  const [summary,setSummary]=useState<string[]>([]);
-  const [role,setRole]=useState<SectionRole|null>(null);
-  const [revision,setRevision]=useState(0);
-  const [autoAudition,setAutoAudition]=useState(false);
-  const auditionEngine=useAudioEngine();
-  const dialog=useRef<HTMLElement|null>(null),closeRef=useRef(close);closeRef.current=close;
-  useEffect(()=>{
-    const trigger=document.activeElement as HTMLElement|null;
-    dialog.current?.querySelector<HTMLButtonElement>('.modal-close')?.focus();
-    const keyboard=(event:KeyboardEvent)=>{
-      if(event.key==="Escape"){event.preventDefault();window.dispatchEvent(new Event("inspitivity-solo-preview"));closeRef.current();return;}
-      if(event.key!=="Tab")return;
-      const controls=Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary,[tabindex="0"]')??[]).filter(el=>el.getClientRects().length>0);
-      const first=controls[0],last=controls.at(-1);
-      if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
-    };
-    document.addEventListener('keydown',keyboard);return()=>{document.removeEventListener('keydown',keyboard);trigger?.focus();};
-  },[]);
-  const available=CREATIVE_LAYERS.filter(layer=>source.ideas.some(i=>i.type===layer&&(i.data?.length||layer==="chords"&&i.detail)));
-  const stop=()=>window.dispatchEvent(new Event("inspitivity-solo-preview"));
-  const chooseSide=(next:"A"|"B")=>{stop();void auditionEngine.unlock();setSide(next);setAutoAudition(true);setRevision(n=>n+1);};
-  const generate=(change:SectionChange)=>{
-    stop();const result=varySection(project,source,locks,change,freshSeed());
-    setCandidate(result.section);setSummary(result.summary);setSide("B");setRole(null);setRevision(n=>n+1);
-  };
-  const develop=(nextRole:SectionRole)=>{
-    stop();const result=developSection(project,source,nextRole,freshSeed(),uid);
-    setCandidate({...result,mix:automaticSectionMix(result,project)});setRole(nextRole);setSide("B");setRevision(n=>n+1);
-    setSummary([nextRole==="bridge"?"Related harmonic contrast; accompaniment follows the new chords":nextRole==="return"?"The original theme returns with a small variation":"Chord progression and opening motif retained",nextRole==="verse"?"More space and softer drums":nextRole==="chorus"?"Stronger pulse and fuller bass":"A different perspective on the same material"]);
-  };
-  const shown=side==="B"&&candidate?candidate:source;
-  const dismiss=()=>{stop();close();};
-  const preview={...project,id:`${project.id}/creative-preview`,sections:[shown]};
-  return <div className="modal-layer" onMouseDown={e=>{if(e.target===e.currentTarget)dismiss();}}>
-    <section ref={dialog} className="modal section-creative-modal" role="dialog" aria-modal="true" aria-labelledby="section-creative-title">
-      <button className="modal-close" aria-label="Close section development" onClick={dismiss}>×</button>
-      <h2 id="section-creative-title">Develop & vary</h2><p data-no-translate>{source.name}</p>
-      <fieldset className="creative-locks"><legend>Keep these parts</legend>{available.map(layer=><label key={layer}><input type="checkbox" checked={!!locks[layer]} onChange={e=>setLocks(current=>({...current,[layer]:e.target.checked}))}/><span>{layer}</span></label>)}</fieldset>
-      <div className="creative-actions">{([["subtle","New variation"],["space","More space"],["energy","More energy"]] as const).map(([change,label])=><button key={change} disabled={available.length===0||available.every(layer=>locks[layer])} onClick={()=>generate(change)}>{label}</button>)}</div>
-      <details className="creative-development"><summary>Build a related section</summary><p>These actions develop all parts together. Track locks apply to variations above.</p><div className="creative-actions">{([["verse","Quieter verse"],["chorus","Stronger chorus"],["bridge","Contrasting bridge"],["return","Theme return"]] as const).map(([nextRole,label])=><button key={nextRole} disabled={!available.length} onClick={()=>develop(nextRole)}>{label}</button>)}</div></details>
-      {candidate&&<><div className="creative-comparison" role="group" aria-label="Compare original and variation"><button aria-pressed={side==="A"} onClick={()=>chooseSide("A")}>A · Original</button><button aria-pressed={side==="B"} onClick={()=>chooseSide("B")}>B · {role?candidate.name:"Variation"}</button></div><ul className="creative-summary" role="status">{summary.map(text=><li key={text}>{text}</li>)}</ul></>}
-      <div className="creative-preview"><SharedSectionPlayer key={`${side}/${revision}`} project={preview} previews={{}} activeSectionId={shown.id} activeTool="project" go={()=>{}} chooseSection={()=>{}} updateProject={()=>{}} previewOnly autoStart={autoAudition} /></div>
-      <div className="creative-footer"><button className="secondary-button" onClick={dismiss}>Keep original</button><button className="primary-button" disabled={!candidate||side!=="B"} onClick={()=>{if(candidate){stop();save(candidate,!!role);}}}>{role?"Add related section":"Keep variation"}</button></div>
-    </section>
-  </div>;
-}
 
 function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, go, chooseSection, updateProject, previewOnly=false, autoStart=false }: {
   project: Project;
@@ -3883,28 +3175,6 @@ type EditorMode = "generate" | "edit" | "sound";
 function EditorModeTabs({label,value,set}:{label:string;value:EditorMode;set:(value:EditorMode)=>void}){
   return <div className="instrument-mode-tabs" role="group" aria-label={label}>{(["generate","edit","sound"] as const).map(mode=><button key={mode} aria-pressed={value===mode} onClick={()=>set(mode)}>{mode==="generate"?"Generate":mode==="edit"?"Edit Notes":"Edit Sound"}</button>)}</div>;
 }
-const SOUND_CHARACTER:Record<string,string>={
-  "warm pad":"Slow stereo bloom · soft saw layers · long release",glass:"Bell-like partials · bright strike · decaying overtones",pluck:"Dry picked attack · short harmonic decay","analog pulse":"Focused analog lead · resonant filter · firm sustain","air flute":"Soft breath-like tone · harmonic body · gentle vibrato","deep bass":"Electric-style bass · pickup transient · warm body","808 bass":"Pitch-drop attack · long sub tail","sub bass":"Pure low fundamental · smooth envelope","acoustic guitar":"Recorded classical guitar · natural string decay","distorted guitar":"Recorded driven guitar · alternate takes · short notes palm-muted"
-};
-function SoundEditor({label,voice,options,change}:{label:string;voice:string;options:readonly string[];change:(value:string)=>void}) {
-  const engine=useAudioEngine(),token=useRef(0);
-  const [message,setMessage]=useState("");
-  const stop=()=>{token.current++;engine.stopAll();};
-  useEffect(()=>()=>{token.current++;engine.stopAll();},[engine]);
-  const audition=async()=>{
-    window.dispatchEvent(new Event("inspitivity-solo-preview"));stop();const current=token.current;
-    setMessage("Loading sound…");
-    try{
-      const ready=await engine.unlock(label==="Drum"?voice as DrumKit:undefined,voice==="acoustic guitar",voice==="distorted guitar");
-      if(current!==token.current)return;
-      if(!ready){setMessage("Sound unavailable. Try again.");return;}
-      if(label==="Drum")for(const [instrument,at,velocity] of [["kick",0,.85],["hihat",0,.55],["snare",.5,.85],["hihat",.75,.4],["kick",1,.7],["snare",1.5,.8]] as const)engine.drum(instrument,at,velocity,voice as DrumKit,.8);
-      else (label==="Chord"?[48,52,55]:label==="Bass"?[36]:[60,64,67]).forEach((pitch,i)=>engine.tone(pitch,label==="Chord"?i*.014:i*.45,label==="Chord"?1.3:.4,label==="Bass"?.08:.045,voice as SynthVoice));
-      setMessage("Sound preview");
-    }catch{if(current===token.current)setMessage("Sound unavailable. Try again.");}
-  };
-  return <section className="sound-editor" aria-label={`Edit ${label} sound`}><h2>Edit Sound</h2><Select label={label==="Drum"?"Drum kit":`${label} instrument`} value={voice} options={options} set={value=>{stop();setMessage("");change(value);}}/><p>{SOUND_CHARACTER[voice]??DRUM_KIT_LABELS[voice as DrumKit]}</p><button className="secondary-button" onClick={()=>void audition()}>Preview sound</button><small role="status">{message}</small><p>The saved part keeps this instrument.</p></section>;
-}
 function ChordExplorer({back}:{back:()=>void}) {
   const [prompt,setPrompt]=useState("");
   const [root,setRoot]=useState<Root|"auto">("auto");
@@ -3944,7 +3214,8 @@ function ChordExplorer({back}:{back:()=>void}) {
     commit(generateThemeDraft(options),"New progression ready · tap a chord to hear its voicing.");
     if(!feel && prompt.trim()) ai.analyze(prompt);
   };
-  const generateRef=useRef(generate);generateRef.current=generate;
+  const generateRef=useRef(generate);
+  useEffect(()=>{generateRef.current=generate;});
   // Typing produces a visible result without requiring a model download.
   useEffect(()=>{
     if(!prompt.trim()) return;
@@ -5383,27 +4654,6 @@ function DrumTool({
       if(ready){engine.drum("kick",0,.8,next);engine.drum("snare",.24,.75,next);}
     });
   };
-  const toggleHit = (instrument: DrumInstrument, step: number) => {
-      const next = [...loop];
-      const index = next.findIndex(
-        (hit) => hit.instrument === instrument && hit.step === step,
-      );
-      if (index >= 0 && Math.abs(next[index].velocity-editVelocity)>.01) next[index]={...next[index],velocity:editVelocity};
-      else if(index>=0) next.splice(index,1);
-      else {
-        next.push({ instrument, step, velocity: editVelocity });
-        // Audition outside React's state updater so Strict Mode cannot play twice.
-        void unlockDrums().then((ready) => {
-          if (ready) engine.drum(instrument, 0, editVelocity, voice);
-        });
-      }
-      setSavedLoop(next.sort(
-        (a, b) =>
-          a.step - b.step ||
-          DRUM_INSTRUMENTS.indexOf(a.instrument) -
-            DRUM_INSTRUMENTS.indexOf(b.instrument),
-      ));
-  };
   const regenerate = () => {
     setSavedLoop(null);
     setSeed((current) => current + 1);
@@ -5771,28 +5021,6 @@ function ControlTitle({ n, title }: { n: string; title: string }) {
       <span>{n}</span>
       {title}
     </h3>
-  );
-}
-function Select({
-  label,
-  value,
-  set,
-  options,
-}: {
-  label: string;
-  value: string;
-  set: (v: string) => void;
-  options: readonly string[];
-}) {
-  return (
-    <label className="select-control">
-      <span>{label}</span>
-      <select value={options.includes("ionian")?canonicalMode(value):value} onChange={(e) => set(e.target.value)}>
-        {options.map((o) => (
-          <option key={o} value={o}>{o==="auto"?"Auto":label==="Drum kit"?DRUM_KIT_LABELS[o as DrumKit]:label==="Strum rhythm"?CHORD_RHYTHM_LABELS[o as ChordRhythm]:o==="acoustic guitar"?"Classical guitar · recorded":MODE_LABELS[o as Mode] ?? o}</option>
-        ))}
-      </select>
-    </label>
   );
 }
 function Segment<T extends string | number>({

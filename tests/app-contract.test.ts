@@ -91,7 +91,7 @@ test("bass connects harmony and drums and participates in playback and mixing", 
   assert.match(source, /Follow kick attacks when drums exist/);
   assert.match(source, /type:"bass"/);
   assert.match(source, /"deep bass"/);
-  assert.match(source, /\["bass", "Bass"\]/);
+  assert.match(source, /LAYER_LABELS/);
   assert.match(source, /pitchClass === 11 \? 23 : 24 \+ pitchClass/);
   assert.match(source, /const BASS_VOICES/);
   assert.match(source, /const updateBassEvent/);
@@ -111,15 +111,6 @@ test("bass connects harmony and drums and participates in playback and mixing", 
   assert.match(theme, /\.bass-note-editor/);
 });
 
-test("deep bass uses a layered, dry electric-bass signal path", () => {
-  assert.match(source, /if \(voice === "deep bass"\)/);
-  assert.match(source, /type:"sine" as OscillatorType/);
-  assert.match(source, /oscillator.setPeriodicWave\(bassWave!/);
-  assert.match(source, /bassHarmonics\(\)/);
-  assert.match(source, /body\.type = "lowshelf"/);
-  assert.match(source, /connect\(getGraph\(\)\.dryInput\)/);
-  assert.match(source, /"deep bass": 33/);
-});
 
 test("arrangement sections expose repeats, energy, copies, and variations without overlapping asset actions", async () => {
   const studio = await readFile(resolve(process.cwd(), "app/studio.css"), "utf8");
@@ -242,17 +233,6 @@ test("native select values and options remain readable in both dark themes", () 
   assert.match(theme, /select option\{color:var\(--ink\);background:var\(--surface\)/);
 });
 
-test("mobile playback explicitly unlocks and masters the Web Audio graph", () => {
-  assert.match(source, /const unlock = async \(kit\?:DrumKit\|"all", guitar=false, electric=false\) =>/);
-  assert.match(source, /context\.state === "running" \? Promise\.resolve\(\) : context\.resume\(\)/);
-  assert.match(source, /sharedAudioGraph/);
-  assert.match(source, /sharedNativeAudioUnlock\.play/);
-  assert.match(source, /const diagnostics = \(\) =>/);
-  assert.match(source, /Preparing audio/);
-  assert.match(source, /createDynamicsCompressor/);
-  assert.match(source, /createConvolver/);
-  assert.match(source, /engine\.unlock/);
-});
 
 test("easy mode creates one coordinated song draft with optional customization", () => {
   assert.doesNotMatch(source, /Turn the next spark into music/);
@@ -317,7 +297,7 @@ test("auto balance confirms success and quick recording is centered",()=>{
   assert.match(workspace,/\.record-visual \{ position:relative;display:flex;align-items:center;justify-content:center/);
   assert.match(source,/className="sketch-intensity"/);
   assert.match(source,/hard\?"distorted guitar"/);
-  assert.match(source,/INSTRUMENT_CHARACTERS\[voice\]/);
+
 });
 
 test("backdrop and popover outside clicks dismiss only the active overlay",()=>{
@@ -356,7 +336,7 @@ test("arrangement sections own playback and persistent per-track mixing", async 
   const theme = await readFile(resolve(process.cwd(), "app/theme.css"), "utf8");
   assert.match(source, /className="section-mixer"/);
   assert.match(source, /mixerChannels/);
-  assert.match(source, /DEFAULT_SECTION_MIX/);
+  assert.match(source, /sectionMix/);
   assert.match(source, /mix: \{ \.\.\.section\.mix/);
   assert.match(source, /event\.sectionId/);
   assert.match(source, /\["project", "drums", "chords", "explorer", "melody", "bass", "riff", "metronome"\]\.includes\(screen\)/);
@@ -601,13 +581,4 @@ test("progressive workflows include meter maps, synth patterns, transformations,
     source,
     /"steady",\s*"syncopated",\s*"driving",\s*"djent",\s*"odd meter",\s*"linear"/,
   );
-});
-
-test("drum playback uses percussion voices, including a cymbal-like hi-hat", () => {
-  assert.match(source, /const createNoiseSample/);
-  assert.match(source, /const cymbalNoise/);
-  assert.match(source, /instrument === "hihat"/);
-  assert.match(source, /6800/);
-  assert.match(source, /instrument === "crash"/);
-  assert.match(source, /cymbalNoise\(start, 0\.52/);
 });

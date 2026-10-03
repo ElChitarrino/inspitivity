@@ -12,7 +12,10 @@
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run test:unit && npm run build",
     "test:unit": "tsc -p tsconfig.tests.json && node --test .test-dist/tests/*.test.js",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "format": "prettier --write app/audio/*.ts app/components/*.tsx packages/sequencing/audio-engine.ts packages/sequencing/voice-types.ts packages/workspace/section-{development,context,mix}.ts packages/workspace/idea-codecs.ts tests/section-maintenance.test.ts tests/audio-engine.test.ts",
+    "format:check": "prettier --check app/audio/*.ts app/components/*.tsx packages/sequencing/audio-engine.ts packages/sequencing/voice-types.ts packages/workspace/section-{development,context,mix}.ts packages/workspace/idea-codecs.ts tests/section-maintenance.test.ts tests/audio-engine.test.ts",
+    "lint:refactored": "eslint app/audio app/components packages/sequencing/audio-engine.ts packages/sequencing/voice-types.ts packages/workspace/section-development.ts packages/workspace/section-context.ts packages/workspace/section-mix.ts packages/workspace/idea-codecs.ts tests/section-maintenance.test.ts tests/audio-engine.test.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
@@ -40,6 +43,7 @@
     "eslint-plugin-react": "7.37.5",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "16.4.0",
+    "prettier": "3.6.2",
     "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
