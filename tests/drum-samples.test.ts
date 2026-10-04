@@ -47,11 +47,11 @@ test('acoustic samples load once per audio context and alternate strength and ta
   const originalFetch=globalThis.fetch;
   let fetches=0,decodes=0;
   const context={decodeAudioData:async()=>({id:++decodes})} as unknown as AudioContext;
-  globalThis.fetch=(async()=>{fetches++;return {ok:true,arrayBuffer:async()=>new ArrayBuffer(2)} as Response;}) as typeof fetch;
+  globalThis.fetch=(async(url)=>{fetches++;const bytes=readFileSync(`public${url}`);return {ok:true,arrayBuffer:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)} as Response;}) as typeof fetch;
   try{
     await Promise.all([loadDrumSamples(context),loadDrumSamples(context)]);
     await loadDrumSamples(context);
-    assert.equal(fetches,32);assert.equal(decodes,32);
+    assert.equal(fetches,2);assert.equal(decodes,32);
     const soft=drumSample(context,'kick',.3,0),alternate=drumSample(context,'kick',.3,1),hard=drumSample(context,'kick',.8,0);
     assert.ok(soft&&alternate&&hard);assert.notEqual(soft,alternate);assert.notEqual(soft,hard);
     assert.equal(drumSample(context,'kick',.3,2),soft);
@@ -63,7 +63,7 @@ test('rock and metal load an independent recorded kit with velocity layers',asyn
   const originalFetch=globalThis.fetch;
   let decodes=0;
   const context={decodeAudioData:async()=>({id:++decodes})} as unknown as AudioContext;
-  globalThis.fetch=(async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(2)} as Response)) as typeof fetch;
+  globalThis.fetch=(async(url)=>{const bytes=readFileSync(`public${url}`);return {ok:true,arrayBuffer:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)} as Response;}) as typeof fetch;
   try{
     await Promise.all([loadDrumSamples(context),loadMetalDrumSamples(context),loadMetalDrumSamples(context)]);
     assert.equal(decodes,60);

@@ -13,9 +13,11 @@
     "test": "npm run test:unit && npm run build",
     "test:unit": "tsc -p tsconfig.tests.json && node --test .test-dist/tests/*.test.js",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "format": "prettier --write app/audio/*.ts app/components/*.tsx packages/sequencing/audio-engine.ts packages/sequencing/voice-types.ts packages/workspace/section-{development,context,mix}.ts packages/workspace/idea-codecs.ts tests/section-maintenance.test.ts tests/audio-engine.test.ts",
-    "format:check": "prettier --check app/audio/*.ts app/components/*.tsx packages/sequencing/audio-engine.ts packages/sequencing/voice-types.ts packages/workspace/section-{development,context,mix}.ts packages/workspace/idea-codecs.ts tests/section-maintenance.test.ts tests/audio-engine.test.ts",
-    "lint:refactored": "eslint app/audio app/components packages/sequencing/audio-engine.ts packages/sequencing/voice-types.ts packages/workspace/section-development.ts packages/workspace/section-context.ts packages/workspace/section-mix.ts packages/workspace/idea-codecs.ts tests/section-maintenance.test.ts tests/audio-engine.test.ts"
+    "format": "prettier --write app/audio/*.ts app/components/*.tsx packages/sequencing/audio-engine.ts packages/sequencing/voice-types.ts packages/workspace/section-{development,context,mix}.ts packages/workspace/idea-codecs.ts tests/section-maintenance.test.ts tests/audio-engine.test.ts packages/sequencing/{sample-bank,drum-samples,guitar-samples,electric-guitar-samples}.ts tests/sample-bank.test.ts scripts/{build-audio-packs,benchmark-sound-startup}.mjs",
+    "format:check": "prettier --check app/audio/*.ts app/components/*.tsx packages/sequencing/audio-engine.ts packages/sequencing/voice-types.ts packages/workspace/section-{development,context,mix}.ts packages/workspace/idea-codecs.ts tests/section-maintenance.test.ts tests/audio-engine.test.ts packages/sequencing/{sample-bank,drum-samples,guitar-samples,electric-guitar-samples}.ts tests/sample-bank.test.ts scripts/{build-audio-packs,benchmark-sound-startup}.mjs",
+    "lint:refactored": "eslint app/audio app/components packages/sequencing/audio-engine.ts packages/sequencing/voice-types.ts packages/workspace/section-development.ts packages/workspace/section-context.ts packages/workspace/section-mix.ts packages/workspace/idea-codecs.ts tests/section-maintenance.test.ts tests/audio-engine.test.ts packages/sequencing/sample-bank.ts packages/sequencing/drum-samples.ts packages/sequencing/guitar-samples.ts packages/sequencing/electric-guitar-samples.ts tests/sample-bank.test.ts scripts/build-audio-packs.mjs scripts/benchmark-sound-startup.mjs",
+    "audio:packs": "node scripts/build-audio-packs.mjs",
+    "benchmark:audio": "tsc -p tsconfig.tests.json && node scripts/benchmark-sound-startup.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

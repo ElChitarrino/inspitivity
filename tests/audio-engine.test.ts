@@ -228,3 +228,68 @@ test("every synthesized instrument and electronic drum schedules finite audio an
       assert.ok(parameter.calls.every(Number.isFinite));
   }
 });
+
+test("sample banks start together without waiting for native audio; mixed kits all remain playable", async (t) => {
+  const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const audioDescriptor = Object.getOwnPropertyDescriptor(globalThis, "Audio");
+  const originalFetch = globalThis.fetch;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { AudioContext: ContextStub },
+  });
+  class NativeAudioStub {
+    loop = false;
+    preload = "";
+    setAttribute() {}
+    play() {
+      return new Promise<void>(() => {});
+    }
+  }
+  Object.defineProperty(globalThis, "Audio", { configurable: true, value: NativeAudioStub });
+  const engine = createAudioEngine();
+  const context = engine.get() as unknown as ContextStub & {
+    decodeAudioData: () => Promise<AudioBuffer>;
+  };
+  context.decodeAudioData = async () =>
+    context.createBuffer(2, 8000, 8000) as unknown as AudioBuffer;
+  const urls: string[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  globalThis.fetch = (async (url) => {
+    urls.push(String(url));
+    await gate;
+    const { readFile } = await import("node:fs/promises");
+    const data = await readFile(`public${url}`);
+    return {
+      ok: true,
+      arrayBuffer: async () =>
+        data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
+    } as Response;
+  }) as typeof fetch;
+  t.after(async () => {
+    // Let the low-priority alternate requests finish before restoring global fetch.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    engine.stopAll();
+    context.state = "closed";
+    globalThis.fetch = originalFetch;
+    if (windowDescriptor) Object.defineProperty(globalThis, "window", windowDescriptor);
+    else Reflect.deleteProperty(globalThis, "window");
+    if (audioDescriptor) Object.defineProperty(globalThis, "Audio", audioDescriptor);
+    else Reflect.deleteProperty(globalThis, "Audio");
+  });
+  const ready = engine.unlock("all", true, true);
+  assert.deepEqual(urls.sort(), [
+    "/audio/packs/acoustic-ready-v1.bin",
+    "/audio/packs/classical-ready-v1.bin",
+    "/audio/packs/electric-ready-v1.bin",
+    "/audio/packs/metal-ready-v1.bin",
+  ]);
+  release();
+  assert.equal(await ready, true);
+  const { drumSample, metalDrumSample } = await import("../packages/sequencing/drum-samples.js");
+  assert.ok(drumSample(engine.get(), "kick", 0.8, 0));
+  assert.ok(drumSample(engine.get(), "crash", 0.8, 0));
+  assert.ok(metalDrumSample(engine.get(), "kick", 0.8, 0));
+});

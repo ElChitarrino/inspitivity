@@ -14,7 +14,7 @@ test('recorded electric-guitar notes cover low riffs and return distinct takes',
   const originalFetch=globalThis.fetch;
   let fetches=0;
   const context={decodeAudioData:async()=>({id:++fetches,duration:3})} as unknown as AudioContext;
-  globalThis.fetch=(async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(3)} as Response)) as typeof fetch;
+  globalThis.fetch=(async(url)=>{const bytes=readFileSync(`public${url}`);return {ok:true,arrayBuffer:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)} as Response;}) as typeof fetch;
   try{
     await Promise.all([loadElectricGuitarSamples(context),loadElectricGuitarSamples(context)]);
     assert.equal(fetches,24);

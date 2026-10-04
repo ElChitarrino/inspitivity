@@ -45,7 +45,7 @@ import { chooseSketch, scoreSketch } from "../packages/workspace/sketch-quality"
 import { generateThemeDraft, THEME_FEELS, type ThemeFeel, type ExplorerOptions } from "../packages/workspace/theme-explorer";
 import { useThemeAI } from "./use-theme-ai";
 import { adaptAccompaniment, harmonyChanged } from "../packages/workspace/harmony-adapt";
-import {DRUM_KITS,DRUM_KIT_LABELS,type DrumKit} from '../packages/sequencing/drum-samples';
+import {DRUM_KITS,DRUM_KIT_LABELS,drumBankRequirement,type DrumKit} from '../packages/sequencing/drum-samples';
 import { CHORD_RHYTHMS, CHORD_RHYTHM_LABELS, chordNoteEvents, decodeRhythmicChord, encodeChordAttacks, generateChordRhythm, type ChordRhythm, type ChordAttack } from "../packages/music-theory/chord-rhythm";
 import {
   beatDurationSeconds,
@@ -2872,7 +2872,7 @@ function SharedSectionPlayer({ project, previews, activeSectionId, activeTool, g
     const token = generation.current;
     try {
       setBusy(true);
-      if (!(await engine.unlock(latest.current.plan.events.some(e=>e.layer==="drums"&&(e.voice==="rock"||e.voice==="prog metal"))?"all":latest.current.plan.events.some(e=>e.layer==="drums"&&e.voice&&e.voice!=="current")?"acoustic studio":undefined,latest.current.plan.events.some(e=>e.voice==="acoustic guitar"),latest.current.plan.events.some(e=>e.voice==="distorted guitar"))) || token !== generation.current) {setMessage("Audio or instrument samples unavailable. Try Play again.");return;}
+      if (!(await engine.unlock(drumBankRequirement(latest.current.plan.events),latest.current.plan.events.some(e=>e.voice==="acoustic guitar"),latest.current.plan.events.some(e=>e.voice==="distorted guitar"))) || token !== generation.current) {setMessage("Audio or instrument samples unavailable. Try Play again.");return;}
       if (!latest.current.plan.events.length) { setMessage("Add or generate a part to hear this section."); return; }
       window.dispatchEvent(new Event("inspitivity-context-play"));
       setMessage(""); setPlaying(true);

@@ -8,6 +8,7 @@ import {
 import { samplePlaybackGain } from "./sample-levels.js";
 import {
   loadDrumSamples,
+  loadCrashSamples,
   loadMetalDrumSamples,
   drumSample,
   metalDrumSample,
@@ -153,37 +154,35 @@ export function createAudioEngine() {
       sharedNativeAudioUnlock.preload = "auto";
       sharedNativeAudioUnlock.setAttribute("playsinline", "");
     }
-    const nativeUnlock = sharedNativeAudioUnlock.play().catch(() => undefined);
+    // Start both unlock paths in the user gesture; native audio must not gate sample downloads.
+    void sharedNativeAudioUnlock.play().catch(() => undefined);
     const contextUnlock = context.state === "running" ? Promise.resolve() : context.resume();
-    await Promise.allSettled([nativeUnlock, contextUnlock]);
-    if (kit && kit !== "current") {
-      try {
-        await loadDrumSamples(context);
-      } catch {
-        return false;
-      }
-      if (kit === "rock" || kit === "prog metal" || kit === "all") {
-        try {
-          await loadMetalDrumSamples(context);
-        } catch {
-          return false;
-        }
-      }
+    const samples: Promise<void>[] = [];
+    const recordedDrums = kit && kit !== "current";
+    const metalDrums = kit === "rock" || kit === "prog metal" || kit === "all";
+    if (recordedDrums) {
+      samples.push(
+        metalDrums && kit !== "all" ? loadCrashSamples(context) : loadDrumSamples(context, false),
+      );
+      if (metalDrums) samples.push(loadMetalDrumSamples(context, false));
     }
-    if (guitar) {
-      try {
-        await loadGuitarSamples(context);
-      } catch {
-        return false;
-      }
+    if (guitar) samples.push(loadGuitarSamples(context));
+    if (electric) samples.push(loadElectricGuitarSamples(context, false));
+    try {
+      await Promise.all([contextUnlock, ...samples]);
+    } catch {
+      return false;
     }
-    if (electric) {
-      try {
-        await loadElectricGuitarSamples(context);
-      } catch {
-        return false;
-      }
-    }
+    // Alternate takes enrich repeated notes but must never hold up the first beat.
+    if (recordedDrums || electric)
+      setTimeout(() => {
+        const alternates: Promise<void>[] = [];
+        if (kit === "all") alternates.push(loadDrumSamples(context));
+        if (recordedDrums)
+          alternates.push(metalDrums ? loadMetalDrumSamples(context) : loadDrumSamples(context));
+        if (electric) alternates.push(loadElectricGuitarSamples(context));
+        void Promise.allSettled(alternates);
+      }, 250);
     const silence = context.createBufferSource();
     silence.buffer = context.createBuffer(1, 1, context.sampleRate);
     silence.connect(input);
