@@ -41,6 +41,8 @@ import { QuarterClickScheduler } from "../packages/sequencing/live-click";
 import { reorderSection, timelineDuration } from "../packages/workspace/arrangement-order";
 import { playbackProject } from "../packages/workspace/playback";
 import { alignPhrase } from "../packages/workspace/sketch";
+import { interpretSongBrief } from "../packages/workspace/song-brief";
+import { phraseLead } from "../packages/workspace/lead-phrasing";
 import { chooseSketch, scoreSketch } from "../packages/workspace/sketch-quality";
 import { generateThemeDraft, THEME_FEELS, type ThemeFeel, type ExplorerOptions } from "../packages/workspace/theme-explorer";
 import { useThemeAI } from "./use-theme-ai";
@@ -182,6 +184,7 @@ type SketchOptions = {
   extendedForm: boolean;
   intensity: "mellow" | "steady" | "hard";
   direction?: MusicalDirection;
+  brief?: string;
 };
 
 const SYNTH_VOICES: SynthVoice[] = [
@@ -676,13 +679,13 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions, seed 
     seed:seed+23,startOffset:preset.id==="heavy"?.25:.5,motion:preset.id==="heavy"?"anchor":"orbit",
   }).map(note=>({...note,note:midiNoteName(note.pitch),velocity:note.accent?.8:.62})),beatsPerBar*themeCount),themeChords):[];
   const hard=options.intensity==="hard",mellow=options.intensity==="mellow";
-  const chordVoice:SynthVoice=hard?"distorted guitar":mellow?"acoustic guitar":preset.id==="emotive"?"acoustic guitar":preset.id==="neo-soul"?"warm pad":preset.id==="funk"?"pluck":preset.id==="rock"?"distorted guitar":"glass";
-  const melodyVoice:SynthVoice=hard?"pluck":mellow?"air flute":preset.id==="neo-soul"?"glass":"analog pulse";
+  const chordVoice:SynthVoice=hard?"distorted guitar":mellow?"acoustic guitar":preset.id==="emotive"?"acoustic guitar":preset.id==="neo-soul"||preset.id==="prog"?"warm pad":preset.id==="funk"?"acoustic guitar":preset.id==="rock"?"distorted guitar":"glass";
+  const melodyVoice:SynthVoice=hard?"pluck":mellow?"air flute":preset.id==="neo-soul"||preset.id==="prog"?"acoustic guitar":"air flute";
   const patternVoice:SynthVoice=hard?"distorted guitar":preset.id==="prog"?"analog pulse":"pluck";
   const drumVoice:DrumKit=preset.id==="heavy"||preset.id==="prog"?hard?"prog metal":"rock"
     :preset.id==="rock"?hard?"rock":"roomy rock"
     :preset.id==="emotive"?mellow?"dark acoustic":"acoustic studio":"dry studio";
-  const bassVoice:BassVoice=hard||preset.id==="funk"||preset.id==="neo-soul"?"deep bass":mellow?"sub bass":"808 bass";
+  const bassVoice:BassVoice="deep bass";
   const mainBars=options.extendedForm?pick([4,8]):4;
   const sections = form.map((formSection, sectionIndex): SongSection => {
     const sectionSeed = seed + sectionIndex * 17;
@@ -704,19 +707,19 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions, seed 
     const sectionEnergy:GrooveEnergy=options.direction==="mellow"?"mellow":options.direction==="driving"&&!mellow?"powerful":mellow?"mellow":hard?(density>.6?"powerful":"balanced"):formSection.energy<.43?"mellow":formSection.energy>.72?"powerful":"balanced";
     const drums=buildSketchGroove(pocket,beatsPerBar,bars,relation==="return"?seed+13:sectionSeed+13,sectionEnergy,relation);
     const rhythmContext:SongSection={id:"rhythm",name:formSection.name,bars,color:formSection.color,ideas:[{id:"drum",type:"drums",name:pocket.name,detail:"",data:drums.map(hit=>`${hit.instrument}|${hit.step}|${hit.velocity}|${beatsPerBar*bars}`)}]};
-    const voicedChords=preset.id==="heavy"?sourceChords.map(chord=>({...chord,pitches:heavyPowerVoicing(chord.name)})):sourceChords;
+    const voicedChords=chordVoice==="distorted guitar"?sourceChords.map(chord=>({...chord,pitches:heavyPowerVoicing(chord.name)})):sourceChords;
     const chords=rhythmizeChords(voicedChords,relation==="return"?seed:sectionSeed,rhythmStyle,meter,rhythmContext);
     const motifSource=relation==="contrast"
       ?shapeSketchMotif(alignPhrase(generateMelody({root,mode,notes:Math.max(8,Math.round(12*density)),density:Math.min(.65,density),mood:feeling?.mood??preset.mood,seed:seed+107,shape:"answer"}),themeCount*beatsPerBar),preset.id,beatsPerBar,seed+107)
       :coreMotif;
-    const melody=fitMelodyToChords(motifSource,chords).map(note=>({...note,velocity:Math.max(.48,Math.min(.82,.5+density*.35))}));
+    const melody=phraseLead(fitMelodyToChords(motifSource,chords),beatsPerBar,themeCount*beatsPerBar).map(note=>({...note,velocity:Math.max(.35,Math.min(.85,note.velocity*(.8+density*.25)))}));
     const riffLeads=options.includePattern&&sectionIndex>0&&(hard||(!mellow&&formSection.energy>=.45))&&(relation!=="return"||preset.id==="heavy");
     const riff=riffLeads?fitMelodyToChords(coreRiff,chords):[];
     const ideas: Idea[] = [
       { id:uid(),type:"chords",name:`${formSection.name} · ${relation==="contrast"?harmonicContrast.name:harmonicTheme.name}`,voice:chordVoice,detail:chords.map(chord=>chord.name).join(" · "),data:chords.map(encodeChord) },
       { id:uid(),type:"drums",name:`${formSection.name} · ${pocket.name}`,voice:drumVoice,detail:`${drums.length} hits · ${meter}`,data:drums.map(hit=>`${hit.instrument}|${hit.step}|${hit.velocity}|${beatsPerBar*bars}`) },
     ];
-    if(options.includeMelody&&!riffLeads)ideas.splice(1,0,{ id:uid(),type:"melody",name:`${formSection.name} motif`,voice:melodyVoice,detail:melody.map(note=>note.note).join(" · "),data:melody.map(note=>`${note.note}|${note.start}|${note.duration}|${note.pitch}`) });
+    if(options.includeMelody&&!riffLeads)ideas.splice(1,0,{ id:uid(),type:"melody",name:`${formSection.name} motif`,voice:melodyVoice,detail:melody.map(note=>note.note).join(" · "),cycleBeats:themeCount*beatsPerBar,data:melody.map(note=>`${note.note}|${note.start}|${note.duration}|${note.pitch}|${note.velocity}`) });
     if(riff.length) ideas.push({ id:uid(),type:"riff",name:`${formSection.name} pulse`,voice:patternVoice,detail:`${riff.length} notes · ${meter}`,data:riff.map(note=>`${note.pitch}|${note.start}|${note.duration}|${note.accent?1:0}|${note.muted?1:0}`) });
     const section: SongSection = { id:uid(),name:formSection.name,bars,color:formSection.color,ideas,meterMap:Array.from({length:bars},()=>meter),energy:sectionEnergy };
     const sketchContext: Project = { id:"preview",name:preset.label,bpm,meter,key:formatProjectKey(root,mode),updated:0,sections:[section] };
@@ -731,6 +734,7 @@ function buildPlayableSketch(preset: SketchPreset, options: SketchOptions, seed 
       true,
     );
     ideas.push({ id:uid(),type:"bass",name:`${formSection.name} bass`,detail:`${bass.length} notes · follows harmony and kick`,data:bass.map(encodeBassEvent),voice:bassVoice });
+    if(sectionIndex===0&&options.brief?.trim())ideas.push({id:uid(),type:"text",name:"Song brief",detail:options.brief.trim()});
     section.mix=automaticSectionMix(section,sketchContext);
     return section;
   });
@@ -1837,6 +1841,8 @@ function Home({
   const [includePattern,setIncludePattern]=useState(preset.id==="prog"||preset.id==="heavy");
   const [extendedForm,setExtendedForm]=useState(false);
   const [sketchIntensity,setSketchIntensity]=useState<SketchOptions["intensity"]>("steady");
+  const [songBrief,setSongBrief]=useState("");
+  const [briefNotice,setBriefNotice]=useState("");
   const [musicalDirection,setMusicalDirection]=useState<MusicalDirection>("hopeful");
   const [draftChoices,setDraftChoices]=useState<{settings:string;projects:Project[]}|null>(null);
   const [previewIndex,setPreviewIndex]=useState(0);
@@ -1847,6 +1853,19 @@ function Home({
     setMeterTop(candidate.meter.split("/")[0]);setMeterBottom(Number(candidate.meter.split("/")[1]));
     setIncludeMelody(true);setIncludePattern(candidate.id==="prog"||candidate.id==="heavy");setExtendedForm(false);
     setSketchIntensity(candidate.id==="emotive"?"mellow":candidate.id==="heavy"?"hard":"steady");
+  };
+  const applySongBrief=()=>{
+    const intent=interpretSongBrief(songBrief);
+    if(intent.style){const suggested=SKETCH_PRESETS.find(candidate=>candidate.id===intent.style);if(suggested)choosePreset(suggested);}
+    if(intent.direction)setMusicalDirection(intent.direction);
+    if(intent.intensity)setSketchIntensity(intent.intensity);
+    if(intent.bpm)setSketchBpm(String(intent.bpm));
+    if(intent.meter){const [top,bottom]=intent.meter.split("/");setMeterTop(top);setMeterBottom(Number(bottom));}
+    if(intent.root)setSketchRoot(intent.root);
+    if(intent.mode)setSketchMode(intent.mode);
+    if(intent.includeMelody!==undefined)setIncludeMelody(intent.includeMelody);
+    if(intent.includePattern!==undefined)setIncludePattern(intent.includePattern);
+    setBriefNotice(intent.recognized.length?intent.recognized.join(" · "):"No musical settings recognized; your current choices will be used.");
   };
   const randomizeSketchSettings=()=>{
     const random=seededRandom(freshSeed());
@@ -1866,7 +1885,7 @@ function Home({
   };
   const parsedSketchBpm=clampBpm(Number.parseInt(sketchBpm,10)||preset.bpm);
   const parsedMeterTop=Math.max(1,Math.min(16,Number.parseInt(meterTop,10)||Number(preset.meter.split("/")[0])||4));
-  const sketchOptions:SketchOptions={root:sketchRoot,mode:sketchMode,bpm:parsedSketchBpm,meter:`${parsedMeterTop}/${meterBottom===8?8:4}`,includeMelody,includePattern,extendedForm,intensity:sketchIntensity,direction:musicalDirection};
+  const sketchOptions:SketchOptions={root:sketchRoot,mode:sketchMode,bpm:parsedSketchBpm,meter:`${parsedMeterTop}/${meterBottom===8?8:4}`,includeMelody,includePattern,extendedForm,intensity:sketchIntensity,direction:musicalDirection,brief:songBrief};
   const settings=JSON.stringify([preset.id,sketchOptions]);
   const choices=draftChoices?.settings===settings?draftChoices.projects:null;
   const selectedDraft=choices?.[previewIndex];
@@ -1915,6 +1934,8 @@ function Home({
           <div className="modal easy-mode-modal" role="dialog" aria-modal="true" aria-labelledby="easy-mode-title">
           <button className="modal-close" aria-label="Close Easy Mode" onClick={()=>setStartMode(null)}>×</button>
           <div className="quick-sketch-heading"><div><p className="eyebrow">Easy mode</p><h2 id="easy-mode-title">Choose the song&apos;s direction</h2></div><span>Every part follows one shared musical plan.</span></div>
+          <label className="song-brief-control"><span>Describe your song idea</span><textarea value={songBrief} maxLength={600} rows={3} placeholder="Hopeful progressive fusion, D dorian, 110 BPM, 7/8, backing track without melody" onChange={event=>setSongBrief(event.target.value)}/></label>
+          <button className="secondary-button" onClick={applySongBrief}>Apply description</button><p role="status" data-no-translate>{briefNotice}</p>
           <div className="preset-grid" role="radiogroup" aria-label="Sketch direction">
             {SKETCH_PRESETS.map((candidate) => (
             <button

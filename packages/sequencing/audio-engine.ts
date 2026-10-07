@@ -3,6 +3,7 @@ import { bassHarmonics } from "./bass-timbre.js";
 import {
   INSTRUMENT_CHARACTERS,
   instrumentEnvelope,
+  characterPeakGain,
   isCharacterVoice,
 } from "./instrument-voices.js";
 import { samplePlaybackGain } from "./sample-levels.js";
@@ -214,7 +215,8 @@ export function createAudioEngine() {
         guitarTakes.set(midi, take + 1);
         const source = ctx.createBufferSource(),
           volume = ctx.createGain(),
-          palm = ctx.createBiquadFilter();
+          palm = ctx.createBiquadFilter(),
+          lowCut = ctx.createBiquadFilter();
         source.buffer = recorded.buffer;
         source.playbackRate.value = recorded.rate;
         const muted = palmMuted || duration < 0.32;
@@ -223,6 +225,9 @@ export function createAudioEngine() {
           recorded.buffer.duration / recorded.rate,
           Math.max(0.09, muted ? Math.min(duration, 0.22) : duration) + release,
         );
+        lowCut.type = "highpass";
+        lowCut.frequency.value = 65;
+        lowCut.Q.value = 0.7;
         palm.type = "lowpass";
         palm.frequency.value = muted ? 2600 : 5600;
         volume.gain.setValueAtTime(0.0001, when);
@@ -235,12 +240,13 @@ export function createAudioEngine() {
           Math.max(when + 0.004, when + end - release),
         );
         volume.gain.exponentialRampToValueAtTime(0.0001, when + end);
-        source.connect(palm).connect(volume).connect(getGraph().dryInput);
+        source.connect(lowCut).connect(palm).connect(volume).connect(getGraph().dryInput);
         sources.add(source);
         source.onended = () => {
           sources.delete(source);
           source.disconnect();
           palm.disconnect();
+          lowCut.disconnect();
           volume.disconnect();
         };
         source.start(when);
@@ -494,8 +500,7 @@ export function createAudioEngine() {
         ),
         when + envelope.hold,
       );
-      const energy = Math.sqrt(character.partials.reduce((sum, p) => sum + p.level * p.level, 0));
-      const peak = (gain * 0.95) / Math.max(0.7, energy);
+      const peak = characterPeakGain(character, gain);
       volume.gain.setValueAtTime(0.0001, when);
       volume.gain.linearRampToValueAtTime(peak, when + envelope.attack);
       volume.gain.linearRampToValueAtTime(

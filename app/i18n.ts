@@ -4,6 +4,8 @@ export const isUiLanguage = (value: unknown): value is UiLanguage => value === "
 
 // English is the source language. Keys are interface copy, never saved project data.
 const german: Record<string, string> = {
+  "Describe your song idea":"Beschreibe deine Songidee",
+  "Apply description":"Beschreibung anwenden",
   "Develop & vary":"Entwickeln & variieren",
   "Keep parts · compare · build related sections":"Parts behalten · vergleichen · verwandte Abschnitte erstellen",
   "Keep these parts":"Diese Parts behalten",

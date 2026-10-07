@@ -101,7 +101,7 @@ export function buildSongPlan(project: Project) {
       } else {
         const notes = data.map(value => {
           const v = value.split("|");
-          return layer === "melody" ? { pitch:Number(v[3]), start:Number(v[1]), duration:Number(v[2]), velocity:0.7 } : { pitch:Number(v[0]), start:Number(v[1]), duration:Number(v[2]), velocity:v[4] === "1" ? 0.3 : v[3] === "1" ? 0.8 : 0.55 };
+          return layer === "melody" ? { pitch:Number(v[3]), start:Number(v[1]), duration:Number(v[2]), velocity:Number.isFinite(Number(v[4]))&&v[4]!==undefined?Math.max(0,Math.min(1,Number(v[4]))):0.7 } : { pitch:Number(v[0]), start:Number(v[1]), duration:Number(v[2]), velocity:v[4] === "1" ? 0.3 : v[3] === "1" ? 0.8 : 0.55 };
         }).filter(n => [n.pitch,n.start,n.duration].every(Number.isFinite));
         // A saved phrase is its own loop. Repeat it intact until the section
         // ends instead of stretching it to the first bar or dropping it early.
