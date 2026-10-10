@@ -247,15 +247,7 @@ test("easy mode creates one coordinated song draft with optional customization",
   assert.match(source, /Hear two drafts/);
   assert.match(source, /Keep this draft/);
   assert.match(source, /Try two more/);
-  assert.match(source, /function buildPlayableSketch/);
-  assert.match(source, /Mellow acoustic/);
-  assert.match(source, /Soulful groove/);
-  assert.match(source, /Straight rock/);
-  assert.match(source, /Funk pocket/);
-  assert.match(source, /Progressive motion/);
-  assert.match(source, /Heavy riffs/);
   assert.match(source, /fitMelodyToChords/);
-  assert.match(source, /const forms: Record<SketchPreset/);
   assert.match(source, /reinforceDrumAccents/);
   assert.match(source, /sectionPitchContext/);
   assert.match(source, /aria-label="Sketch key"/);
@@ -270,13 +262,6 @@ test("easy mode creates one coordinated song draft with optional customization",
   assert.match(source, /includeMelody/);
   assert.match(source, /includePattern/);
   assert.match(source, /extendedForm/);
-  assert.match(source, /preferredForms/);
-  assert.match(source, /const themeChords=/);
-  assert.match(source, /const coreMotif=/);
-  assert.match(source, /const coreRiff=/);
-  assert.match(source, /relationFor/);
-  assert.match(source, /voice:bassVoice/);
-  assert.match(source, /follows harmony and kick/);
   assert.match(source, /Customize key, tempo and parts/);
 });
 
@@ -296,7 +281,6 @@ test("auto balance confirms success and quick recording is centered",()=>{
   assert.match(source,/addEventListener\("inspitivity-notice", receive\)/);
   assert.match(workspace,/\.record-visual \{ position:relative;display:flex;align-items:center;justify-content:center/);
   assert.match(source,/className="sketch-intensity"/);
-  assert.match(source,/hard\?"distorted guitar"/);
 
 });
 

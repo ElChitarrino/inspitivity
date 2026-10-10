@@ -122,6 +122,7 @@ const german: Record<string, string> = {
   "Every part follows one shared musical plan.":"Alle Spuren folgen einem gemeinsamen musikalischen Plan.",
   "Sketch direction":"Richtung des Entwurfs","Mellow acoustic":"Ruhig & akustisch",
   "Quiet drums, acoustic chords and room to breathe":"Leise Drums, akustische Akkorde und viel Raum",
+  "Soft acoustic colour, varied grooves and room to breathe":"Sanfte akustische Klangfarbe, vielfältige Grooves und viel Raum",
   "Straight rock":"Geradliniger Rock","A firm backbeat, familiar lift and singable hook":"Klarer Backbeat, vertrauter Aufbau und eingängiges Motiv",
   "Funk pocket":"Funk-Groove","Syncopated bass and drums around a lean modal vamp":"Synkopierte Bass- und Drumspur über einem reduzierten modalen Vamp",
   "wistful return":"Sehnsüchtige Rückkehr","gentle descent":"Sanfter Abstieg","open ending":"Offener Schluss",
