@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SCALE_MODES, voiceChord, decodeVoicing, chordIntervals, generateChordProgression, generateMelody, getScale, notePitchClass, type MelodyMood, type Mode, type Root } from "../packages/music-theory/index.js";
+import { SCALE_MODES, SELECTABLE_MODES, voiceChord, decodeVoicing, chordIntervals, generateChordProgression, generateMelody, getScale, notePitchClass, type MelodyMood, type Mode, type Root } from "../packages/music-theory/index.js";
+
+test("the common major and minor modes lead the scale picker",()=>{
+  assert.deepEqual(SELECTABLE_MODES.slice(0,2),["ionian","aeolian"]);
+});
 
 test("the shared catalog includes all church modes, minor variants and both pentatonics",()=>{
   assert.deepEqual(getScale("C","locrian"),["C","Db","Eb","F","Gb","Ab","Bb"]);

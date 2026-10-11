@@ -1,11 +1,5 @@
-const CACHE = "inspitivity-shell-v14";
-const APP_SHELL = [
-  "/",
-  "/manifest.webmanifest",
-  "/favicon.svg",
-  "/icon-192.png",
-  "/icon-512.png",
-];
+const CACHE = "inspitivity-shell-v24";
+const APP_SHELL = ["/", "/manifest.webmanifest", "/favicon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -23,7 +17,7 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== CACHE)
+            .filter((key) => key.startsWith("inspitivity-shell-") && key !== CACHE)
             .map((key) => caches.delete(key)),
         ),
       )
@@ -40,7 +34,30 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/")) return;
 
   if (["/signin-with-chatgpt", "/signout-with-chatgpt", "/callback"].includes(url.pathname)) {
-    event.respondWith(caches.open(CACHE).then((cache) => cache.delete("/")).then(() => fetch(request)));
+    event.respondWith(
+      caches
+        .open(CACHE)
+        .then((cache) => cache.delete("/"))
+        .then(() => fetch(request)),
+    );
+    return;
+  }
+
+  // Versioned sound packs are immutable. Avoid re-downloading them on every play.
+  if (url.pathname.startsWith("/audio/packs/")) {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open("inspitivity-audio-v1");
+        const cached = await cache.match(request);
+        if (cached) return cached;
+        const response = await fetch(request);
+        if (response.ok) {
+          const copy = response.clone();
+          event.waitUntil(cache.put(request, copy).catch(() => undefined));
+        }
+        return response;
+      })(),
+    );
     return;
   }
 

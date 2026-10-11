@@ -1,10 +1,9 @@
 import { DRUM_PITCHES, drumPatternBeats, type DrumInstrument } from "../sequencing/index.js";
-import { decodeVoicing, notePitchClass } from "../music-theory/index.js";
+import { notePitchClass } from "../music-theory/index.js";
 import { chordNoteEvents, decodeRhythmicChord } from "../music-theory/chord-rhythm.js";
-import type { Project, SongSection } from "./index.js";
-import type { GrooveEnergy } from "../sequencing/index.js";
+import type { Project, SongSection, SectionEnergy } from "./index.js";
 
-export function sectionFeel(project: Project, section?: SongSection): { energy: GrooveEnergy; reason: string } {
+export function sectionFeel(project: Project, section?: SongSection): { energy: SectionEnergy; reason: string } {
   if (section?.energy)
     return { energy: section.energy, reason: `${section.name} is set to ${section.energy} energy in the arrangement.` };
   const ideas = section ? section.ideas : project.sections.flatMap(s => s.ideas);
@@ -30,6 +29,17 @@ export function sectionFeel(project: Project, section?: SongSection): { energy: 
 export type SongLayer = "drums" | "bass" | "chords" | "melody" | "riff";
 export type SongEvent = { sectionId: string; voice?: string; layer: SongLayer; pitch: number; start: number; duration: number; velocity: number; seconds: number; secondsDuration: number };
 export type SongMarker = { start: number; seconds: number; meter: string; bpm: number; name?: string };
+export function feelVelocity(layer: SongLayer, energy: SectionEnergy = "balanced", velocity = 1) {
+  const gains: Record<SectionEnergy,Record<SongLayer,number>> = {
+    sparse:{drums:.55,bass:.75,chords:.84,melody:.85,riff:.55},
+    mellow:{drums:.72,bass:.84,chords:.9,melody:.88,riff:.7},
+    balanced:{drums:1,bass:1,chords:1,melody:1,riff:1},
+    driving:{drums:1.09,bass:1.08,chords:.94,melody:1.04,riff:1.12},
+    powerful:{drums:1.16,bass:1.1,chords:1,melody:1.08,riff:1.14},
+  };
+  const gain=gains[energy][layer];
+  return Math.max(0,Math.min(1,velocity*gain));
+}
 export function buildSongPlan(project: Project) {
   const events: SongEvent[] = [], markers: SongMarker[] = [];
   let quarterOffset = 0, secondOffset = 0;
@@ -52,8 +62,11 @@ export function buildSongPlan(project: Project) {
     }
     const add = (layer: SongLayer, pitch: number, start: number, duration: number, velocity: number) => {
       if (![pitch,start,duration,velocity].every(Number.isFinite) || start < 0 || start >= length || duration <= 0) return;
+      // Feel shapes the arrangement at playback/export time; saved notes remain intact.
+      if((section.energy === "mellow" || section.energy === "sparse") && layer === "drums" && pitch === DRUM_PITCHES.hihat && Math.round(start*4)%8===2)return;
+      if(section.energy === "sparse" && layer === "drums" && (pitch === DRUM_PITCHES.openhat || pitch === DRUM_PITCHES.ride || (pitch === DRUM_PITCHES.hihat && Math.round(start*4)%4!==0)))return;
       const end = Math.min(length, start+duration);
-      events.push({ sectionId: section.id, voice: section.ideas.find(i => i.type === layer)?.voice, layer, pitch, start: quarterOffset+toQuarter(start), duration: toQuarter(end)-toQuarter(start), velocity, seconds: secondOffset+start*unitSeconds, secondsDuration: (end-start)*unitSeconds });
+      events.push({ sectionId: section.id, voice: section.ideas.find(i => i.type === layer)?.voice, layer, pitch, start: quarterOffset+toQuarter(start), duration: toQuarter(end)-toQuarter(start), velocity:feelVelocity(layer,section.energy,velocity), seconds: secondOffset+start*unitSeconds, secondsDuration: (end-start)*unitSeconds });
     };
     for (const layer of ["chords", "melody", "bass", "riff", "drums"] as const) {
       const idea = section.ideas.find(i => i.type === layer);
@@ -88,12 +101,43 @@ export function buildSongPlan(project: Project) {
       } else {
         const notes = data.map(value => {
           const v = value.split("|");
-          return layer === "melody" ? { pitch:Number(v[3]), start:Number(v[1]), duration:Number(v[2]), velocity:0.7 } : { pitch:Number(v[0]), start:Number(v[1]), duration:Number(v[2]), velocity:v[4] === "1" ? 0.3 : v[3] === "1" ? 0.8 : 0.55 };
+          return layer === "melody" ? { pitch:Number(v[3]), start:Number(v[1]), duration:Number(v[2]), velocity:Number.isFinite(Number(v[4]))&&v[4]!==undefined?Math.max(0,Math.min(1,Number(v[4]))):0.7 } : { pitch:Number(v[0]), start:Number(v[1]), duration:Number(v[2]), velocity:v[4] === "1" ? 0.3 : v[3] === "1" ? 0.8 : 0.55 };
         }).filter(n => [n.pitch,n.start,n.duration].every(Number.isFinite));
         // A saved phrase is its own loop. Repeat it intact until the section
         // ends instead of stretching it to the first bar or dropping it early.
-        const cycle = layer === "bass" ? length : Math.max(.125, ...notes.map(n => n.start + n.duration));
-        for (let offset = 0; offset < length; offset += cycle) for (const n of notes) add(layer,n.pitch,offset+n.start,n.duration,n.velocity);
+        const phraseEnd = Math.max(.125, idea?.cycleBeats ?? Math.max(...notes.map(n => n.start + n.duration)));
+        // Bass phrases repeat on a complete bar, retaining the rest after their
+        // last note. Mixed meter sections retain their full written bass line.
+        let barEnd = 0;
+        const barEnds = bars.map(bar => (barEnd += bar.units));
+        const cycle = layer === "bass" && bars.every(bar => bar.meter === bars[0].meter)
+          ? barEnds.find(end => end >= phraseEnd - .001) ?? length
+          : layer === "bass" ? length : phraseEnd;
+        const harmony = layer === "bass" ? section.ideas.find(idea => idea.type === "chords") : undefined;
+        const chords = (harmony?.data?.length ? harmony.data : harmony ? harmony.detail.split(" · ") : []).map(decodeRhythmicChord);
+        const harmonyCycle = chords.reduce((sum, chord) => sum + chord.beats, 0);
+        const rootAt = (beat: number) => {
+          if (!harmonyCycle) return null;
+          const position = beat % harmonyCycle;
+          let start = 0;
+          for (const chord of chords) {
+            if (position < start + chord.beats) return notePitchClass(chord.name);
+            start += chord.beats;
+          }
+          return null;
+        };
+        for (let offset = 0; offset < length; offset += cycle) for (const n of notes) {
+          let pitch = n.pitch;
+          if (layer === "bass" && offset > 0) {
+            const sourceRoot = rootAt(n.start), targetRoot = rootAt(offset + n.start);
+            if (sourceRoot !== null && targetRoot !== null) {
+              pitch += (targetRoot - sourceRoot + 12) % 12;
+              while (pitch > 55) pitch -= 12;
+              while (pitch < 23) pitch += 12;
+            }
+          }
+          add(layer,pitch,offset+n.start,n.duration,n.velocity);
+        }
       }
     }
     quarterOffset += toQuarter(length); secondOffset += length*unitSeconds;

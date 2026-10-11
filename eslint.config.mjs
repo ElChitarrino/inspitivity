@@ -9,6 +9,10 @@ import tseslint from "typescript-eslint";
 
 const eslintConfig = defineConfig([
   globalIgnores([
+    ".test-dist/**",
+    "public/local-ai/**",
+    ".sites-runtime/**",
+    ".wrangler/**",
     ".next/**",
     "dist/**",
     "out/**",

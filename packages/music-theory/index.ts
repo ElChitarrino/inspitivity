@@ -2,6 +2,9 @@ export type Root =
   "C" | "Db" | "D" | "Eb" | "E" | "F" | "Gb" | "G" | "Ab" | "A" | "Bb" | "B";
 export const SCALE_MODES = ["major", "minor", "dorian", "phrygian", "lydian", "mixolydian", "locrian", "harmonic minor", "melodic minor", "major pentatonic", "minor pentatonic", "ionian", "aeolian"] as const;
 export type Mode = typeof SCALE_MODES[number];
+// Keep legacy values valid in saved projects, but show each scale only once.
+export const SELECTABLE_MODES = ["ionian", "aeolian", ...SCALE_MODES.filter(mode=>mode!=="major"&&mode!=="minor"&&mode!=="ionian"&&mode!=="aeolian")] as const;
+export const canonicalMode = (mode: string) => mode === "major" ? "ionian" : mode === "minor" ? "aeolian" : mode;
 export const MODE_LABELS: Record<Mode, string> = Object.fromEntries(SCALE_MODES.map(mode => [mode, mode === "ionian" ? "Ionian · major" : mode === "aeolian" ? "Aeolian · natural minor" : mode === "melodic minor" ? "Melodic minor · ascending / jazz" : mode])) as Record<Mode, string>;
 export type Complexity = "simple" | "medium" | "advanced";
 export type MelodyMood = "calm" | "bright" | "melancholic" | "dark";
@@ -117,6 +120,7 @@ export function generateChordProgression({
   opening = "away",
   tension = "balanced",
   preferredPitchClasses = [],
+  degreePattern,
 }: {
   root: Root;
   mode: Mode;
@@ -126,6 +130,8 @@ export function generateChordProgression({
   opening?: ProgressionOpening;
   tension?: HarmonicTension;
   preferredPitchClasses?: number[];
+  /** Optional phrase grammar; degrees remain relative to the selected mode. */
+  degreePattern?: readonly number[];
 }) {
   // Pentatonic melodies use the harmony of their parent diatonic scale.
   const harmonicMode = mode === "minor pentatonic" ? "minor" : mode === "major pentatonic" ? "major" : mode;
@@ -167,7 +173,12 @@ export function generateChordProgression({
   const used = new Set<number>();
   return Array.from({ length: bars }, (_, index) => {
     let degree = previous;
-    if (index > 0) {
+    if (degreePattern?.length) {
+      const intended = ((degreePattern[index % degreePattern.length] % scale.length) + scale.length) % scale.length;
+      // Avoid surprising diminished harmony in otherwise settled sketches.
+      degree = tension === "bold" || !isDiminished(intended) ? intended
+        : [intended - 1, intended + 1, 0].map(candidate => (candidate + scale.length) % scale.length).find(candidate => !isDiminished(candidate)) ?? intended;
+    } else if (index > 0) {
       let candidates = paths[previous % paths.length].filter(d => d % scale.length !== previous);
       if (random() < .42) candidates = candidates.concat(Array.from({length:scale.length},(_,degree)=>degree));
       if (index === bars-1 && opening !== "surprise") candidates = candidates.concat([0,4,5]);

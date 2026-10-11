@@ -1,13 +1,35 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mergeProjects, validProjects, type Project } from "../packages/workspace/index.js";
+import { mergeProjects, migrateTransitionNotes, sortProjects, validProjects, type Project } from "../packages/workspace/index.js";
 import { sectionFeel, buildSongPlan } from "../packages/workspace/music.js";
-import { analyzeArrangement } from "../packages/workspace/arrangement.js";
+import { analyzeArrangement, returnSources, preferredReturnSource } from "../packages/workspace/arrangement.js";
 import { varyIdeaData, varyNotes } from "../packages/workspace/variation.js";
 import { generateDrumLoop } from "../packages/sequencing/index.js";
 import { createMultitrackMidi } from "../packages/midi/index.js";
 
 const project = (): Project => ({ id:"p",name:"Idea",bpm:120,key:"C major",meter:"4/4",updated:1,sections:[{id:"s",name:"Verse",bars:2,color:"mint",ideas:[{id:"c",type:"chords",name:"Harmony",detail:"",data:["C|4","F|4"]}]}] });
+test("project lists show latest edits first and can sort names without mutating saved order",()=>{
+  const source=[{...project(),id:"z",name:"Zebra",updated:2},{...project(),id:"a",name:"Amber",updated:1}];
+  assert.deepEqual(sortProjects(source).map(p=>p.id),["z","a"]);
+  assert.deepEqual(sortProjects(source,"name").map(p=>p.id),["a","z"]);
+  assert.deepEqual(source.map(p=>p.id),["z","a"]);
+});
+test("old transition instructions become section notes without changing saved meter shifts",()=>{
+  const song=project();
+  song.sections[0].meterMap=["4/4","7/8"];
+  song.sections[0].ideas.push({id:"t",type:"transition",name:"Verse to chorus",detail:"Build with a snare fill",data:["archive"]});
+  const migrated=migrateTransitionNotes([song]);
+  assert.equal(song.sections[0].ideas[1].type,"transition");
+  assert.deepEqual(migrated[0].sections[0].meterMap,["4/4","7/8"]);
+  assert.deepEqual(migrated[0].sections[0].ideas[1],{
+    id:"t",type:"text",name:"Verse to chorus",detail:"Verse to chorus\nBuild with a snare fill",data:["archive"],
+  });
+  assert.ok(validProjects(migrated));
+  assert.deepEqual(migrateTransitionNotes(migrated),migrated);
+  const long=project();long.sections[0].ideas.push({id:"t",type:"transition",name:"Title",detail:"x".repeat(10000)});
+  assert.ok(validProjects(migrateTransitionNotes([long])));
+  assert.equal(migrateTransitionNotes([long])[0].sections[0].ideas[1].detail.length,10000);
+});
 test("cloud merge keeps both conflicting projects and propagates uncontested deletions",()=>{
   const base=project(), local={...base,name:"Device A"}, remote={...base,name:"Device B"};
   const result=mergeProjects([base],[local],[remote],()=>"conflict");
@@ -89,6 +111,16 @@ test("arrangement analysis detects missing returns, energy contrast, and foundat
   assert.deepEqual(check.insights.map(insight=>insight.id),["return","energy","foundation"]);
   assert.equal(check.insights.find(insight=>insight.id==="foundation")?.tool,"drums");
 });
+test("a guided return defaults to an earlier musical theme instead of the latest contrast",()=>{
+  const song=project();
+  song.sections=[
+    {id:"intro",name:"Intro",bars:2,color:"mint",ideas:[]},
+    {...song.sections[0],id:"verse",name:"Verse"},
+    {...song.sections[0],id:"bridge",name:"Bridge",ideas:[{id:"m",type:"melody",name:"Lead",detail:"",data:["E4|0|1|64"]}]},
+  ];
+  assert.deepEqual(returnSources(song).map(section=>section.id),["verse","bridge"]);
+  assert.equal(preferredReturnSource(song)?.id,"verse");
+});
 test("arrangement analysis clears when form, contrast, and core layers are present",()=>{
   const song=project();
   const ideas=[
@@ -98,6 +130,17 @@ test("arrangement analysis clears when form, contrast, and core layers are prese
   ];
   song.sections=["Verse","Chorus","Verse return"].map((name,index)=>({...song.sections[0],id:`s${index}`,name,energy:index===0?"mellow" as const:index===2?"powerful" as const:"balanced" as const,ideas:ideas.map(idea=>({...idea,id:`${idea.id}${index}`}))}));
   assert.deepEqual(analyzeArrangement(song),{ready:true,insights:[]});
+});
+test("a returned motif counts when the voicing, groove, and bass change",()=>{
+  const song=project();
+  const make=(index:number)=>[
+    {id:`c${index}`,type:"chords" as const,name:"Harmony",detail:"",data:[`Am|4|${index===0?"48,52,55":"60,64,67"}`]},
+    {id:`m${index}`,type:"melody" as const,name:"Motif",detail:"",data:["A4|0|1|69","C5|1|1|72"]},
+    {id:`d${index}`,type:"drums" as const,name:"Drums",detail:"",data:[`kick|${index}|.7`]},
+    {id:`b${index}`,type:"bass" as const,name:"Bass",detail:"",data:[`${36+index}|0|1|1`]},
+  ];
+  song.sections=["Theme","Contrast","Bloom"].map((name,index)=>({...song.sections[0],id:`s${index}`,name,energy:index===0?"mellow" as const:"powerful" as const,ideas:index===1?[]:make(index)}));
+  assert.equal(analyzeArrangement(song).insights.some(insight=>insight.id==="return"),false);
 });
 test("song plan repeats saved layers, preserves displaced starts, and leaves missing parts silent",()=>{
   const p=project();p.sections[0].ideas.push({id:"m",type:"melody",name:"Flute",detail:"",data:["E4|0.5|0.5|64"]});
@@ -115,6 +158,21 @@ test("song plan expands arrangement repeats and includes mono bass events",()=>{
   assert.equal(plan.quarters,16);
   assert.equal(plan.seconds,8);
   assert.deepEqual(plan.events.filter(event=>event.layer==="bass").map(event=>event.start),[0,4,8,12]);
+});
+test("short bass phrases repeat at bar boundaries without losing their final rest",()=>{
+  const p=project();p.sections[0].bars=4;
+  p.sections[0].ideas.push({id:"b",type:"bass",name:"Bass",detail:"",data:["36|0|0.45|1","43|2.5|0.4|0"]});
+  const bass=buildSongPlan(p).events.filter(event=>event.layer==="bass");
+  assert.deepEqual(bass.map(event=>event.start),[0,2.5,4,6.5,8,10.5,12,14.5]);
+  p.sections[0].meterMap=["4/4","7/8","4/4","7/8"];
+  assert.deepEqual(buildSongPlan(p).events.filter(event=>event.layer==="bass").map(event=>event.start),[0,2.5]);
+});
+test("repeated bass motifs follow later chord roots while retaining their rhythm",()=>{
+  const p=project();p.sections[0].bars=4;
+  p.sections[0].ideas[0].data=["C|4|48,52,55","F|4|53,57,60","G|4|55,59,62","C|4|48,52,55"];
+  p.sections[0].ideas.push({id:"b",type:"bass",name:"Bass",detail:"",data:["36|0|.5|1","43|2|.5|0"]});
+  const bass=buildSongPlan(p).events.filter(event=>event.layer==="bass");
+  assert.deepEqual(bass.map(event=>[event.start,event.pitch]),[[0,36],[2,43],[4,41],[6,48],[8,43],[10,50],[12,36],[14,43]]);
 });
 test("short saved phrases repeat at their own loop length until a longer section ends",()=>{
   const p=project(); p.sections[0].bars=4;
@@ -149,6 +207,13 @@ test("saved instrument selections survive serialization and reach every song sec
   assert.deepEqual([...new Set(events.filter(e => e.layer === "drums").map(e => e.voice))], ["prog metal", "rock"]);
   restored.sections[0].ideas[0].voice = "invalid";
   assert.equal(validProjects([restored]), false);
+});
+
+test("acoustic guitar chord sound survives project validation and playback planning",()=>{
+  const song=project();
+  song.sections[0].ideas[0].voice="acoustic guitar";
+  assert.ok(validProjects([JSON.parse(JSON.stringify(song))]));
+  assert.ok(buildSongPlan(song).events.filter(event=>event.layer==="chords").every(event=>event.voice==="acoustic guitar"));
 });
 
 test("saved chord voicings reach playback and MIDI pitches unchanged",()=>{

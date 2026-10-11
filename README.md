@@ -35,7 +35,10 @@ Then open the address shown in the terminal.
 - `npm run dev` — start the local app
 - `npm run build` — create a production build
 - `npm test` — run the music and workflow tests, then build
-- `npm run lint` — check the code style
+- `npm run lint` — check the entire source tree (legacy editor findings remain)
+- `npm run lint:refactored` — enforce lint rules for the extracted audio, creative UI, and generation modules
+- `npm run format:check` — verify formatting for those modules
+- `npm run format` — format those modules
 
 ## Project structure
 
@@ -43,6 +46,8 @@ Then open the address shown in the terminal.
 - `packages/music-theory/` — scale, chord, and melody generation
 - `packages/sequencing/` — musical timing and loop helpers
 - `tests/` — automated feature and music behavior checks
+
+See [the maintenance guide](docs/code-maintenance.md) for module responsibilities, data formats, and testing conventions.
 
 ## GitHub upload
 

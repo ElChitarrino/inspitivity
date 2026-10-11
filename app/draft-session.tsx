@@ -90,7 +90,9 @@ export function DraftToolbar() {
   if (!context) return null;
   return <div className="draft-toolbar">
     <span role="status">{context.error ? "Draft storage full · save to a section now" : context.saved ? "Saved to your song · draft recovery is up to date" : "Unsaved to song · draft kept on this device"}</span>
-    <button disabled={!context.canUndo} onClick={context.undo}>↶ Undo</button>
-    <button disabled={!context.canRedo} onClick={context.redo}>↷ Redo</button>
+    <div className="draft-history" role="group" aria-label="Draft history">
+      <button aria-label="Undo" title="Undo" disabled={!context.canUndo} onClick={context.undo}><span aria-hidden="true">↶</span><span className="history-label">Undo</span></button>
+      <button aria-label="Redo" title="Redo" disabled={!context.canRedo} onClick={context.redo}><span aria-hidden="true">↷</span><span className="history-label">Redo</span></button>
+    </div>
   </div>;
 }

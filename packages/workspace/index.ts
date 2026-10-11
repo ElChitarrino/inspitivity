@@ -6,12 +6,38 @@ export type Idea = {
   voice?: string;
   recordingId?: string;
   data?: string[];
+  /** Explicit phrase boundary retains rests after non-destructive rhythmic variation. */
+  cycleBeats?: number;
 };
 export type TrackMix = { muted: boolean; solo: boolean; volume: number };
 export type SectionMix = Partial<Record<"drums" | "bass" | "chords" | "melody" | "riff", TrackMix>>;
-export type SectionEnergy = "mellow" | "balanced" | "powerful";
+export type SectionEnergy = "sparse" | "mellow" | "balanced" | "driving" | "powerful";
 export type SongSection = { id: string; name: string; bars: number; color: string; ideas: Idea[]; meterMap?: string[]; mix?: SectionMix; repeats?: number; energy?: SectionEnergy };
 export type Project = { id: string; name: string; bpm: number; meter: string; key: string; updated: number; sections: SongSection[] };
+
+export function sortProjects(projects: Project[], order: "recent" | "name" = "recent"): Project[] {
+  return [...projects].sort((a, b) => order === "recent"
+    ? b.updated - a.updated || a.name.localeCompare(b.name)
+    : a.name.localeCompare(b.name) || b.updated - a.updated);
+}
+
+/** Retire the text-only transition tool without losing anyone's saved instructions. */
+export function migrateTransitionNotes(projects: Project[]): Project[] {
+  return projects.map(project => {
+    if (!project.sections.some(section => section.ideas.some(idea => idea.type === "transition"))) return project;
+    return { ...project, sections: project.sections.map(section => ({
+      ...section,
+      ideas: section.ideas.map(idea => idea.type === "transition" ? {
+        ...idea,
+        type: "text" as const,
+        name: idea.name || "Transition note",
+        detail: idea.detail && idea.name && idea.name.length + idea.detail.length + 1 <= 10000
+          ? `${idea.name}\n${idea.detail}`
+          : idea.detail || idea.name || "Transition note",
+      } : idea),
+    })) };
+  });
+}
 
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const str = (v: unknown, max = 10000): v is string => typeof v === "string" && v.length <= max;
@@ -26,13 +52,14 @@ export function validProjects(value: unknown): value is Project[] {
     Array.isArray(p.sections) && p.sections.length <= 200 && p.sections.every(s => record(s) && str(s.id, 150) && str(s.name, 500) && str(s.color, 100) &&
       typeof s.bars === "number" && s.bars >= 1 && s.bars <= 256 &&
       (s.repeats === undefined || (Number.isInteger(s.repeats) && Number(s.repeats) >= 1 && Number(s.repeats) <= 8)) &&
-      (s.energy === undefined || ["mellow", "balanced", "powerful"].includes(String(s.energy))) &&
+      (s.energy === undefined || ["sparse", "mellow", "balanced", "driving", "powerful"].includes(String(s.energy))) &&
       (!s.meterMap || (Array.isArray(s.meterMap) && s.meterMap.length <= 256 && s.meterMap.every(m => /^\d{1,2}\/(2|4|8|16)$/.test(String(m))))) &&
       validMix(s.mix) &&
       Array.isArray(s.ideas) && s.ideas.length <= 500 && s.ideas.every(i => record(i) && str(i.id, 150) && str(i.name, 500) && str(i.detail) &&
         ["audio", "chords", "melody", "drums", "bass", "riff", "transition", "text"].includes(String(i.type)) &&
-        (i.voice === undefined || ["current", "rock", "prog metal", "distorted guitar", "air flute", "warm pad", "glass", "pluck", "analog pulse", "deep bass"].includes(String(i.voice))) &&
+        (i.voice === undefined || ["current", "acoustic studio", "dry studio", "rock", "prog metal", "roomy rock", "dark acoustic", "acoustic guitar", "distorted guitar", "air flute", "warm pad", "glass", "pluck", "analog pulse", "deep bass", "808 bass", "sub bass"].includes(String(i.voice))) &&
         (i.recordingId === undefined || str(i.recordingId, 150)) &&
+        (i.cycleBeats === undefined || (typeof i.cycleBeats === "number" && Number.isFinite(i.cycleBeats) && i.cycleBeats >= .125 && i.cycleBeats <= 16384)) &&
         (i.data === undefined || (Array.isArray(i.data) && i.data.length <= 10000 && i.data.every(d => str(d, 1000)))))));
 }
 

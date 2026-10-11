@@ -9,9 +9,9 @@ const normalizeEmail = (value: string) => value.trim().toLowerCase();
 const validEmail = (value: string) => value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 function identity(request: Request): Identity | null {
-  const owner = request.headers.get("oai-authenticated-user-id")?.trim();
-  if (!owner) return null;
   const email = normalizeEmail(request.headers.get("oai-authenticated-user-email") ?? "");
+  const owner = request.headers.get("oai-authenticated-user-id")?.trim() || (email ? `email:${email}` : "");
+  if (!owner) return null;
   const encodedName = request.headers.get("oai-authenticated-user-full-name");
   let displayName = email;
   if (encodedName && request.headers.get("oai-authenticated-user-full-name-encoding") === "percent-encoded-utf-8") {

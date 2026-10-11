@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState, type SetStateAction } from "react";
-import { mergeProjects, recordingIds, validProjects, type Project } from "../packages/workspace";
+import { mergeProjects, migrateTransitionNotes, recordingIds, validProjects, type Project } from "../packages/workspace";
 
 async function audioDatabase() {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -56,7 +56,7 @@ export function useCloudProjects(initial: Project[], accountId: string) {
   const uploaded = useRef(new Set<string>());
   const hadLocal = useRef(false);
   const setProjects = useCallback((action: SetStateAction<Project[]>) => {
-    const next = typeof action === "function" ? action(current.current) : action;
+    const next = migrateTransitionNotes(typeof action === "function" ? action(current.current) : action);
     if (jsonEqual(next, current.current)) return;
     hadLocal.current = true;
     current.current = next;
@@ -78,11 +78,13 @@ export function useCloudProjects(initial: Project[], accountId: string) {
           hadLocal.current = true;
           const parsed: unknown = JSON.parse(stored);
           if (!validProjects(parsed)) throw new Error("Invalid device data");
-          current.current = parsed;
-          renderProjects(parsed);
+          const migrated = migrateTransitionNotes(parsed);
+          current.current = migrated;
+          renderProjects(migrated);
+          if (!jsonEqual(parsed, migrated)) localStorage.setItem(storageKey, JSON.stringify(migrated));
           if (!scoped) {
             localStorage.setItem(legacyOwnerKey, accountId);
-            localStorage.setItem(storageKey, stored);
+            localStorage.setItem(storageKey, JSON.stringify(migrated));
           }
         }
         const savedBase: unknown = JSON.parse(localStorage.getItem(baseKey) ?? (canClaimLegacy ? localStorage.getItem(legacyBaseKey) : null) ?? "[]");
@@ -107,7 +109,7 @@ export function useCloudProjects(initial: Project[], accountId: string) {
         if (!validProjects(remote.projects) || !Number.isInteger(remote.revision)) throw new Error("Unexpected sync response · device copy kept");
         const captured = current.current;
         const local = !hadLocal.current && remote.projects.length ? [] : captured;
-        const merged = mergeProjects(base.current, local, remote.projects, () => crypto.randomUUID());
+        const merged = migrateTransitionNotes(mergeProjects(base.current, local, remote.projects, () => crypto.randomUUID()));
         if (!jsonEqual(merged, remote.projects)) {
           const saved = await fetch("/api/workspace", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revision: remote.revision, projects: merged }) });
           if (saved.status === 409) continue;

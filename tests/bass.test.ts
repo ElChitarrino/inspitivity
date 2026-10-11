@@ -61,6 +61,13 @@ test("kick lock supports the pocket without reducing bass to a copy of kick atta
   assert.ok(phrase.some((event) => !kicks.includes(event.start)), "expected supporting notes between kicks");
 });
 
+test("an easy-mode bass phrase reuses rhythmic anchors while following changing chords", () => {
+  const phrase=generateBassPhrase({...base,repeatRhythm:true,density:1,otherActivity:0,lockToKick:false,kickStarts:[],seed:17});
+  const offsets=[0,1,2,3].map(bar=>new Set(phrase.filter(event=>Math.floor(event.start/4)===bar).map(event=>event.start-bar*4)));
+  assert.ok([...offsets[0]].filter(offset=>offsets.every(bar=>bar.has(offset))).length>=3);
+  assert.deepEqual([0,1,2,3].map(bar=>(phrase.find(event=>event.start===bar*4)?.pitch??0)%12),[4,7,9,11]);
+});
+
 test("groove directions and movement profiles materially change the phrase", () => {
   const directions = ["sustained", "eighth notes", "groove", "syncopated", "progressive"] as const;
   const phrases = directions.map((direction) => generateBassPhrase({ ...base, direction, seed: 901 }));

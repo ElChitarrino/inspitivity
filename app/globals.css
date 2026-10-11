@@ -3,6 +3,8 @@
 @import "./studio.css" layer(studio);
 @import "./palette.css";
 @import "./theme.css";
+@import "./workspace.css";
+@import "./studio-design.css";
 @layer legacy, studio;
 @layer legacy {
 
@@ -97,6 +99,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .preset-grid button{min-height:112px;padding:13px}
   .sketch-launcher{align-items:stretch;flex-direction:column}
   .sketch-launcher .primary-button{width:100%;min-width:0}
+  .sketch-options{grid-template-columns:1fr 1fr}
+  .sketch-toggles{grid-template-columns:1fr}
   .project-grid{grid-template-columns:1fr}
   .new-project-card{grid-column:auto}
   .section-header-actions{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px}

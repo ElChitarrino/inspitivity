@@ -34,6 +34,25 @@ html[data-theme="crimson"] .toast{background:var(--surface);border-color:var(--l
 html[data-theme="crimson"] .drum-row button.active{background:var(--mint);border-color:var(--control-line)}
 html[data-theme="crimson"] .piano-note{background:var(--mint)}
 
+/* Shared expressive accents. Typography stays consistent across all screens. */
+.studio-brand,.topbar h1,.section-main h3{letter-spacing:-.035em}
+.project-context .global-tempo,.chord-overview>button>b,.theme-recommendation small{font-family:var(--font-geist-mono),monospace}
+.eyebrow{letter-spacing:.15em}
+.hero-card{background:radial-gradient(circle at 82% 16%,color-mix(in srgb,var(--violet) 15%,transparent),transparent 36%),linear-gradient(130deg,var(--surface),var(--surface2))}
+.spark-studio{background:radial-gradient(circle at 88% 7%,color-mix(in srgb,var(--amber) 13%,transparent),transparent 35%),linear-gradient(145deg,var(--surface2),var(--black))}
+.section-card.violet,.project-card.violet{--card-tint:var(--violet)}
+.section-card.amber,.project-card.amber{--card-tint:var(--amber)}
+.section-card.blue,.project-card.blue{--card-tint:var(--blue)}
+.section-card.coral,.project-card.coral{--card-tint:var(--coral)}
+.section-card{background:linear-gradient(105deg,color-mix(in srgb,var(--card-tint,var(--mint)) 6%,var(--surface)),var(--surface) 46%)}
+.theme-explorer{margin:15px 0 22px;border:1px solid var(--line);border-radius:20px;padding:clamp(19px,3vw,32px);background:radial-gradient(circle at 85% 0%,color-mix(in srgb,var(--violet) 16%,transparent),transparent 42%),var(--surface);box-shadow:0 12px 35px var(--shadow)}
+.theme-explorer-head{display:flex;justify-content:space-between;gap:20px}.theme-explorer-head h2{font-size:clamp(26px,3vw,36px);margin:6px 0 7px}.theme-explorer-head p:last-child{margin:0;color:var(--muted);line-height:1.5}
+.theme-explorer-form{display:grid;gap:8px;margin-top:24px}.theme-explorer-form label{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700}.theme-explorer-form>div{display:flex;gap:8px}.theme-explorer-form input{min-width:0;flex:1;min-height:51px;border:1px solid var(--control-line);border-radius:10px;padding:10px 16px;background:var(--black);color:var(--ink);font-size:16px}.theme-explorer-form button{min-height:51px;border:0;border-radius:10px;padding:0 22px;background:var(--mint);color:var(--on-accent);font-weight:750}.theme-explorer-form button:disabled{opacity:.45}
+.theme-feel-chips{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.theme-feel-chips button{border:1px solid var(--line);border-radius:999px;padding:7px 12px;background:var(--surface2);color:var(--ink);text-transform:capitalize;font-size:13px}.theme-feel-chips button[aria-pressed=true]{border-color:var(--mint);color:var(--mint)}
+.theme-recommendation{--theme-color:var(--violet);border-left:3px solid var(--theme-color);padding:13px 18px;margin:18px 0;background:color-mix(in srgb,var(--theme-color) 10%,var(--surface2));border-radius:0 12px 12px 0}.theme-recommendation.is-amber{--theme-color:var(--amber)}.theme-recommendation.is-blue{--theme-color:var(--blue)}.theme-recommendation.is-coral{--theme-color:var(--coral)}.theme-recommendation span{display:block;text-transform:uppercase;letter-spacing:.12em;font-size:12px;color:var(--theme-color)}.theme-recommendation strong{display:block;font-size:24px;font-weight:650;margin:5px 0}.theme-recommendation p{margin:0 0 7px;color:var(--ink);line-height:1.45}.theme-recommendation small{color:var(--muted);font-size:12px}
+.theme-local-ai{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:15px;color:var(--muted);font-size:12px}.theme-local-ai button{border:1px solid var(--line);border-radius:9px;background:var(--surface2);padding:9px 12px;white-space:nowrap;font-size:12px}.theme-local-ai button:disabled{opacity:.5}
+@media(max-width:620px){.theme-explorer-mark{font-size:48px}.theme-explorer-form>div{flex-direction:column}.theme-explorer-form button{width:100%}.theme-local-ai{align-items:flex-start;flex-direction:column}}
+
 .project-row{position:relative;border:1px solid var(--line);background:var(--surface);border-radius:10px;display:grid;grid-template-columns:1fr auto;align-items:stretch;overflow:hidden}
 .project-open{min-width:0;border:0;background:transparent;padding:22px;display:grid;grid-template-columns:64px 1fr 25px;align-items:center;text-align:left;gap:16px}
 .project-open h3{margin:0 0 5px}.project-open p{margin:0;color:var(--muted);font-size:14px;line-height:1.5}
@@ -116,7 +135,7 @@ html[data-theme="crimson"] .piano-note{background:var(--mint)}
   .studio-workspace{width:100%;margin-left:0;padding:14px var(--studio-gutter) calc(104px + env(safe-area-inset-bottom))}
   .studio-nav{height:auto;padding:7px 8px calc(7px + env(safe-area-inset-bottom))}
   .studio-destinations{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;overflow:visible}
-  .nav-group{display:contents}.nav-group-label,.nav-mobile-hidden{display:none!important}.studio-mobile-create{display:flex!important;order:3}.nav-home{order:1}.nav-projects{order:2}.nav-metronome{order:4}.nav-settings{order:5}
+  .nav-group{display:contents}.nav-group-label,.nav-mobile-hidden{display:none!important}.studio-mobile-create{display:flex!important}
   .studio-destinations button{min-width:0;min-height:54px;display:flex;justify-content:center;gap:3px;padding:6px 2px;border-radius:9px}.studio-destinations button span{display:block;font-size:11px}.studio-destinations button b{width:auto;font-size:18px}.studio-mobile-create b{display:grid;width:30px;height:30px;place-items:center;border-radius:9px;background:var(--mint);color:var(--on-accent);font-size:20px}.studio-mobile-create[aria-current]{background:transparent}.studio-mobile-create[aria-current] span{color:var(--ink)}
   .project-screen .topbar,.inside-project .topbar{margin-inline:calc(var(--studio-gutter) * -1);padding:10px var(--studio-gutter)}
   .topbar{min-height:64px}.topbar h1,.center-title h1{font-size:26px}.center-title p{font-size:12px;margin-top:5px}.back-button{width:42px;height:42px}
@@ -232,6 +251,10 @@ html[data-theme="crimson"] .piano-note{background:var(--mint)}
 .section-timeline>button>span{grid-row:1/3;color:var(--muted);font:12px var(--font-geist-mono),monospace}.section-timeline>button>b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}.section-timeline>button>small{color:var(--muted);font-size:12px}.section-timeline>button>i{grid-column:1/-1;display:flex;gap:4px;margin-top:9px}.section-timeline>button>i em{width:13px;height:4px;border-radius:4px;background:var(--surface-hover)}.section-timeline>button>i em.filled{background:var(--mint);box-shadow:0 0 8px var(--shadow)}
 .section-timeline>button.selected{border-color:var(--control-line);background:linear-gradient(145deg,var(--surface2),var(--surface));box-shadow:0 0 0 1px var(--shadow),0 12px 30px var(--shadow)}.section-timeline>button.playing{box-shadow:0 0 0 1px var(--mint),0 0 28px color-mix(in srgb,var(--mint) 18%,transparent)}
 .section-timeline>.add-section-tile{place-content:center;justify-items:center;border-style:dashed;background:transparent;color:var(--muted)}.section-timeline>.add-section-tile:before{display:none}.section-timeline>.add-section-tile span{grid-row:auto;font-size:24px;color:var(--mint)}
+.song-lanes{overflow-x:auto;margin:0 0 18px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}.song-lane{display:grid;grid-template-columns:96px repeat(var(--unused, 1), minmax(110px,1fr));grid-auto-columns:minmax(110px,1fr);grid-auto-flow:column;min-width:max-content;border-bottom:1px solid var(--line)}.song-lane:last-child{border-bottom:0}.song-lane>b{position:sticky;left:0;z-index:1;display:flex;align-items:center;min-height:44px;padding:8px;background:var(--surface2);font-size:14px}.song-lane>span,.song-lane>button{width:110px;min-height:44px;padding:8px;border:0;border-left:1px solid var(--line);background:transparent;color:var(--muted);text-align:center;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.song-lane>button.has-part{background:color-mix(in srgb,var(--mint) 14%,var(--surface));color:var(--mint);font-size:21px}.song-lane>button:focus-visible{outline:2px solid var(--mint);outline-offset:-3px}
+.section-timeline .section-drag-grip{touch-action:none;cursor:grab;user-select:none;min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center}
+.section-timeline .section-drag-grip:active{cursor:grabbing}
+html[data-theme] .section-timeline>button[data-drop-target="true"]{outline:3px solid var(--mint);outline-offset:-3px}
 
 .arrangement-timeline .asset-section{width:100%;max-width:none;gap:16px;padding:22px;background:linear-gradient(145deg,var(--surface),var(--surface))}
 .section-detail-tabs,.instrument-mode-tabs{display:flex;gap:4px;padding:4px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
@@ -285,8 +308,8 @@ html[data-theme] .chord-overview button:hover{background:var(--surface-hover);bo
 html[data-theme] :is(.chord-overview button,.chord-editor article){border-top-color:var(--mint)}
 html[data-theme] :is(.edit-pattern-callout,.add-section-note,.add-voicing-note,.auto-balance,.bass-note-editor>header>button){background:var(--surface2);color:var(--ink);border-color:var(--control-line)}
 html[data-theme] :is(.piano-note,.drum-row button.active){background:var(--mint);color:var(--on-accent);border-color:var(--mint)}
-html[data-theme] .bass-roll span{background:var(--accent-soft);color:var(--ink);border:1px solid var(--mint)}
-html[data-theme] .bass-roll span.accent{background:var(--mint);color:var(--on-accent);box-shadow:none}
+html[data-theme] .bass-note-block{background:var(--accent-soft);color:var(--ink);border:1px solid var(--mint)}
+html[data-theme] .bass-note-block.accent{background:var(--mint);color:var(--on-accent);box-shadow:none}
 html[data-theme] :is(select,input:not([type=range]):not([type=checkbox]),textarea){color:var(--ink);border-color:var(--control-line)}
 html[data-theme] select option{color:var(--ink);background:var(--surface)}
 html[data-theme] :is(.app-shell button.play-control,.bass-audition){background:var(--play-bg);color:var(--play-ink);border-color:var(--play-line)}
@@ -342,6 +365,16 @@ html[data-theme] .section-player{position:fixed;z-index:54;left:calc(var(--playe
   .app-shell:has(.section-player) .note-keyboard-dock{position:relative;bottom:auto}
 }
 /* Compact chord-rhythm inspector remains available in Generate and Edit. */
+@media(max-width:1199px){
+  .project-context{flex-wrap:wrap;gap:12px}
+  .project-context-title{flex:1 1 100%}
+  .project-context .key-highlight{flex-wrap:wrap;min-width:0}
+}
+.bass-audition svg{width:18px;height:18px;fill:currentColor}
+@media(max-width:700px){
+  .project-screen .topbar,.inside-project .topbar{padding-left:72px}
+  .section-timeline{margin-inline:0;padding-inline:2px}
+}
 .chord-rhythm-controls{margin:16px 0;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
 .chord-rhythm-controls>summary{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;min-height:46px;padding:12px 14px;font-size:14px;cursor:pointer}
 .chord-rhythm-controls>summary span{color:var(--muted);font-size:13px}
@@ -359,3 +392,21 @@ html[data-theme] .section-player{position:fixed;z-index:54;left:calc(var(--playe
 .section-player .mixer-channel button:nth-of-type(1){grid-column:2}.section-player .mixer-channel button:nth-of-type(2){grid-column:3}
 .asset-section .section-title-editor h3{font-family:var(--font-geist-sans),Arial,sans-serif;font-weight:650}
 @media(max-width:480px){.section-player .mixer-grid{grid-template-columns:1fr}.section-player .mixer-channel>b{grid-column:1;align-self:center}}
+/* Playback is a shared semantic state, separate from selection. */
+.editor-playhead{position:absolute;z-index:8;top:0;bottom:0;width:2px;background:var(--play-line);pointer-events:none;box-shadow:0 0 0 1px var(--black)}
+html[data-theme] .chord-overview button[aria-pressed=true]{border-color:var(--mint);background:var(--accent-soft)}
+html[data-theme] .chord-overview button[data-playing=true]{box-shadow:inset 0 -4px 0 var(--play-line)}
+html[data-theme] .drum-row button[data-playing=true]{outline:2px solid var(--play-line);outline-offset:1px;filter:brightness(1.35)}
+.focused-chord-editor{grid-template-columns:minmax(0,1fr);max-width:760px;margin-inline:auto;width:100%}
+.drum-lane-picker{display:none}.follow-playback{display:flex;align-items:center;gap:8px;margin:8px 0 14px;font-size:14px;color:var(--muted)}
+.follow-playback input{accent-color:var(--mint);width:18px;height:18px}
+.section-reset{min-width:40px;min-height:44px;border:1px solid var(--control-line);background:var(--surface2);color:var(--ink);font-size:22px}
+@media(max-width:700px){
+  .section-player .section-player-heading{grid-template-columns:minmax(0,1fr) auto auto}
+  .section-player .section-player-heading>.section-player-caption{grid-column:1/-1}
+  .drum-lane-picker{display:grid;gap:8px;margin:12px 0;font-size:14px;color:var(--muted)}
+  .drum-lane-picker select{min-height:44px;padding:8px;border:1px solid var(--control-line);border-radius:7px;background:var(--surface2);color:var(--ink)}
+  .drum-row[data-mobile-hidden=true]{display:none}
+  .chord-overview{display:flex;overflow-x:auto;gap:8px;padding-bottom:8px}
+  .chord-overview button{flex:0 0 132px}
+}

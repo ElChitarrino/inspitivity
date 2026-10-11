@@ -35,5 +35,17 @@ test("persistent section transport reserves space and covers every project tool"
   assert.match(css,/padding-bottom:calc\(var\(--player-clearance\)/);
   assert.match(css,/env\(safe-area-inset-bottom\)/);
   assert.match(source,/selectedSectionId=\{draftSectionId\}/);
-  assert.match(source,/label="current section"/);
+  assert.match(source,/label=\{effectiveScope==="song"\?"song":"current section"\}/);
+  assert.match(source,/aria-label="Song transport"/);
+});
+
+test("phone transport keeps every control in a dedicated non-overlapping grid slot",()=>{
+  const css=readFileSync("app/workspace.css","utf8");
+  const finalPhoneRules=css.slice(css.lastIndexOf("/* Final narrow-screen overrides"));
+  assert.match(finalPhoneRules,/grid-template-columns:minmax\(0,1fr\) 44px 44px/);
+  assert.match(finalPhoneRules,/\.play-control \{ grid-column:2;grid-row:1;width:44px!important;min-width:44px!important/);
+  assert.match(finalPhoneRules,/\.transport-preferences \{ position:relative;grid-column:3;grid-row:1/);
+  assert.match(finalPhoneRules,/\.transport-time \{ grid-column:1\/4;grid-row:2/);
+  assert.match(finalPhoneRules,/\.section-player>progress \{ grid-column:1\/4;grid-row:3/);
+  assert.match(finalPhoneRules,/\.center-title.*position:static.*min-width:0/);
 });
